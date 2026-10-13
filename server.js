@@ -26,12 +26,18 @@ app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// The project root is served statically, so keep private files (user data, uploads, source) out of it
+const safeDecode = (p) => { try { return decodeURIComponent(p); } catch { return p; } };
+const PRIVATE_PATH = /^\/(data|routes|services|middleware|docs|node_modules|\.git)(\/|$)|^\/[^/]+\.(mjs|cjs|json|md|db|wav)$|^\/(server|users_store|proposals_store)\.js$/i;
+app.use((req, res, next) => (PRIVATE_PATH.test(safeDecode(req.path).replace(/\\/g, '/')) ? res.status(404).end() : next()));
+
 // Serve static files from root
 app.use(express.static(__dirname));
 
 import authRoutes from './routes/auth.js';
 import adminRoutes, { handleExotelWebhook } from './routes/admin.js';
 import userRoutes from './routes/user.js';
+import ownerRoutes from './routes/owner.js';
 import jwt from 'jsonwebtoken';
 import { getJwtSecret } from './middleware/auth.js';
 import { findUserById } from './users_store.js';
@@ -39,11 +45,18 @@ import { findUserById } from './users_store.js';
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/user', userRoutes);
+app.use('/api/owner', ownerRoutes);
 
 // Health Check Endpoint
 app.get('/api/health', (req, res) => res.status(200).json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() }));
 
 // Dedicated Full-Page Routes
+// Owner admin panel (login is handled inside the page; all data lives behind /api/owner)
+app.get(['/admin', '/admin/'], (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.sendFile(path.join(__dirname, 'admin.html'));
+});
+
 app.get('/signin', (req, res) => res.sendFile(path.join(__dirname, 'signin.html')));
 app.get('/login', (req, res) => res.redirect(301, '/signin'));
 app.get('/signup', (req, res) => res.sendFile(path.join(__dirname, 'signup.html')));

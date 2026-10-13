@@ -191,4 +191,77 @@ export function updateUserProfile(userId, updates) {
     };
 }
 
+// ── Owner-panel management helpers ──────────────────────────────────────────
+export function publicUser(u) {
+    const { passwordHash, resetToken, resetTokenExpires, ...rest } = u;
+    return { role: 'user', disabled: false, ...rest };
+}
+
+const EDITABLE = ['name', 'phone', 'companyName', 'jobTitle', 'companySize', 'industry'];
+
+export function adminCreateUser(fields, passwordHash) {
+    const users = readUsers();
+    const email = (fields.email || '').trim().toLowerCase();
+    if (users.some(u => (u.email || '').trim().toLowerCase() === email)) {
+        throw new UserStoreError('An account with this email already exists.', 409);
+    }
+    const now = new Date().toISOString();
+    const user = {
+        id: 'usr_' + crypto.randomBytes(12).toString('hex'),
+        name: (fields.name || '').trim(),
+        email,
+        phone: '', companyName: '', jobTitle: '', companySize: '', industry: '',
+        profileCompleted: false,
+        role: fields.role === 'admin' ? 'admin' : 'user',
+        disabled: false,
+        passwordHash,
+        createdAt: now,
+        updatedAt: now,
+        resetToken: null,
+        resetTokenExpires: null
+    };
+    for (const k of EDITABLE) {
+        if (k !== 'name' && typeof fields[k] === 'string') user[k] = fields[k].trim();
+    }
+    users.push(user);
+    writeUsers(users);
+    return publicUser(user);
+}
+
+export function adminUpdateUser(userId, fields, passwordHash) {
+    const users = readUsers();
+    const user = users.find(u => u.id === userId);
+    if (!user) throw new UserStoreError('User not found.', 404);
+
+    if (typeof fields.email === 'string') {
+        const email = fields.email.trim().toLowerCase();
+        if (users.some(u => u.id !== userId && (u.email || '').trim().toLowerCase() === email)) {
+            throw new UserStoreError('Another account already uses this email.', 409);
+        }
+        user.email = email;
+    }
+    for (const k of EDITABLE) {
+        if (typeof fields[k] === 'string') user[k] = fields[k].trim();
+    }
+    if (fields.role === 'admin' || fields.role === 'user') user.role = fields.role;
+    if (typeof fields.disabled === 'boolean') user.disabled = fields.disabled;
+    if (passwordHash) {
+        user.passwordHash = passwordHash;
+        user.resetToken = null;
+        user.resetTokenExpires = null;
+    }
+    user.updatedAt = new Date().toISOString();
+    writeUsers(users);
+    return publicUser(user);
+}
+
+export function deleteUser(userId) {
+    const users = readUsers();
+    const idx = users.findIndex(u => u.id === userId);
+    if (idx === -1) throw new UserStoreError('User not found.', 404);
+    const [removed] = users.splice(idx, 1);
+    writeUsers(users);
+    return publicUser(removed);
+}
+
 initStore();

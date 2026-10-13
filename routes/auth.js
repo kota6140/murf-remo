@@ -189,6 +189,10 @@ router.post('/login', async (req, res) => {
         return res.status(401).json({ success: false, message: 'Invalid email or password.' });
     }
 
+    if (user.disabled) {
+        return res.status(403).json({ success: false, message: 'This account has been suspended. Please contact support.' });
+    }
+
     const userRole = (user.role || 'user').trim().toLowerCase();
 
     const token = jwt.sign({ id: user.id }, getJwtSecret(), { algorithm: 'HS256', expiresIn: process.env.JWT_EXPIRES_IN || '7d' });

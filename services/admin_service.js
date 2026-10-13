@@ -3,11 +3,14 @@ import { readUsers } from '../users_store.js';
 import { CallQueueWorker } from './call_queue_worker.js';
 
 export default class AdminService {
-    static async getDashboardStats() {
-        let userCount = 128;
+    static async getDashboardStats(ownerId = null) {
+        // ownerId: count only the contact sheets (and calls) uploaded by / assigned to this admin
+        const mine = ownerId ? ` WHERE batch_id IN (SELECT id FROM batches WHERE owner_user_id = ?)` : '';
+        const mineAnd = ownerId ? ` AND batch_id IN (SELECT id FROM batches WHERE owner_user_id = ?)` : '';
+        const mineParams = ownerId ? [ownerId] : [];
+        let userCount = 0;
         try {
-            const realUsers = readUsers();
-            userCount = Math.max(realUsers.length, 128);
+            userCount = ownerId ? 1 : readUsers().length; // an admin only sees their own account
         } catch (e) {}
 
         const contactsRow = (await db.get(`
@@ -25,8 +28,8 @@ export default class AdminService {
                 SUM(CASE WHEN classification LIKE '%Rejected%' THEN 1 ELSE 0 END) as rejected_count,
                 SUM(CASE WHEN classification LIKE '%Hold%' THEN 1 ELSE 0 END) as on_hold_count,
                 SUM(duration_seconds) as total_duration
-            FROM contacts
-        `)) || {};
+            FROM contacts${mine}
+        `, mineParams)) || {};
 
         const dbTotalContacts = Number(contactsRow.total_contacts) || 0;
         const dbCompleted = Number(contactsRow.completed_calls) || 0;
@@ -42,25 +45,9 @@ export default class AdminService {
         const dbOnHold = Number(contactsRow.on_hold_count) || 0;
         const dbDuration = Number(contactsRow.total_duration) || 0;
 
-        const isTesting = process.env.TESTING === '1';
-
-        let totalCalls, activeCalls, completedCalls, recCalls, salesCalls, supportCalls;
-
-        if (isTesting) {
-            totalCalls = 342;
-            activeCalls = 8;
-            completedCalls = 334;
-            recCalls = 150;
-            salesCalls = 102;
-            supportCalls = 90;
-        } else {
-            totalCalls = 342 + (dbCompleted + dbActive + dbFailed);
-            activeCalls = dbActive === 0 ? 8 : dbActive;
-            completedCalls = 334 + dbCompleted;
-            recCalls = 150 + dbRec;
-            salesCalls = 102 + dbSales;
-            supportCalls = 90 + dbSupport;
-        }
+        const totalCalls = dbCompleted + dbActive + dbFailed;
+        const activeCalls = dbActive;
+        const completedCalls = dbCompleted;
 
         const servicesData = {};
         for (const s of ['recruitment', 'sales', 'support']) {
@@ -75,16 +62,16 @@ export default class AdminService {
                     SUM(CASE WHEN call_status IN ('CALLING', 'in-progress') THEN 1 ELSE 0 END) as in_progress,
                     SUM(CASE WHEN call_status = 'SKIPPED' THEN 1 ELSE 0 END) as skipped
                 FROM contacts
-                WHERE service = ?
-            `, [s])) || {};
+                WHERE service = ?${mineAnd}
+            `, [s, ...mineParams])) || {};
 
             const latestBatch = await db.get(`
                 SELECT filename, status, updated_at
                 FROM batches
-                WHERE service = ?
+                WHERE service = ?${ownerId ? ' AND owner_user_id = ?' : ''}
                 ORDER BY created_at DESC
                 LIMIT 1
-            `, [s]);
+            `, ownerId ? [s, ownerId] : [s]);
 
             servicesData[s] = {
                 total: Number(sRow.total) || 0,
@@ -103,10 +90,19 @@ export default class AdminService {
 
         let queueStatus = { active: false, queueLength: 0 };
         try {
-            queueStatus = await CallQueueWorker.getQueueStatus();
+            queueStatus = await CallQueueWorker.getQueueStatus(null, ownerId);
         } catch (e) {}
 
-        const hoursSaved = 142.5 + Math.round(((dbDuration / 3600.0) + (dbCompleted * 0.15)) * 10) / 10;
+        const hoursSaved = Math.round(((dbDuration / 3600.0) + (dbCompleted * 0.15)) * 10) / 10;
+        const avgSec = dbCompleted ? Math.round(dbDuration / dbCompleted) : 0;
+        const avgCallDuration = `${String(Math.floor(avgSec / 60)).padStart(2, '0')}:${String(avgSec % 60).padStart(2, '0')}`;
+
+        const sentimentRow = (await db.get(`
+            SELECT COUNT(*) AS total, SUM(CASE WHEN sentiment = 'positive' THEN 1 ELSE 0 END) AS positive
+            FROM conversations${ownerId ? ` WHERE owner_user_id = ? OR contact_id IN (SELECT id FROM contacts WHERE batch_id IN (SELECT id FROM batches WHERE owner_user_id = ?))` : ''}
+        `, ownerId ? [ownerId, ownerId] : [])) || {};
+        const sentimentTotal = Number(sentimentRow.total) || 0;
+        const satisfactionRate = sentimentTotal ? Math.round((Number(sentimentRow.positive) / sentimentTotal) * 1000) / 10 : null;
 
         return {
             totalUsers: userCount,
@@ -117,15 +113,15 @@ export default class AdminService {
             failedCalls: dbFailed,
             pendingCalls: dbPending,
             skippedCalls: dbSkipped,
-            recruitmentCalls: recCalls,
-            salesCalls,
-            supportCalls,
+            recruitmentCalls: servicesData.recruitment.completed + servicesData.recruitment.inProgress,
+            salesCalls: servicesData.sales.completed + servicesData.sales.inProgress,
+            supportCalls: servicesData.support.completed + servicesData.support.inProgress,
             acceptedCount: dbAccepted,
             rejectedCount: dbRejected,
             onHoldCount: dbOnHold,
             hoursSaved,
-            avgCallDuration: "03:45",
-            satisfactionRate: 94.8,
+            avgCallDuration,
+            satisfactionRate,
             services: servicesData,
             queue: queueStatus
         };

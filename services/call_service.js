@@ -112,7 +112,7 @@ export default class CallService {
         }
     ];
 
-    static async getCalls(service = '', status = '', user = '', date = '', search = '', page = 1, limit = 10) {
+    static async getCalls(service = '', status = '', user = '', date = '', search = '', page = 1, limit = 10, ownerId = null) {
         const dbCalls = [];
         try {
             const rows = await db.all(`
@@ -120,8 +120,9 @@ export default class CallService {
                 FROM contacts c
                 LEFT JOIN batches b ON c.batch_id = b.id
                 WHERE c.call_status IN ('CALLING', 'COMPLETED', 'FAILED', 'UNANSWERED', 'in-progress')
+                ${ownerId ? 'AND b.owner_user_id = ?' : ''}
                 ORDER BY c.updated_at DESC
-            `);
+            `, ownerId ? [ownerId] : []);
 
             for (const r of rows) {
                 const durSec = r.duration_seconds || 0;
@@ -150,7 +151,7 @@ export default class CallService {
         }
 
         const allCalls = [...dbCalls];
-        for (const sample of this._SAMPLE_CALLS) {
+        for (const sample of (ownerId ? [] : this._SAMPLE_CALLS)) {
             if (!dbCalls.some(d => d.callerNumber === sample.callerNumber)) {
                 allCalls.push(sample);
             }

@@ -339,7 +339,7 @@ export default class ExcelService {
         };
     }
 
-    static async generateUpdatedWorkbook(service, batchId = null) {
+    static async generateUpdatedWorkbook(service, batchId = null, ownerId = null) {
         const cleanService = (service || 'recruitment').toLowerCase().trim();
         let query = 'SELECT * FROM contacts WHERE service = ?';
         const params = [cleanService];
@@ -347,6 +347,10 @@ export default class ExcelService {
         if (batchId) {
             query += ' AND batch_id = ?';
             params.push(batchId);
+        }
+        if (ownerId) {
+            query += ' AND batch_id IN (SELECT id FROM batches WHERE owner_user_id = ?)';
+            params.push(ownerId);
         }
         query += ' ORDER BY row_index ASC, updated_at DESC';
 

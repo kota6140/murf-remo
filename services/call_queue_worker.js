@@ -3,23 +3,35 @@ import ExotelService from './exotel_service.js';
 
 export class CallQueueWorker {
     static isPaused = false;
+    // Admins who paused their own queue (their calls are skipped; everyone else's keep going).
+    static pausedOwners = new Set();
     static isRunning = false;
     static activeLoop = null;
 
-    static async getQueueStatus(batchId = null) {
+    static async getQueueStatus(batchId = null, ownerId = null) {
         try {
             let activeCount = 0;
             if (batchId) {
                 const row = await db.get("SELECT COUNT(*) as cnt FROM call_queue WHERE status = 'QUEUED' AND batch_id = ?", [batchId]);
                 activeCount = row ? Number(row.cnt) : 0;
+            } else if (ownerId) {
+                const row = await db.get("SELECT COUNT(*) as cnt FROM call_queue WHERE status = 'QUEUED' AND batch_id IN (SELECT id FROM batches WHERE owner_user_id = ?)", [ownerId]);
+                activeCount = row ? Number(row.cnt) : 0;
             } else {
                 const row = await db.get("SELECT COUNT(*) as cnt FROM call_queue WHERE status = 'QUEUED'");
                 activeCount = row ? Number(row.cnt) : 0;
             }
+            let active = this.isRunning;
+            let paused = this.isPaused;
+            if (ownerId) {
+                const busy = await db.get("SELECT COUNT(*) as cnt FROM call_queue WHERE status = 'IN_PROGRESS' AND batch_id IN (SELECT id FROM batches WHERE owner_user_id = ?)", [ownerId]);
+                active = activeCount > 0 || Number(busy ? busy.cnt : 0) > 0;
+                paused = this.isPaused || this.pausedOwners.has(ownerId);
+            }
             return {
-                isPaused: this.isPaused,
+                isPaused: paused,
                 queueLength: activeCount,
-                active: this.isRunning
+                active
             };
         } catch (e) {
             console.error('[CallQueueWorker] getQueueStatus error:', e);
@@ -27,12 +39,15 @@ export class CallQueueWorker {
         }
     }
 
-    static pauseQueue() {
-        this.isPaused = true;
+    // With an ownerId only that admin's calls are paused/resumed; without one it is the whole system.
+    static pauseQueue(ownerId = null) {
+        if (ownerId) this.pausedOwners.add(ownerId);
+        else this.isPaused = true;
     }
 
-    static resumeQueue() {
-        this.isPaused = false;
+    static resumeQueue(ownerId = null) {
+        if (ownerId) this.pausedOwners.delete(ownerId);
+        else this.isPaused = false;
         this._startLoop();
     }
 
@@ -46,10 +61,19 @@ export class CallQueueWorker {
         }
     }
 
-    static async cancelQueue(batchId) {
+    static async cancelQueue(batchId, ownerId = null) {
         const now = utcNow();
         try {
-            if (batchId) {
+            if (ownerId && batchId) {
+                const own = await db.get('SELECT id FROM batches WHERE id = ? AND owner_user_id = ?', [batchId, ownerId]);
+                if (!own) return;
+            }
+            if (ownerId && !batchId) {
+                const scope = 'batch_id IN (SELECT id FROM batches WHERE owner_user_id = ?)';
+                await db.run(`UPDATE call_queue SET status = 'CANCELLED', updated_at = ? WHERE ${scope} AND status IN ('QUEUED', 'IN_PROGRESS')`, [now, ownerId]);
+                await db.run(`UPDATE contacts SET call_status = 'CANCELLED', updated_at = ? WHERE ${scope} AND call_status IN ('PENDING', 'CALLING', 'in-progress')`, [now, ownerId]);
+                await db.run("UPDATE batches SET status = 'CANCELLED', updated_at = ? WHERE owner_user_id = ? AND status IN ('READY', 'IN_PROGRESS')", [now, ownerId]);
+            } else if (batchId) {
                 await db.run("UPDATE call_queue SET status = 'CANCELLED', updated_at = ? WHERE batch_id = ? AND status IN ('QUEUED', 'IN_PROGRESS')", [now, batchId]);
                 await db.run("UPDATE contacts SET call_status = 'CANCELLED', updated_at = ? WHERE batch_id = ? AND call_status IN ('PENDING', 'CALLING', 'in-progress')", [now, batchId]);
                 await db.run("UPDATE batches SET status = 'CANCELLED', updated_at = ? WHERE id = ?", [now, batchId]);
@@ -101,14 +125,18 @@ export class CallQueueWorker {
 
         let nextJob = null;
         try {
+            const pausedOwners = [...this.pausedOwners];
+            const skipPaused = pausedOwners.length
+                ? ` AND cq.batch_id NOT IN (SELECT id FROM batches WHERE owner_user_id IN (${pausedOwners.map(() => '?').join(',')}))`
+                : '';
             nextJob = await db.get(`
                 SELECT cq.id as queue_id, cq.contact_id, cq.batch_id, c.phone, c.name, c.service
                 FROM call_queue cq
                 JOIN contacts c ON cq.contact_id = c.id
-                WHERE cq.status = 'QUEUED'
+                WHERE cq.status = 'QUEUED'${skipPaused}
                 ORDER BY cq.priority DESC, cq.created_at ASC
                 LIMIT 1
-            `);
+            `, pausedOwners);
 
             if (!nextJob) {
                 // Queue is empty, mark finished batches as COMPLETED

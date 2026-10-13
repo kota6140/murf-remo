@@ -371,6 +371,24 @@ export async function transaction(fn) {
     }
 }
 
+// Links calls to the admin user who uploaded them (batches.owner_user_id) or who was assigned them
+// from the owner panel (conversations.owner_user_id). Added lazily so existing databases upgrade in place.
+let ownerColumnsReady = null;
+export function ensureOwnerColumns() {
+    if (!ownerColumnsReady) {
+        ownerColumnsReady = (async () => {
+            for (const table of ['batches', 'conversations']) {
+                try {
+                    await get(`SELECT owner_user_id FROM ${table} LIMIT 1`);
+                } catch {
+                    await run(`ALTER TABLE ${table} ADD COLUMN owner_user_id VARCHAR(64) NULL`);
+                }
+            }
+        })().catch((e) => { ownerColumnsReady = null; throw e; });
+    }
+    return ownerColumnsReady;
+}
+
 export const db = {
     get,
     all,

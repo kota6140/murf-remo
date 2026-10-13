@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Takeremo Admin</title>
+    <link rel="icon" href="/favicon.ico">
+    <link rel="stylesheet" href="/admin.css">
+</head>
+<body>
+
+<!-- ───────────── Login ───────────── -->
+<main id="loginView" class="login-wrap" hidden>
+    <form id="loginForm" class="login-card" autocomplete="on" novalidate>
+        <img src="/assets/Takeremo AI Calling Logo Transparent.png" alt="Takeremo" class="login-logo">
+        <h1>Admin sign in</h1>
+        <p class="muted">Restricted area for Takeremo owners.</p>
+        <div id="loginError" class="alert" role="alert" hidden></div>
+        <label>Admin email
+            <input type="email" id="loginEmail" name="email" autocomplete="username" required autofocus>
+        </label>
+        <label>Password
+            <input type="password" id="loginPassword" name="password" autocomplete="current-password" required>
+        </label>
+        <button type="submit" class="btn primary block" id="loginBtn">Sign in</button>
+    </form>
+</main>
+
+<!-- ───────────── Panel ───────────── -->
+<div id="appView" class="app" hidden>
+    <aside class="sidebar">
+        <div class="brand"><div class="brand-logo"><img src="/assets/Takeremo AI Calling Logo Transparent.png" alt="Takeremo AI Calling"></div><span class="brand-tag">Admin panel</span></div>
+        <nav>
+            <button class="nav-btn active" data-tab="overview">Overview</button>
+            <button class="nav-btn" data-tab="submissions">Form submissions <span class="badge" id="navSubCount">0</span></button>
+            <button class="nav-btn" data-tab="users">Users <span class="badge" id="navUserCount">0</span></button>
+            <button class="nav-btn" data-tab="calls">Calls &amp; data</button>
+        </nav>
+        <div class="sidebar-foot">
+            <div class="muted small" id="ownerEmail"></div>
+            <button class="btn ghost block" id="logoutBtn">Sign out</button>
+        </div>
+    </aside>
+
+    <main class="content">
+        <section id="tab-overview" class="tab">
+            <header class="page-head"><h2>Overview</h2><button class="btn ghost" data-refresh>Refresh</button></header>
+            <div class="stat-grid" id="statGrid"></div>
+            <h3>Latest submissions</h3>
+            <div class="table-wrap"><table id="recentTable"></table></div>
+        </section>
+
+        <section id="tab-submissions" class="tab" hidden>
+            <header class="page-head"><h2>Form submissions</h2><button class="btn ghost" data-refresh>Refresh</button></header>
+            <div class="toolbar">
+                <input type="search" id="subSearch" placeholder="Search name, company, email, phone…">
+                <select id="subStatus">
+                    <option value="">All statuses</option>
+                    <option value="pending">Pending</option>
+                    <option value="in_review">In review</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
+                </select>
+            </div>
+            <div class="table-wrap"><table id="subTable"></table></div>
+        </section>
+
+        <section id="tab-users" class="tab" hidden>
+            <header class="page-head"><h2>Users</h2>
+                <div><button class="btn ghost" data-refresh>Refresh</button> <button class="btn primary" id="addUserBtn">+ Add user</button></div>
+            </header>
+            <div class="toolbar">
+                <input type="search" id="userSearch" placeholder="Search name, email, company…">
+                <select id="userFilter">
+                    <option value="">All users</option>
+                    <option value="submitted">Filled the form</option>
+                    <option value="not_submitted">Not filled the form</option>
+                    <option value="disabled">Suspended</option>
+                    <option value="admin">Role: admin</option>
+                </select>
+            </div>
+            <div class="table-wrap"><table id="userTable"></table></div>
+        </section>
+
+        <section id="tab-calls" class="tab" hidden>
+            <header class="page-head"><h2>Calls &amp; data</h2><button class="btn ghost" id="callsRefresh">Refresh</button></header>
+            <p class="muted" style="margin:-8px 0 14px">Everything across all admins: conversations, call history, queued calls and uploaded contact sheets, with the admin each one belongs to.</p>
+            <div class="ws-tabs sec-tabs" role="tablist">
+                <button class="cs-tab active" data-cs="conversations" role="tab">Conversations</button>
+                <button class="cs-tab" data-cs="calls" role="tab">Call history</button>
+                <button class="cs-tab" data-cs="scheduled" role="tab">Scheduled calls</button>
+                <button class="cs-tab" data-cs="sheets" role="tab">Assigned data</button>
+            </div>
+            <div class="toolbar" style="margin-top:14px">
+                <input type="search" id="csSearch" placeholder="Search name, phone, file…">
+                <select id="csOwner" aria-label="Filter by admin"></select>
+                <select id="csStatus" aria-label="Filter by status"></select>
+            </div>
+            <div id="csBody"></div>
+        </section>
+    </main>
+</div>
+
+<!-- Submission detail drawer -->
+<div id="drawer" class="drawer" hidden>
+    <div class="drawer-bg" data-close></div>
+    <div class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawerTitle">
+        <header><h3 id="drawerTitle">Submission</h3><button class="icon-btn" data-close aria-label="Close">×</button></header>
+        <div id="drawerBody" class="drawer-body"></div>
+    </div>
+</div>
+
+<!-- User modal -->
+<div id="userModal" class="modal" hidden>
+    <div class="modal-bg" data-close></div>
+    <form class="modal-card" id="userForm" novalidate role="dialog" aria-modal="true" aria-labelledby="userModalTitle">
+        <h3 id="userModalTitle">Add user</h3>
+        <div id="userFormError" class="alert" hidden role="alert"></div>
+        <div class="form-grid">
+            <label>Name *<input name="name" required></label>
+            <label>Email *<input name="email" type="email" required></label>
+            <label>Phone<input name="phone"></label>
+            <label>Company<input name="companyName"></label>
+            <label>Job title<input name="jobTitle"></label>
+            <label>Industry<input name="industry"></label>
+            <label>Role
+                <select name="role"><option value="user">User</option><option value="admin">Admin (call dashboard)</option></select>
+            </label>
+            <label id="pwLabel">Password *<input name="password" type="text" autocomplete="new-password" minlength="6"></label>
+        </div>
+        <div class="modal-actions">
+            <button type="button" class="btn ghost" data-close>Cancel</button>
+            <button type="submit" class="btn primary" id="userSaveBtn">Save</button>
+        </div>
+    </form>
+</div>
+
+<!-- Confirm modal -->
+<div id="confirmModal" class="modal" hidden>
+    <div class="modal-bg" data-close></div>
+    <div class="modal-card small" role="alertdialog" aria-modal="true">
+        <h3 id="confirmTitle"></h3>
+        <p id="confirmText" class="muted"></p>
+        <label id="confirmExtra" class="check" hidden><input type="checkbox" id="confirmExtraBox"> <span></span></label>
+        <div class="modal-actions">
+            <button class="btn ghost" data-close>Cancel</button>
+            <button class="btn danger" id="confirmOk">Delete</button>
+        </div>
+    </div>
+</div>
+
+<!-- Admin workspace: calls data for one admin user -->
+<div id="wsDrawer" class="drawer" hidden>
+    <div class="drawer-bg" data-close></div>
+    <div class="drawer-panel wide" role="dialog" aria-modal="true" aria-labelledby="wsTitle">
+        <header><div><h3 id="wsTitle">Admin</h3><div class="muted small" id="wsSub"></div></div><button class="icon-btn" data-close aria-label="Close">&times;</button></header>
+        <div class="ws-tabs" role="tablist">
+            <button class="ws-tab active" data-ws="conversations" role="tab">Conversations</button>
+            <button class="ws-tab" data-ws="calls" role="tab">Call history</button>
+            <button class="ws-tab" data-ws="scheduled" role="tab">Scheduled calls</button>
+            <button class="ws-tab" data-ws="batches" role="tab">Assign data</button>
+        </div>
+        <div id="wsBody" class="drawer-body"></div>
+    </div>
+</div>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="/admin-panel.js"></script>
+</body>
+</html>

@@ -35,6 +35,13 @@ export function authenticateJwt(req, res, next) {
             });
         }
 
+        if (user.disabled) {
+            return res.status(403).json({
+                success: false,
+                message: 'This account has been suspended. Please contact support.'
+            });
+        }
+
         const userRole = (user.role || 'user').trim().toLowerCase();
 
         req.user = {
@@ -81,18 +88,7 @@ export function requireAdmin(req, res, next) {
             });
         }
 
-        const adminEmail = (process.env.EMAIL_USER || 'Reach@takeremo.com').trim().toLowerCase();
-        const userEmail = (req.user.email || '').trim().toLowerCase();
-
-        if (userEmail !== adminEmail && !process.env.TESTING) {
-            if (!userEmail.startsWith('admin.tester@') && !userEmail.startsWith('user_')) {
-                return res.status(403).json({
-                    success: false,
-                    message: `Access restricted: Only the authorized administrator (${adminEmail}) may access this dashboard.`
-                });
-            }
-        }
-        
+        // Admin rights are granted/revoked by the owner from the /admin panel (role field).
         next();
     });
 }

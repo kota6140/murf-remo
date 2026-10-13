@@ -33,15 +33,18 @@ export default class ConversationService {
         }
     ];
 
-    static async getConversations(service = "", user = "", status = "", date = "", search = "", page = 1, limit = 10) {
+    static async getConversations(service = "", user = "", status = "", date = "", search = "", page = 1, limit = 10, ownerId = null) {
         let dbItems = [];
         try {
+            // ownerId: only conversations owned by this admin (directly, or through the contact sheet they uploaded)
             const rows = await db.all(`
                 SELECT c.*, ct.extracted_data, ct.notes
                 FROM conversations c
                 LEFT JOIN contacts ct ON c.contact_id = ct.id
+                LEFT JOIN batches b ON b.id = ct.batch_id
+                ${ownerId ? 'WHERE c.owner_user_id = ? OR b.owner_user_id = ?' : ''}
                 ORDER BY c.created_at DESC
-            `);
+            `, ownerId ? [ownerId, ownerId] : []);
 
             for (const r of rows) {
                 let extracted = {};
@@ -76,7 +79,7 @@ export default class ConversationService {
 
         const isTesting = process.env.TESTING === '1';
         let allItems = dbItems;
-        if (isTesting || dbItems.length === 0) {
+        if (!ownerId && (isTesting || dbItems.length === 0)) {
             const mocksToAdd = this._SAMPLE_CONVERSATIONS.filter(s => !dbItems.some(d => d.id === s.id));
             allItems = [...dbItems, ...mocksToAdd];
         }
@@ -130,7 +133,7 @@ export default class ConversationService {
         };
     }
 
-    static async getConversationById(convId) {
+    static async getConversationById(convId, ownerId = null) {
         if (!convId) return null;
         const normId = convId.trim();
 
@@ -139,8 +142,9 @@ export default class ConversationService {
                 SELECT c.*, ct.extracted_data, ct.notes
                 FROM conversations c
                 LEFT JOIN contacts ct ON c.contact_id = ct.id
-                WHERE c.id = ?
-            `, [normId]);
+                LEFT JOIN batches b ON b.id = ct.batch_id
+                WHERE c.id = ? ${ownerId ? 'AND (c.owner_user_id = ? OR b.owner_user_id = ?)' : ''}
+            `, ownerId ? [normId, ownerId, ownerId] : [normId]);
 
             if (r) {
                 const msgs = await db.all(`
@@ -186,7 +190,7 @@ export default class ConversationService {
             console.error('[ConversationService] Error querying conversation by id:', e);
         }
 
-        const fallback = this._SAMPLE_CONVERSATIONS.find(s => s.id.toLowerCase() === normId.toLowerCase());
+        const fallback = ownerId ? null : this._SAMPLE_CONVERSATIONS.find(s => s.id.toLowerCase() === normId.toLowerCase());
         if (fallback) {
             return { ...fallback, extractedFields: fallback.collectedData || {} };
         }
