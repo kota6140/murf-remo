@@ -247,11 +247,12 @@ async function main() {
 
     runTest('Recruitment, Sales, and Customer Support greetings are isolated and unique', () => {
         const recGreeting = GeminiService.getOpeningGreeting('recruitment', { job_role: 'Data Scientist' });
-        const salGreeting = GeminiService.getOpeningGreeting('sales', { company: 'FinCorp' });
+        const salGreeting = GeminiService.getOpeningGreeting('sales', { name: 'Rahul', company: 'FinCorp' });
         const supGreeting = GeminiService.getOpeningGreeting('support', {});
 
         assert.ok(recGreeting.includes('application for Data Scientist'));
-        assert.ok(salGreeting.includes('automate voice communications for FinCorp'));
+        assert.ok(salGreeting.includes('Scorelabs Inc.'));
+        assert.ok(salGreeting.includes('custom software development'));
         assert.ok(supGreeting.includes('customer support'));
         assert.notStrictEqual(recGreeting, salGreeting);
         assert.notStrictEqual(salGreeting, supGreeting);
@@ -259,8 +260,8 @@ async function main() {
 
     runTest('Sales has valid, dedicated Telugu fallback without recycling recruitment prompts', () => {
         const teSalesFallback = GeminiService.getUniversalFallback('te', 'sales');
-        assert.ok(teSalesFallback.includes('స్కోర్ ల్యాబ్స్'));
-        assert.ok(teSalesFallback.includes('వాయిస్ ఆటోమేషన్'));
+        assert.ok(teSalesFallback.includes('స్కోర్‌ల్యాబ్స్'));
+        assert.ok(teSalesFallback.includes('కస్టమ్ సాఫ్ట్‌వేర్'));
         assert.ok(!teSalesFallback.includes('జాబ్ అప్లికేషన్'), 'Sales fallback must never reference recruitment jobs');
     });
 
