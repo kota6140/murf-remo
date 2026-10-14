@@ -1,4 +1,5 @@
 import db, { utcNow } from './db.js';
+import PlivoService from './plivo_service.js';
 import ExotelService from './exotel_service.js';
 
 export class CallQueueWorker {
@@ -161,23 +162,43 @@ export class CallQueueWorker {
             return;
         }
 
-        console.log(`[QUEUE] Initiating real Exotel call to ${nextJob.phone} for service ${nextJob.service}...`);
+        let result;
+        const usePlivo = PlivoService.isConfigured();
+
+        if (usePlivo) {
+            console.log(`[QUEUE] Initiating outbound Plivo call to ${nextJob.phone} for service ${nextJob.service}...`);
+            try {
+                const contactRecord = await db.get("SELECT * FROM contacts WHERE id = ?", [nextJob.contact_id]) || nextJob;
+                result = await PlivoService.initiateOutboundCall(contactRecord, nextJob.service);
+            } catch (plivoErr) {
+                console.error('[QUEUE] Plivo dispatch error:', plivoErr);
+                result = { success: false, error: plivoErr.message };
+            }
+        } else {
+            console.log(`[QUEUE] Plivo not configured. Initiating real Exotel call to ${nextJob.phone} for service ${nextJob.service}...`);
+            try {
+                result = await ExotelService.initiateOutboundCall(nextJob.phone, nextJob.contact_id);
+            } catch (exoErr) {
+                console.error(`[QUEUE] Exotel dialing error:`, exoErr);
+                result = { success: false, error: exoErr.message };
+            }
+        }
 
         try {
-            const result = await ExotelService.initiateOutboundCall(nextJob.phone, nextJob.contact_id);
             const now = utcNow();
+            const sid = result.callUuid || result.callSid;
 
-            if (result.success && result.callSid) {
+            if (result.success && sid) {
                 await db.run(
                     "UPDATE contacts SET provider_call_id = ?, call_status = 'CALLING', started_at = ?, updated_at = ? WHERE id = ?",
-                    [result.callSid, now, now, nextJob.contact_id]
+                    [sid, now, now, nextJob.contact_id]
                 );
-                console.log(`[QUEUE] Outbound call connected! CallSid: ${result.callSid}`);
+                console.log(`[QUEUE] Outbound call connected via ${usePlivo ? 'Plivo' : 'Exotel'}! ID: ${sid}`);
             } else {
-                console.warn(`[QUEUE] Exotel dispatch failed: ${result.error}`);
+                console.warn(`[QUEUE] Dispatch failed: ${result.error}`);
                 await db.run(
                     "UPDATE contacts SET call_status = 'FAILED', error_details = ?, updated_at = ? WHERE id = ?",
-                    [result.error || 'Exotel dispatch rejected', now, nextJob.contact_id]
+                    [result.error || 'Dispatch rejected', now, nextJob.contact_id]
                 );
                 await db.run(
                     "UPDATE call_queue SET status = 'FAILED', updated_at = ? WHERE id = ?",
@@ -185,7 +206,7 @@ export class CallQueueWorker {
                 );
             }
         } catch (err) {
-            console.error(`[QUEUE] Error dialing ${nextJob.phone}:`, err);
+            console.error(`[QUEUE] Error logging dial result for ${nextJob.phone}:`, err);
             const now = utcNow();
             await db.run(
                 "UPDATE contacts SET call_status = 'FAILED', error_details = ?, updated_at = ? WHERE id = ?",

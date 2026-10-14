@@ -37,21 +37,20 @@ Phase 13 (Production) ◄──────────────────�
 
 ---
 
-### Phase 3: Voice Pipeline Selection (STT & TTS Benchmarking)
-- **Goal**: Select speech-to-text and text-to-speech providers achieving sub-800ms round-trip latency.
-- **Required Components**: Deepgram Nova-2 vs Whisper (STT); ElevenLabs Turbo v2.5 vs Cartesia Sonic (TTS).
+### Phase 3: Voice Pipeline Integration (ElevenLabs STT & TTS)
+- **Goal**: Implement speech-to-text (ElevenLabs Scribe) and text-to-speech (ElevenLabs Multilingual v2 / Turbo) with native 8kHz mu-law telephony output.
+- **Required Components**: ElevenLabs API integration, voice persona (`ELEVENLABS_VOICE_ID`), and backchannel-protected turn-taking.
 - **Dependencies**: Phase 2.
-- **Expected Output**: Configured streaming WebSocket audio bridge with confirmed voice persona matching REMO's traits.
-- **What Should NOT Be Done Yet**: Do not purchase production phone numbers or deploy live customer routing.
+- **Expected Output**: Configured streaming WebSocket audio bridge with confirmed voice persona and anti-abandonment conversation mechanics.
+- **What Should NOT Be Done Yet**: Do not publish unmonitored numbers.
 
 ---
 
-### Phase 4: Telephony Gateway & Phone Number Provisioning
-- **Goal**: Establish SIP trunking and inbound/outbound PSTN calling capabilities.
-- **Required Components**: Telephony provider account (Twilio / Exotel / LiveKit); provisioned test telephone numbers.
+### Phase 4: Telephony Gateway (Plivo Carrier Integration)
+- **Goal**: Establish Plivo outbound dialing and bidirectional audio streaming (`<Stream>`).
+- **Required Components**: Plivo carrier account (`PLIVO_AUTH_ID`, `PLIVO_AUTH_TOKEN`, `PLIVO_VIRTUAL_NUMBER`); provisioned telephone numbers.
 - **Dependencies**: Phase 3.
-- **Expected Output**: Working test phone line that streams live two-way audio to the local development environment.
-- **What Should NOT Be Done Yet**: Do not publish the phone number publicly or connect customer CRM.
+- **Expected Output**: Working test phone line that streams live two-way 8kHz mu-law audio between Plivo and the backend server.
 
 ---
 

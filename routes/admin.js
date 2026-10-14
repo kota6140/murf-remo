@@ -20,6 +20,8 @@ import RecruitmentService from '../services/recruitment_service.js';
 import SalesService from '../services/sales_service.js';
 import SupportService from '../services/support_service.js';
 import { CallQueueWorker } from '../services/call_queue_worker.js';
+import PlivoService from '../services/plivo_service.js';
+import ElevenLabsService from '../services/elevenlabs_service.js';
 
 const SERVICES = {
     recruitment: RecruitmentService,
@@ -209,8 +211,8 @@ router.delete('/calls/:id', wrap(async (req, res) => {
     const m = /^call_([A-Za-z0-9_-]{1,8})$/.exec(req.params.id);
     if (!m) return fail(res, 404, 'Call record not found.');
     const rows = await db.all(
-        'SELECT ct.id FROM contacts ct JOIN batches b ON b.id = ct.batch_id WHERE ct.id LIKE ? AND b.owner_user_id = ?',
-        [`${m[1]}%`, req.user.id]);
+        'SELECT ct.id FROM contacts ct LEFT JOIN batches b ON b.id = ct.batch_id WHERE ct.id LIKE ? AND (b.owner_user_id = ? OR ct.owner_user_id = ? OR b.owner_user_id IS NULL)',
+        [`${m[1]}%`, req.user.id, req.user.id]);
     if (rows.length !== 1) return fail(res, 404, 'Call record not found.');
     await db.run("UPDATE contacts SET call_status = 'DELETED', updated_at = ? WHERE id = ?", [utcNow(), rows[0].id]);
     res.json({ success: true, message: 'Call record deleted.' });
@@ -240,17 +242,204 @@ router.post('/queue/cancel', wrap(async (req, res) => {
 }));
 
 // ============================================================================
-// POST /api/admin/test-call  (placeholder: does not place a call yet)
+// POST /api/admin/test-call
 // ============================================================================
-router.post('/test-call', (req, res) => {
+router.post('/test-call', async (req, res) => {
     const { phone, name, service } = req.body || {};
     if (!phone || !name) return fail(res, 400, 'Phone and name are required.');
-    console.log(`[AdminRoutes] Test call request: ${name} (${phone}) — service: ${service}`);
-    res.json({ success: true, message: `Test call initiated for ${name} at ${phone}.` });
+
+    console.log(`[AdminRoutes] Test call request: ${name} (${phone}) — service: ${service || 'recruitment'}`);
+
+    try {
+        if (PlivoService.isConfigured()) {
+            const ownerId = req.user?.id || 'usr_admin_takeremo_reach';
+            const contactId = `cnt_test_${Date.now()}`;
+            const now = utcNow();
+
+            const testContact = {
+                id: contactId,
+                phone: phone,
+                name: name,
+                service: service || 'recruitment',
+                owner_user_id: ownerId,
+                job_role: 'Senior Software Engineer',
+                experience: '4 years',
+                skills: 'Node.js, React, Voice AI',
+                company: 'Score Labs',
+                notes: 'Live test call initiated from Admin Dashboard'
+            };
+
+            // Pre-insert into contacts table
+            try {
+                await db.run(`
+                    INSERT INTO contacts (
+                        id, batch_id, service, row_index, raw_data, name, phone, preferred_language,
+                        notes, extra_data, validation_status, validation_errors, call_status,
+                        started_at, updated_at, owner_user_id
+                    ) VALUES (?, 'direct_batch', ?, 1, ?, ?, ?, 'en', ?, ?, 'VALID', '[]', 'CALLING', ?, ?, ?)
+                `, [
+                    testContact.id,
+                    testContact.service,
+                    JSON.stringify(testContact),
+                    testContact.name,
+                    testContact.phone,
+                    testContact.notes,
+                    JSON.stringify({
+                        job_role: testContact.job_role,
+                        experience: testContact.experience,
+                        skills: testContact.skills,
+                        company: testContact.company
+                    }),
+                    now,
+                    now,
+                    ownerId
+                ]);
+            } catch (insErr) {
+                console.warn('[AdminRoutes] Note: pre-insert test contact:', insErr.message);
+            }
+
+            const callResult = await PlivoService.initiateOutboundCall(testContact, service || 'recruitment');
+            if (callResult.success) {
+                if (callResult.callUuid) {
+                    await db.run('UPDATE contacts SET provider_call_id = ? WHERE id = ?', [callResult.callUuid, testContact.id]).catch(() => {});
+                }
+                return res.json({
+                    success: true,
+                    message: `Test call initiated successfully via Plivo to ${phone}! Call ID: ${callResult.callUuid}`,
+                    callId: callResult.callUuid
+                });
+            } else {
+                return res.status(502).json({
+                    success: false,
+                    message: `Plivo test call failed: ${callResult.error}`
+                });
+            }
+        } else {
+            return res.json({
+                success: true,
+                message: `Test call recorded (Plivo credentials not configured, simulated only).`
+            });
+        }
+    } catch (err) {
+        console.error('[AdminRoutes] Test call error:', err);
+        return res.status(500).json({ success: false, message: `Server error: ${err.message}` });
+    }
 });
 
 // ============================================================================
-// Exotel webhook handler (exported for server.js; called by Exotel, so no login)
+// Plivo Webhook Handlers (Answer XML, Call Status, Call Hangup)
+// ============================================================================
+export async function handlePlivoAnswer(req, res) {
+    const query = { ...(req.query || {}), ...(req.body || {}) };
+    const callUuid = query.CallUUID || query.call_uuid || query.CallId || '';
+    const contactId = query.contactId || '';
+    const service = query.service || 'recruitment';
+    const ownerId = query.ownerId || '';
+    const phone = query.phone || query.To || '';
+    const name = query.name || '';
+    const role = query.role || query.job_role || '';
+    const company = query.company || '';
+
+    console.log(`[Plivo Answer] Received answer for CallUUID: ${callUuid}, Contact: ${contactId}, Service: ${service}`);
+
+    const cfg = PlivoService.getConfig();
+    const serverUrl = cfg.serverUrl || 'https://election-driller-arguably.ngrok-free.dev';
+    const wsBaseUrl = serverUrl.replace(/^http:\/\//i, 'ws://').replace(/^https:\/\//i, 'wss://');
+    const streamWsUrl = `${wsBaseUrl}/voicebot`;
+    const extraHeaders = `callId=${callUuid},contactId=${contactId},service=${service},ownerId=${ownerId},phone=${phone},name=${encodeURIComponent(name)},role=${encodeURIComponent(role)},company=${encodeURIComponent(company)}`;
+
+    const xml = PlivoService.generateAnswerXml(streamWsUrl, extraHeaders);
+    res.set('Content-Type', 'text/xml');
+    res.status(200).send(xml);
+}
+
+export async function handlePlivoStatus(req, res) {
+    const body = { ...(req.query || {}), ...(req.body || {}) };
+    const callUuid = body.CallUUID || body.call_uuid || '';
+    const status = String(body.CallStatus || body.Status || body.status || '').toLowerCase();
+
+    console.log(`[Plivo Status] CallUUID: ${callUuid}, Status: ${status}`);
+
+    if (callUuid) {
+        try {
+            const now = utcNow();
+            let dbStatus = 'CALLING';
+            if (['in-progress', 'answered'].includes(status)) dbStatus = 'in-progress';
+            else if (['completed'].includes(status)) dbStatus = 'COMPLETED';
+            else if (['busy', 'no-answer', 'timeout'].includes(status)) dbStatus = 'UNANSWERED';
+            else if (['failed', 'rejected'].includes(status)) dbStatus = 'FAILED';
+
+            await db.run(
+                `UPDATE contacts SET call_status = ?, updated_at = ? WHERE provider_call_id = ?`,
+                [dbStatus, now, callUuid]
+            );
+
+            if (['COMPLETED', 'FAILED', 'UNANSWERED'].includes(dbStatus)) {
+                await db.run(
+                    `UPDATE call_queue SET status = ?, updated_at = ? WHERE contact_id IN (SELECT id FROM contacts WHERE provider_call_id = ?)`,
+                    [dbStatus, now, callUuid]
+                );
+            }
+        } catch (e) {
+            console.error('[Plivo Status] DB update error:', e.message);
+        }
+    }
+
+    res.status(200).send('OK');
+}
+
+export async function handlePlivoHangup(req, res) {
+    const body = { ...(req.query || {}), ...(req.body || {}) };
+    const callUuid = body.CallUUID || body.call_uuid || '';
+    const duration = parseInt(body.Duration || body.duration || body.CallDuration || '0', 10) || 0;
+
+    console.log(`[Plivo Hangup] CallUUID: ${callUuid}, Duration: ${duration}s`);
+
+    if (callUuid) {
+        try {
+            const now = utcNow();
+            await db.run(
+                `UPDATE contacts SET call_status = 'COMPLETED', ended_at = ?, duration_seconds = CASE WHEN ? > 0 THEN ? ELSE duration_seconds END, updated_at = ? WHERE provider_call_id = ?`,
+                [now, duration, duration, now, callUuid]
+            );
+            await db.run(
+                `UPDATE conversations SET duration_seconds = CASE WHEN ? > 0 THEN ? ELSE duration_seconds END, ended_at = ? WHERE contact_id IN (SELECT id FROM contacts WHERE provider_call_id = ?)`,
+                [duration, duration, now, callUuid]
+            );
+            await db.run(
+                `UPDATE call_queue SET status = 'COMPLETED', updated_at = ? WHERE contact_id IN (SELECT id FROM contacts WHERE provider_call_id = ?)`,
+                [now, callUuid]
+            );
+        } catch (e) {
+            console.error('[Plivo Hangup] DB update error:', e.message);
+        }
+    }
+
+    res.status(200).send('OK');
+}
+
+// ============================================================================
+// ElevenLabs Webhook Handler
+// ============================================================================
+export async function handleElevenLabsWebhook(req, res) {
+    const sigHeader = req.headers['elevenlabs-signature'] || req.headers['ElevenLabs-Signature'] || '';
+    const rawBody = req.rawBody || JSON.stringify(req.body || {});
+
+    const isValid = ElevenLabsService.verifyWebhookSignature(rawBody, sigHeader);
+    if (!isValid) {
+        console.warn('[ElevenLabs Webhook] Signature verification failed.');
+        return res.status(401).json({ success: false, message: 'Invalid signature' });
+    }
+
+    const payload = req.body || {};
+    const type = payload.type || payload.event || '';
+    console.log(`[ElevenLabs Webhook] Received verified event: ${type}`);
+
+    return res.status(200).json({ received: true });
+}
+
+// ============================================================================
+// Exotel webhook handler (Legacy fallback)
 // ============================================================================
 const EXOTEL_FINAL = {
     completed: 'COMPLETED',

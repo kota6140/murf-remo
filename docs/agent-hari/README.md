@@ -7,10 +7,12 @@ Welcome to the definitive architectural specification for **REMO**, an enterpris
 
 ---
 
-## 📌 Important Current-Stage Notice
+## 📌 Voice & Telephony Architecture (ElevenLabs + Plivo)
 
-> **CURRENT STATUS: SPECIFICATION & DESIGN STAGE ONLY**  
-> No telephony (Twilio/Exotel), STT/TTS (ElevenLabs/Deepgram), LLM APIs, live databases, CRMs, or backend server endpoints are implemented at this stage. All infrastructure models, API schemas, and database designs in these documents represent **FUTURE IMPLEMENTATIONS**.
+> **CURRENT STATUS: ACTIVE IMPLEMENTATION**  
+> Telephony calling is handled via **Plivo** carrier integration (outbound calling, DID virtual numbers, bidirectional audio streaming).  
+> Voice AI synthesis and transcription are handled via **ElevenLabs** (multilingual TTS in 8kHz mu-law and high-accuracy Scribe STT).  
+> Conversational dialogue and turn-taking management are powered by **Gemini / LLM** with intelligent backchannel filtering to prevent premature interruptions.
 
 ---
 

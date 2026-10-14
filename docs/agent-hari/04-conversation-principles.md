@@ -49,9 +49,11 @@ Every call handled by REMO follows this structured 10-stage lifecycle:
 - *Forbidden*: *"Could you give me your name, phone number, and what position you're applying for?"*
 - *Correct*: *"May I have your full name to get started?"* (Wait for answer) -> *"Great, and what's the best phone number for you?"*
 
-### Stage 4: Listen Before Responding
+### Stage 4: Listen Before Responding & Intelligent Turn-Taking
 - Allow a brief audio gap (400–600ms) to ensure the caller has finished speaking before triggering speech synthesis.
 - Always include a conversational acknowledgment before launching into the next prompt (*"Got it," "Understood," "Thanks for letting me know"*).
+- **Anti-Abandonment Rule**: If the caller utters short affirmations (*"yes"*, *"okay"*, *"hmm"*) while the agent is speaking, the agent does NOT stop or discard its turn.
+- **Overlapping Speech Recovery**: When the caller provides a substantive answer mid-speech, the agent acknowledges the answer directly and advances the conversation without repeating old questions.
 
 ### Stage 5: Confirm Important Information
 - Immediately echo back critical identifiers: phone numbers, email addresses, dates, and times.

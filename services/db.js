@@ -60,6 +60,7 @@ const MYSQL_SCHEMA = [
         summary TEXT,
         error_details TEXT,
         updated_at VARCHAR(64) NOT NULL,
+        owner_user_id VARCHAR(64) NULL,
         INDEX idx_contacts_batch (batch_id),
         INDEX idx_contacts_phone (phone),
         INDEX idx_contacts_service (service)
@@ -153,7 +154,8 @@ const SQLITE_SCHEMA = [
         extracted_data TEXT,
         summary TEXT,
         error_details TEXT,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        owner_user_id TEXT
     );`,
     `CREATE TABLE IF NOT EXISTS call_queue (
         id TEXT PRIMARY KEY,
@@ -372,16 +374,27 @@ export async function transaction(fn) {
 }
 
 // Links calls to the admin user who uploaded them (batches.owner_user_id) or who was assigned them
-// from the owner panel (conversations.owner_user_id). Added lazily so existing databases upgrade in place.
+// from the owner panel (conversations.owner_user_id) or direct/test calls (contacts.owner_user_id).
 let ownerColumnsReady = null;
 export function ensureOwnerColumns() {
     if (!ownerColumnsReady) {
         ownerColumnsReady = (async () => {
-            for (const table of ['batches', 'conversations']) {
-                try {
-                    await get(`SELECT owner_user_id FROM ${table} LIMIT 1`);
-                } catch {
-                    await run(`ALTER TABLE ${table} ADD COLUMN owner_user_id VARCHAR(64) NULL`);
+            await initDb();
+            for (const table of ['batches', 'conversations', 'contacts']) {
+                if (activeEngine === 'mysql') {
+                    try {
+                        await mysqlPool.query(`SELECT owner_user_id FROM ${table} LIMIT 1`);
+                    } catch {
+                        await mysqlPool.query(`ALTER TABLE ${table} ADD COLUMN owner_user_id VARCHAR(64) NULL`).catch(() => {});
+                    }
+                } else {
+                    try {
+                        sqliteDb.prepare(`SELECT owner_user_id FROM ${table} LIMIT 1`).get();
+                    } catch {
+                        try {
+                            sqliteDb.prepare(`ALTER TABLE ${table} ADD COLUMN owner_user_id VARCHAR(64) NULL`).run();
+                        } catch {}
+                    }
                 }
             }
         })().catch((e) => { ownerColumnsReady = null; throw e; });
@@ -404,6 +417,6 @@ export function getDbConnection() {
 }
 
 // Kick off initialization asynchronously
-initDb().catch(e => console.error('[DB] Initialization error:', e));
+initDb().then(() => ensureOwnerColumns().catch(() => {})).catch(e => console.error('[DB] Initialization error:', e));
 
 export default db;

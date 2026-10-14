@@ -35,7 +35,13 @@ app.use((req, res, next) => (PRIVATE_PATH.test(safeDecode(req.path).replace(/\\/
 app.use(express.static(__dirname));
 
 import authRoutes from './routes/auth.js';
-import adminRoutes, { handleExotelWebhook } from './routes/admin.js';
+import adminRoutes, {
+    handleExotelWebhook,
+    handlePlivoAnswer,
+    handlePlivoStatus,
+    handlePlivoHangup,
+    handleElevenLabsWebhook
+} from './routes/admin.js';
 import userRoutes from './routes/user.js';
 import ownerRoutes from './routes/owner.js';
 import jwt from 'jsonwebtoken';
@@ -122,7 +128,15 @@ app.get('/phone-designs-preview', (req, res) => res.sendFile(path.join(__dirname
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
-// Webhook for Exotel
+// Webhooks for Plivo Telephony
+app.all('/api/plivo/answer', handlePlivoAnswer);
+app.all('/api/plivo/status', handlePlivoStatus);
+app.all('/api/plivo/hangup', handlePlivoHangup);
+
+// Webhook for ElevenLabs Voice AI
+app.post('/api/webhooks/elevenlabs', handleElevenLabsWebhook);
+
+// Webhook for Exotel (Legacy fallback)
 app.all('/api/exotel/callback', handleExotelWebhook);
 app.all('/api/exotel/webhook', handleExotelWebhook);
 
@@ -148,7 +162,13 @@ server.on('upgrade', (request, socket, head) => {
         pathname = (request.url || '').split('?')[0];
     }
 
-    if (pathname === '/voicebot' || pathname === '/voicebot/' || pathname.startsWith('/voicebot')) {
+    console.log('[WebSocket Upgrade Request] Incoming connection on:', pathname);
+    if (
+        pathname === '/voicebot' ||
+        pathname === '/voicebot/' ||
+        pathname.startsWith('/voicebot') ||
+        pathname.startsWith('/api/plivo/stream')
+    ) {
         wss.handleUpgrade(request, socket, head, (ws) => {
             handleVoicebotWebsocket(ws, request);
         });
@@ -160,6 +180,6 @@ server.on('upgrade', (request, socket, head) => {
 server.listen(PORT, () => {
     console.log("===============================================");
     console.log(`  Agent Hari Node.js Server running on http://localhost:${PORT}`);
-    console.log(`  Exotel AgentStream WebSocket Active on /voicebot`);
+    console.log(`  Plivo & ElevenLabs Audio Stream Active on /voicebot`);
     console.log("===============================================");
 });

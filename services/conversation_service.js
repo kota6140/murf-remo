@@ -36,13 +36,13 @@ export default class ConversationService {
     static async getConversations(service = "", user = "", status = "", date = "", search = "", page = 1, limit = 10, ownerId = null) {
         let dbItems = [];
         try {
-            // ownerId: only conversations owned by this admin (directly, or through the contact sheet they uploaded)
+            // ownerId: only conversations owned by this admin (directly, through uploaded batch, or unassigned/direct calls)
             const rows = await db.all(`
                 SELECT c.*, ct.extracted_data, ct.notes
                 FROM conversations c
                 LEFT JOIN contacts ct ON c.contact_id = ct.id
                 LEFT JOIN batches b ON b.id = ct.batch_id
-                ${ownerId ? 'WHERE c.owner_user_id = ? OR b.owner_user_id = ?' : ''}
+                ${ownerId ? 'WHERE (c.owner_user_id = ? OR b.owner_user_id = ? OR c.owner_user_id IS NULL OR c.owner_user_id = "")' : ''}
                 ORDER BY c.created_at DESC
             `, ownerId ? [ownerId, ownerId] : []);
 
@@ -59,13 +59,14 @@ export default class ConversationService {
                     id: r.id,
                     service: r.service,
                     user: "Score Labs",
-                    contact: r.contact_name,
-                    phone: r.phone,
+                    contact: r.contact_name || (r.phone ? `Caller (${r.phone})` : 'Direct Call'),
+                    phone: r.phone || 'N/A',
                     email: extracted.email || '',
                     company: extracted.company || 'Score Labs',
                     status: r.status,
                     duration: durStr,
-                    timestamp: r.started_at,
+                    durationSeconds: durSec,
+                    timestamp: r.started_at || r.created_at,
                     sentiment: r.sentiment || "neutral",
                     summary: r.summary || "Screening call completed.",
                     collectedData: extracted,
@@ -143,7 +144,7 @@ export default class ConversationService {
                 FROM conversations c
                 LEFT JOIN contacts ct ON c.contact_id = ct.id
                 LEFT JOIN batches b ON b.id = ct.batch_id
-                WHERE c.id = ? ${ownerId ? 'AND (c.owner_user_id = ? OR b.owner_user_id = ?)' : ''}
+                WHERE c.id = ? ${ownerId ? 'AND (c.owner_user_id = ? OR b.owner_user_id = ? OR c.owner_user_id IS NULL OR c.owner_user_id = "")' : ''}
             `, ownerId ? [normId, ownerId, ownerId] : [normId]);
 
             if (r) {

@@ -1,7 +1,7 @@
 # 18. REMO Future API Integrations & Ecosystem Architecture
 
-> **NOTICE: ALL INTEGRATIONS LISTED HERE ARE FUTURE SPECIFICATIONS.**  
-> No active accounts, SIP trunks, production credentials, or live vendor endpoints are configured in this repository. This document defines the interface boundaries, protocols, and data payloads that will be connected during Phase 3–8 of the implementation roadmap.
+> **NOTICE: TELEPHONY & VOICE PIPELINE ACTIVE ARCHITECTURE**  
+> Active implementation uses **Plivo** for carrier telephony and bidirectional audio streaming (`<Stream>`), **ElevenLabs** for multilingual voice synthesis (`eleven_multilingual_v2`) and Scribe speech-to-text, and **Google Gemini** for LLM reasoning and extraction.
 
 ---
 
@@ -14,47 +14,47 @@
       │              │              │              │              │
       ▼              ▼              ▼              ▼              ▼
  [Telephony]       [STT]          [LLM]          [TTS]       [Backend / DB]
- (Exotel/Twilio) (Deepgram/      (Gemini/     (ElevenLabs/   (Python/Node +
-                 Whisper)       Claude/GPT)     Cartesia)     PostgreSQL)
+   (Plivo)      (ElevenLabs    (Google Gemini    (ElevenLabs    (Node.js +
+                  Scribe)        3.8 Flash)      Multilingual)   MySQL/SQLite)
 ```
 
 ---
 
 ## 2. Component Specifications
 
-### A. Telephony Gateway (Future Candidates: Twilio, Exotel, LiveKit)
-- **Role**: Ingest PSTN/SIP telephone calls, establish real-time two-way audio media streams, and manage PBX call control (hangup, dial, transfer).
-- **Communication Protocol**: Secure WebSockets (`wss://`) with μ-law / PCM 8kHz or 16kHz audio frames.
+### A. Telephony Gateway (Active: Plivo Telephony)
+- **Role**: Ingest PSTN/SIP telephone calls, establish real-time two-way audio media streams via Plivo `<Stream>`, and manage call control.
+- **Communication Protocol**: Secure WebSockets (`wss://`) with 8kHz 8-bit μ-law audio frames.
 - **Data Exchanged**:
-  - *Inbound*: `CallSid`, `From` (Caller ID), `To` (Dialed Number), `CallStatus`, continuous inbound raw audio packets.
-  - *Outbound*: Continuous synthesized speech audio packets, call control directives (`<Transfer>`, `<Hangup>`).
+  - *Inbound*: `CallUUID`, `From` (Caller ID), `To` (Dialed Number), `CallStatus`, continuous inbound 8kHz μ-law audio packets.
+  - *Outbound*: Continuous synthesized speech audio packets (`playAudio`), audio clear directives (`clearAudio`), call termination.
 
 ---
 
-### B. Speech-to-Text (STT) Engine (Future Candidates: Deepgram Nova-2, OpenAI Whisper, AssemblyAI)
-- **Role**: Convert streaming audio into low-latency punctuated text transcripts with word-level timestamps and endpointing.
-- **Communication Protocol**: Streaming bidirectional WebSocket.
+### B. Speech-to-Text (STT) Engine (Active: ElevenLabs Scribe STT)
+- **Role**: Convert caller audio turns into high-accuracy punctuated text transcripts with automatic language detection (English, Hindi, Telugu).
+- **Communication Protocol**: HTTP REST / Scribe audio processing.
 - **Data Exchanged**:
-  - *Input*: 16kHz PCM audio buffers streamed every 20–50ms.
-  - *Output*: Intermediate tokens, final transcript strings, confidence scores, end-of-speech markers (Voice Activity Detection).
+  - *Input*: Telephony audio buffers (8kHz μ-law / 16-bit PCM WAV).
+  - *Output*: Punctuated transcript strings, detected language codes, endpointing.
 
 ---
 
-### C. Large Language Model (LLM) Inference (Future Candidates: Google Gemini, Anthropic Claude, OpenAI GPT-4o)
+### C. Large Language Model (LLM) Inference (Active: Google Gemini 3.8 Flash)
 - **Role**: Dialogue reasoning, intent classification, memory management, tool execution decision-making, and natural response synthesis.
-- **Communication Protocol**: Streaming Server-Sent Events (SSE) or REST over HTTPS.
+- **Communication Protocol**: REST over HTTPS / JSON generation.
 - **Data Exchanged**:
-  - *Input*: System prompt, conversation history array, active mode context, tool definitions.
-  - *Output*: Streaming generated conversational text tokens, structured tool calling JSON payloads (`tool_calls`).
+  - *Input*: System prompt, conversation history array, active mode context, contact details.
+  - *Output*: Spoken response text, extracted structured fields, call summary, and lifecycle classification.
 
 ---
 
-### D. Voice / Text-to-Speech (TTS) Engine (Future Candidates: ElevenLabs Turbo v2.5, Cartesia Sonic, PlayHT)
+### D. Voice / Text-to-Speech (TTS) Engine (Active: ElevenLabs Multilingual v2 / Turbo)
 - **Role**: Convert generated text into warm, expressive, ultra-low-latency voice audio matching REMO's persona.
-- **Communication Protocol**: Streaming WebSocket / HTTP chunked transfer.
+- **Communication Protocol**: REST / Chunked audio stream directly in `ulaw_8000`.
 - **Data Exchanged**:
-  - *Input*: Text token stream piped directly from LLM generation.
-  - *Output*: 24kHz MP3 or 16kHz raw PCM audio frames streamed to telephony bridge.
+  - *Input*: Spoken response text from LLM dialogue engine.
+  - *Output*: Native 8kHz 8-bit μ-law audio frames streamed directly to Plivo WebSocket without transcoding lag.
 
 ---
 
