@@ -592,10 +592,17 @@ document.addEventListener('DOMContentLoaded', () => {
       const phoneNum = instantMobileInput.value.trim();
       if (!phoneNum) return;
 
+      // Send the number to the team (shows in the admin panel). The animation below plays either way.
+      fetch('/api/demo/instant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: phoneNum })
+      }).catch(() => { /* offline: the demo animation still runs */ });
+
       const origBtnContent = instantTriggerBtn.innerHTML;
       instantTriggerBtn.innerHTML = `
-        <span class="c-spinner" style="width:14px;height:14px;border:2px solid #ffffff;border-top-color:transparent;border-radius:50%;display:inline-block;margin-right:6px;animation:spin 0.6s linear infinite;"></span>
-        <span>Calling +91 ${phoneNum}...</span>
+        <span class="c-spinner" style="width:14px;height:14px;flex:none;border:2px solid #ffffff;border-top-color:transparent;border-radius:50%;display:inline-block;animation:spin 0.6s linear infinite;"></span>
+        <span>Calling…</span>
       `;
       instantTriggerBtn.disabled = true;
 
@@ -840,6 +847,26 @@ document.addEventListener('DOMContentLoaded', () => {
   const indicatorItems = document.querySelectorAll('.story-indicator-item');
   const compactDashboards = document.querySelectorAll('.compact-dashboard');
 
+  // Sliding thumb behind the active workflow tab
+  const storyBar = document.getElementById('story-progress-indicator');
+  if (storyBar) {
+    const moveThumb = () => {
+      const active = storyBar.querySelector('.story-indicator-item.active');
+      if (!active) return;
+      storyBar.style.setProperty('--thumb-x', active.offsetLeft + 'px');
+      storyBar.style.setProperty('--thumb-w', active.offsetWidth + 'px');
+      // Mobile M / L: the tab row scrolls sideways, so keep the active tab centred
+      if (window.matchMedia('(min-width: 361px) and (max-width: 480px)').matches && storyBar.scrollWidth > storyBar.clientWidth) {
+        storyBar.scrollTo({ left: active.offsetLeft - (storyBar.clientWidth - active.offsetWidth) / 2, behavior: 'smooth' });
+      }
+    };
+    new MutationObserver(moveThumb).observe(storyBar, { attributes: true, attributeFilter: ['class'], subtree: true });
+    window.addEventListener('resize', moveThumb);
+    window.addEventListener('load', moveThumb);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(moveThumb);
+    moveThumb();
+  }
+
   if (storyCards.length > 0) {
     let currentActiveIndex = 0;
 
@@ -848,7 +875,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const startTime = performance.now();
       const tick = (now) => {
         const elapsed = now - startTime;
-        const progress = Math.min(elapsed / duration, 1);
+        const progress = Math.max(0, Math.min(elapsed / duration, 1));
         const ease = 1 - Math.pow(1 - progress, 3); // Smooth ease-out cubic
         const val = Math.round(target * ease);
         el.textContent = val;
@@ -866,7 +893,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const startTime = performance.now();
       const tick = (now) => {
         const elapsed = now - startTime;
-        const progress = Math.min(elapsed / duration, 1);
+        const progress = Math.max(0, Math.min(elapsed / duration, 1));
         const ease = 1 - Math.pow(1 - progress, 3);
 
         if (maskStroke) {
@@ -1108,41 +1135,392 @@ document.addEventListener('DOMContentLoaded', () => {
   const indDisplayChips = document.getElementById('ind-display-chips');
   const indDisplayCard = document.getElementById('industry-display-card');
 
-  industryTabs.forEach(tab => {
+  const indSelector = document.getElementById('industry-tabs');
+  const indShowcase = document.querySelector('.industry-visual-showcase');
+  const indTabList = Array.from(industryTabs);
+  const indReduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const IND_DURATION = 7500;
+  let indCurrent = Math.max(0, indTabList.findIndex((t) => t.classList.contains('active')));
+  let indAnim = null;
+  let indHover = false;
+  let indVisible = false;
+
+  // The active tab's underline fills like a timer; when full, the next industry opens
+  const indBars = indTabList.map((tab) => {
+    const bar = document.createElement('span');
+    bar.className = 'ind-progress';
+    tab.appendChild(bar);
+    return bar;
+  });
+
+  const renderIndustry = (index) => {
+    const data = industryData[indTabList[index].getAttribute('data-industry')];
+    if (!data) return;
+    if (indDisplayTitle) indDisplayTitle.textContent = data.title;
+    if (indDisplayText) {
+      // each word fades up in turn (see .ind-word in CSS)
+      const words = data.text.split(' ').map((w, i) => `<span class="ind-word" style="--w:${i}">${w}</span>`).join(' ');
+      indDisplayText.innerHTML = `“${words}”`;
+    }
+    if (indDisplayChips) {
+      indDisplayChips.innerHTML = data.chips.map((chip, i) => {
+        const cleanText = chip.replace(/^[^a-zA-Z0-9]+/, '').trim();
+        return `<span class="ind-chip" style="--c:${i}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> ${cleanText}</span>`;
+      }).join('');
+    }
+    if (indDisplayCard) {
+      indDisplayCard.classList.remove('is-swap');
+      void indDisplayCard.offsetWidth; // restart the CSS animations
+      indDisplayCard.classList.add('is-swap');
+    }
+  };
+
+  const startIndProgress = () => {
+    if (indAnim) indAnim.cancel();
+    indAnim = null;
+    if (indReduce) return;
+    indAnim = indBars[indCurrent].animate(
+      [{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }],
+      { duration: IND_DURATION, easing: 'linear', fill: 'forwards' }
+    );
+    indAnim.onfinish = () => selectIndustry((indCurrent + 1) % indTabList.length);
+    if (!indVisible || indHover) indAnim.pause();
+  };
+
+  const selectIndustry = (index) => {
+    indCurrent = index;
+    indTabList.forEach((tab, i) => {
+      tab.classList.toggle('active', i === index);
+      tab.setAttribute('aria-selected', String(i === index));
+    });
+    // keep the active tab in view when the row scrolls sideways (phones)
+    const activeTab = indTabList[index];
+    if (indSelector && indSelector.scrollWidth > indSelector.clientWidth) {
+      indSelector.scrollTo({ left: activeTab.offsetLeft - (indSelector.clientWidth - activeTab.offsetWidth) / 2, behavior: 'smooth' });
+    }
+    renderIndustry(index);
+    startIndProgress();
+  };
+
+  indTabList.forEach((tab, i) => {
     tab.addEventListener('click', () => {
-      industryTabs.forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-
-      const indKey = tab.getAttribute('data-industry');
-      const data = industryData[indKey];
-      if (!data) return;
-
-      if (indDisplayCard) {
-        indDisplayCard.style.opacity = '0.5';
-        indDisplayCard.style.transform = 'translateY(3px)';
-        setTimeout(() => {
-          if (indDisplayTitle) indDisplayTitle.textContent = data.title;
-          if (indDisplayText) indDisplayText.textContent = `"${data.text}"`;
-          if (indDisplayChips) {
-            indDisplayChips.innerHTML = data.chips.map(chip => {
-              const cleanText = chip.replace(/^[^a-zA-Z0-9]+/, '').trim();
-              return `<span class="ind-chip"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:4px;"><polyline points="20 6 9 17 4 12"/></svg> ${cleanText}</span>`;
-            }).join('');
-          }
-          indDisplayCard.style.opacity = '1';
-          indDisplayCard.style.transform = 'translateY(0)';
-        }, 120);
-      }
+      if (i !== indCurrent) selectIndustry(i); else startIndProgress();
     });
   });
+
+  if (indShowcase) {
+    indShowcase.addEventListener('pointerenter', () => { indHover = true; if (indAnim) indAnim.pause(); });
+    indShowcase.addEventListener('pointerleave', () => { indHover = false; if (indAnim && indVisible) indAnim.play(); });
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(([entry]) => {
+        indVisible = entry.isIntersecting;
+        if (!indAnim) return;
+        if (indVisible && !indHover) indAnim.play(); else indAnim.pause();
+      }, { threshold: 0.4 }).observe(indShowcase);
+    }
+  }
+
+  if (indTabList.length) selectIndustry(indCurrent);
 
   // ------------------------------------------------------------------------
   // SERVICE CARDS: Non-routing tactile buttons
   // ------------------------------------------------------------------------
+  // Human Difference: calm fade-up reveal as each part scrolls into view
+  const humanSection = document.getElementById('human-touch');
+  if (humanSection && 'IntersectionObserver' in window) {
+    const revealTargets = humanSection.querySelectorAll('.esc-item, .human-stories-header');
+    humanSection.classList.add('ht-ready');
+    const revealObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add('is-in');
+        revealObserver.unobserve(entry.target);
+      });
+    }, { threshold: 0.2, rootMargin: '0px 0px -40px 0px' });
+    revealTargets.forEach((el) => revealObserver.observe(el));
+  }
+
+  // How it works: draw the timeline once, when it first scrolls into view
+  const hiwSection = document.getElementById('how-it-works');
+  const hiwGrid = hiwSection ? hiwSection.querySelector('.how-it-works-grid') : null;
+  if (hiwGrid && 'IntersectionObserver' in window) {
+    hiwSection.classList.add('hiw-ready');
+    const hiwObserver = new IntersectionObserver((entries) => {
+      if (!entries[0].isIntersecting) return;
+      hiwGrid.classList.add('is-in');
+      hiwObserver.disconnect();
+    }, { threshold: 0.5 });
+    hiwObserver.observe(hiwGrid);
+  }
+
+  // Caller stories: duplicate the cards once so the auto-scroll loops seamlessly
+  const callerTrack = document.querySelector('.caller-testimonials-grid');
+  if (callerTrack && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    Array.from(callerTrack.children).forEach((card) => {
+      const copy = card.cloneNode(true);
+      copy.setAttribute('aria-hidden', 'true');
+      callerTrack.appendChild(copy);
+    });
+    callerTrack.classList.add('is-looping');
+  }
+
+  // Human Difference: the selected pillar drives the live scene; auto-rotates, pauses on hover / off-screen
+  const htGrid = humanSection ? humanSection.querySelector('.human-pillars-grid') : null;
+  if (htGrid) {
+    const pillars = Array.from(htGrid.querySelectorAll('.human-pillar-card'));
+    const scenes = Array.from(htGrid.querySelectorAll('.ht-scene'));
+    const htReduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const HT_MIN_DURATION = 6500;
+
+    // Voice clips per scene (Sarvam TTS, generated once into /assets/voices); played only while the section is on screen
+    const voiceScenes = [
+      [{ src: '/assets/voices/breath.wav', who: 'Remo', text: 'Hi, this is Remo. Take your time… I\'m right here, and I\'m listening.' }],
+      [
+        { src: '/assets/voices/cut-caller.wav', who: 'Caller', text: 'Sorry to jump in. Can I ask something quickly?' },
+        { src: '/assets/voices/cut-remo.wav', who: 'Remo', text: 'Of course. Please, go ahead.' }
+      ],
+      [{ src: '/assets/voices/care.wav', who: 'Remo', text: 'I\'m really sorry about the trouble. Let me sort this out for you right away.' }],
+      [{ src: '/assets/voices/done.wav', who: 'Remo', text: 'All done. I\'ve sent your summary on WhatsApp, confirmed the calendar invite, and updated your notes.' }]
+    ];
+    voiceScenes.forEach((clips) => clips.forEach((clip) => {
+      clip.audio = new Audio();
+      clip.audio.preload = 'metadata';
+      clip.audio.src = clip.src;
+    }));
+
+    // Each scene lasts as long as its voice (plus a breath), never less than the minimum
+    const htDurationFor = (i) => {
+      const spoken = (voiceScenes[i] || []).reduce((sum, c) => {
+        const d = c.audio.duration;
+        return sum + (d && isFinite(d) ? d * 1000 + 450 : 0);
+      }, 0);
+      return Math.max(HT_MIN_DURATION, spoken + 1800);
+    };
+    const htBars = pillars.map((pillar) => {
+      const bar = document.createElement('span');
+      bar.className = 'ht-progress';
+      pillar.appendChild(bar);
+      pillar.setAttribute('tabindex', '0');
+      return bar;
+    });
+    let htCurrent = 0;
+    let htAnim = null;
+    let htHover = false;
+    let htVisible = false;
+
+    // ---- Voice playback: starts when the section is in view, stops when it leaves ----
+    const voiceBtn = document.getElementById('ht-sound');
+    const caption = htGrid.querySelector('.ht-caption');
+    const captionWho = htGrid.querySelector('.ht-caption-who');
+    const captionText = htGrid.querySelector('.ht-caption-text');
+    let voiceOn = true;
+    try { voiceOn = window.localStorage.getItem('ht-voice') !== 'off'; } catch (e) { /* storage unavailable */ }
+    let voiceBlocked = false; // browsers block sound until the visitor has interacted with the page
+    let playToken = 0;
+    let activeAudio = null;
+
+    const setVoiceState = (state) => {
+      if (!voiceBtn) return;
+      voiceBtn.dataset.state = state;
+      voiceBtn.setAttribute('aria-pressed', String(state === 'on'));
+      voiceBtn.querySelector('.ht-sound-text').textContent =
+        state === 'on' ? 'Voice on' : state === 'off' ? 'Voice off' : 'Tap to hear Remo';
+      voiceBtn.setAttribute('aria-label',
+        state === 'on' ? 'Voice on. Click to mute' : state === 'off' ? 'Voice off. Click to turn on' : 'Click to hear Remo');
+    };
+
+    const showCaption = (who, text) => {
+      if (!caption) return;
+      captionWho.textContent = who;
+      captionText.textContent = text;
+      caption.classList.add('is-show');
+    };
+    const hideCaption = () => { if (caption) caption.classList.remove('is-show'); };
+
+    const stopVoice = () => {
+      playToken += 1;
+      if (activeAudio) {
+        activeAudio.pause();
+        activeAudio.currentTime = 0;
+        activeAudio = null;
+      }
+      hideCaption();
+    };
+
+    const playClip = (audio) => new Promise((resolve, reject) => {
+      activeAudio = audio;
+      audio.currentTime = 0;
+      const cleanup = () => {
+        audio.removeEventListener('ended', finish);
+        audio.removeEventListener('pause', finish);
+      };
+      const finish = () => { cleanup(); resolve(); };
+      audio.addEventListener('ended', finish);
+      audio.addEventListener('pause', finish);
+      const attempt = audio.play();
+      if (attempt && attempt.catch) attempt.catch((err) => { cleanup(); reject(err); });
+    });
+
+    const playScene = async (index) => {
+      stopVoice();
+      if (!voiceOn || !htVisible || document.hidden) return;
+      const token = playToken;
+      for (const clip of voiceScenes[index]) {
+        if (token !== playToken) return;
+        showCaption(clip.who, clip.text);
+        try {
+          await playClip(clip.audio);
+        } catch (err) {
+          if (token === playToken && err && err.name === 'NotAllowedError') {
+            voiceBlocked = true;
+            setVoiceState('blocked');
+          }
+          hideCaption();
+          return;
+        }
+        if (token !== playToken) return;
+        await new Promise((resolve) => setTimeout(resolve, 350));
+      }
+      if (token === playToken) hideCaption();
+    };
+
+    // The first click / key press anywhere unlocks sound; if playback was blocked, start it then
+    const unlockOnGesture = (e) => {
+      if (!voiceBlocked || (voiceBtn && voiceBtn.contains(e.target))) return;
+      voiceBlocked = false;
+      if (voiceOn) {
+        setVoiceState('on');
+        if (htVisible) playScene(htCurrent);
+      }
+    };
+    ['pointerdown', 'keydown'].forEach((evt) => window.addEventListener(evt, unlockOnGesture, true));
+
+    if (voiceBtn) {
+      voiceBtn.addEventListener('click', () => {
+        if (voiceBlocked) {
+          voiceBlocked = false;
+          voiceOn = true;
+          setVoiceState('on');
+          playScene(htCurrent);
+        } else {
+          voiceOn = !voiceOn;
+          setVoiceState(voiceOn ? 'on' : 'off');
+          if (voiceOn) playScene(htCurrent); else stopVoice();
+        }
+        try { window.localStorage.setItem('ht-voice', voiceOn ? 'on' : 'off'); } catch (e) { /* storage unavailable */ }
+      });
+    }
+    setVoiceState(voiceOn ? 'on' : 'off');
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) stopVoice(); else if (htVisible) playScene(htCurrent);
+    });
+
+    const htStart = () => {
+      if (htAnim) htAnim.cancel();
+      htAnim = null;
+      if (htReduce) return;
+      htAnim = htBars[htCurrent].animate(
+        [{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }],
+        { duration: htDurationFor(htCurrent), easing: 'linear', fill: 'forwards' }
+      );
+      htAnim.onfinish = () => htSelect((htCurrent + 1) % pillars.length);
+      if (!htVisible || htHover) htAnim.pause();
+    };
+
+    const htSelect = (index) => {
+      htCurrent = index;
+      pillars.forEach((pillar, i) => pillar.classList.toggle('is-active', i === index));
+      scenes.forEach((scene, i) => scene.classList.toggle('is-on', i === index));
+      playScene(index);
+      htStart();
+    };
+
+    pillars.forEach((pillar, i) => {
+      pillar.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse' && i !== htCurrent) htSelect(i); });
+      pillar.addEventListener('click', () => { if (i !== htCurrent) htSelect(i); });
+      pillar.addEventListener('focus', () => { if (i !== htCurrent) htSelect(i); });
+    });
+
+    htGrid.addEventListener('pointerenter', () => { htHover = true; if (htAnim) htAnim.pause(); });
+    htGrid.addEventListener('pointerleave', () => { htHover = false; if (htAnim && htVisible) htAnim.play(); });
+
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(([entry]) => {
+        htVisible = entry.isIntersecting;
+        if (htVisible) playScene(htCurrent); else stopVoice();
+        if (!htAnim) return;
+        if (htVisible && !htHover) htAnim.play(); else htAnim.pause();
+      }, { threshold: 0.35 }).observe(htGrid);
+    }
+
+    htSelect(0);
+  }
+
+  // Service panels: one open at a time, auto-rotating (paused on hover / off-screen)
+  const svcGrid = document.querySelector('.service-cards-grid');
+  if (svcGrid) {
+    const panels = Array.from(svcGrid.querySelectorAll('.service-card'));
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const SVC_DURATION = 5500;
+    const bars = panels.map((panel) => {
+      const bar = document.createElement('span');
+      bar.className = 'svc-progress';
+      panel.appendChild(bar);
+      panel.setAttribute('tabindex', '0');
+      return bar;
+    });
+    let current = Math.max(0, panels.findIndex((p) => p.classList.contains('service-card-featured')));
+    let anim = null;
+    let hovering = false;
+    let inView = false;
+
+    const startProgress = () => {
+      if (anim) anim.cancel();
+      anim = null;
+      if (reduceMotion) return;
+      anim = bars[current].animate(
+        [{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }],
+        { duration: SVC_DURATION, easing: 'linear', fill: 'forwards' }
+      );
+      anim.onfinish = () => openPanel((current + 1) % panels.length);
+      if (!inView || hovering) anim.pause();
+    };
+
+    const openPanel = (index) => {
+      current = index;
+      panels.forEach((panel, i) => {
+        panel.classList.toggle('is-open', i === index);
+        panel.setAttribute('aria-expanded', String(i === index));
+      });
+      startProgress();
+    };
+
+    panels.forEach((panel, i) => {
+      panel.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse' && i !== current) openPanel(i); });
+      panel.addEventListener('click', () => { if (i !== current) openPanel(i); });
+      panel.addEventListener('focus', () => { if (i !== current) openPanel(i); });
+    });
+
+    svcGrid.addEventListener('pointerenter', () => { hovering = true; if (anim) anim.pause(); });
+    svcGrid.addEventListener('pointerleave', () => { hovering = false; if (anim && inView) anim.play(); });
+
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(([entry]) => {
+        inView = entry.isIntersecting;
+        if (!anim) return;
+        if (inView && !hovering) anim.play(); else anim.pause();
+      }, { threshold: 0.35 }).observe(svcGrid);
+    }
+
+    openPanel(current);
+  }
+
   const serviceCardButtons = document.querySelectorAll('.btn-service-card');
   serviceCardButtons.forEach(btn => {
     btn.addEventListener('click', (e) => {
-      e.preventDefault();
+      // Links to a service page keep their default navigation; plain buttons stay inert
+      if (!btn.getAttribute('href')) e.preventDefault();
       playHumanChime('click');
       btn.style.transform = 'scale(0.96)';
       setTimeout(() => {
@@ -1160,6 +1538,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const demoForm = document.getElementById('demo-form');
   const modalSuccess = document.getElementById('modal-success');
   const demoUseCaseSelect = document.getElementById('demo-usecase');
+  const demoError = document.getElementById('demo-form-error');
 
   function attachModalListeners() {
     const openDemoBtns = document.querySelectorAll('.open-demo-btn');
@@ -1179,6 +1558,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (demoModal) {
       demoModal.classList.add('active');
       document.body.style.overflow = 'hidden';
+      const firstField = document.getElementById('demo-name');
+      if (firstField && demoForm && demoForm.style.display !== 'none') setTimeout(() => firstField.focus(), 60);
       if (useCase && demoUseCaseSelect) {
         const option = Array.from(demoUseCaseSelect.options).find(opt => 
           opt.value.toLowerCase().includes(useCase.toLowerCase()) || 
@@ -1198,6 +1579,7 @@ document.addEventListener('DOMContentLoaded', () => {
       setTimeout(() => {
         if (demoForm) demoForm.style.display = 'flex';
         if (modalSuccess) modalSuccess.classList.remove('visible');
+        if (demoError) { demoError.hidden = true; demoError.textContent = ''; }
       }, 300);
     }
   };
@@ -1220,23 +1602,58 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   if (demoForm) {
-    demoForm.addEventListener('submit', (e) => {
+    const demoSuccessEmail = document.getElementById('modal-success-email');
+    const setDemoError = (message) => {
+      if (!demoError) return;
+      demoError.textContent = message || '';
+      demoError.hidden = !message;
+    };
+
+    demoForm.addEventListener('submit', async (e) => {
       e.preventDefault();
+      setDemoError('');
+
       const submitBtn = demoForm.querySelector('button[type="submit"]');
-      const originalText = submitBtn.innerHTML;
+      const originalHtml = submitBtn.innerHTML;
+      const value = (id) => {
+        const el = document.getElementById(id);
+        return el ? el.value.trim() : '';
+      };
+      const payload = {
+        name: value('demo-name'),
+        email: value('demo-email'),
+        company: value('demo-company'),
+        phone: value('demo-phone'),
+        useCase: value('demo-usecase'),
+        notes: value('demo-notes'),
+        website: value('demo-website') // spam trap, should stay empty
+      };
 
-      submitBtn.innerHTML = `
-        <span class="c-spinner" style="width:14px;height:14px;border:2px solid #ffffff;border-top-color:transparent;border-radius:50%;display:inline-block;margin-right:6px;animation:spin 0.6s linear infinite;"></span>
-        <span>Connecting with TakeRemo...</span>
-      `;
       submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span class="btn-spinner" aria-hidden="true"></span><span>Sending your request…</span>';
 
-      setTimeout(() => {
-        submitBtn.innerHTML = originalText;
-        submitBtn.disabled = false;
+      try {
+        const res = await fetch('/api/demo/request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+          throw new Error(data.message || 'Something went wrong. Please try again.');
+        }
+        if (demoSuccessEmail) demoSuccessEmail.textContent = data.email || payload.email;
+        demoForm.reset();
         demoForm.style.display = 'none';
         if (modalSuccess) modalSuccess.classList.add('visible');
-      }, 800);
+      } catch (err) {
+        setDemoError(err instanceof TypeError
+          ? "We couldn't reach the server. Please check your connection and try again."
+          : err.message);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalHtml;
+      }
     });
   }
 

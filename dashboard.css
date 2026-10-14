@@ -117,6 +117,15 @@ body.dashboard-body {
   transition: opacity 0.2s ease, max-width 0.25s ease;
 }
 
+/* Tab icon shown instead of the full logo when the sidebar is collapsed */
+.sidebar-logo-icon {
+  display: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
 /* Sidebar Collapse/Expand Toggle Button */
 .sidebar-toggle-btn {
   width: 28px;
@@ -350,6 +359,14 @@ body.dashboard-body {
 
   body.sidebar-collapsed .sidebar-brand-text {
     display: none;
+  }
+
+  body.sidebar-collapsed .sidebar-logo-full {
+    display: none;
+  }
+
+  body.sidebar-collapsed .sidebar-logo-icon {
+    display: block;
   }
 
   body.sidebar-collapsed .sidebar-brand-orb {

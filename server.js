@@ -44,6 +44,7 @@ import adminRoutes, {
 } from './routes/admin.js';
 import userRoutes from './routes/user.js';
 import ownerRoutes from './routes/owner.js';
+import demoRoutes from './routes/demo.js';
 import jwt from 'jsonwebtoken';
 import { getJwtSecret } from './middleware/auth.js';
 import { findUserById } from './users_store.js';
@@ -52,6 +53,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/owner', ownerRoutes);
+app.use('/api/demo', demoRoutes);
 
 // Health Check Endpoint
 app.get('/api/health', (req, res) => res.status(200).json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() }));
@@ -125,6 +127,20 @@ app.get('/account', (req, res) => res.redirect(302, '/dashboard'));
 // Phone Preview Routes
 app.get('/phone-preview', (req, res) => res.sendFile(path.join(__dirname, 'phone-designs-preview.html')));
 app.get('/phone-designs-preview', (req, res) => res.sendFile(path.join(__dirname, 'phone-designs-preview.html')));
+
+// Service pages: /service/<slug>  (not /services/..., which is blocked above as a private source folder)
+const SERVICE_PAGES = {
+    'recruitment': 'service-recruitment.html',
+    'sales': 'service-sales.html',
+    'customer-support': 'service-support.html',
+    'appointment-setting': 'service-appointment.html',
+    'receptionist': 'service-receptionist.html'
+};
+app.get('/service/:slug', (req, res, next) => {
+    const file = SERVICE_PAGES[req.params.slug];
+    if (!file) return next();
+    res.sendFile(path.join(__dirname, file));
+});
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 

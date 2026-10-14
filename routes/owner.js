@@ -23,6 +23,7 @@ import {
     readUsers, publicUser, adminCreateUser, adminUpdateUser, deleteUser, UserStoreError
 } from '../users_store.js';
 import { readProposals, writeProposals, UPLOADS_DIR } from '../proposals_store.js';
+import { readDemoRequests, writeDemoRequests } from '../demo_store.js';
 import ownerCalls from './owner_calls.js';
 
 const router = express.Router();
@@ -210,6 +211,36 @@ router.delete('/submissions/:id', (req, res) => {
     if (!p) return fail(res, 404, 'Submission not found.');
     removeFiles(p);
     writeProposals(all.filter(x => x.id !== p.id));
+    res.json({ success: true });
+});
+
+// ── 60-second demo requests (public website form) ───────────────────────────
+const DEMO_STATUSES = ['new', 'contacted', 'demo_done', 'not_interested'];
+
+router.get('/demo-requests', (req, res) => {
+    const rows = readDemoRequests().sort((a, b) => (b.submittedAt || '').localeCompare(a.submittedAt || ''));
+    res.json({ success: true, requests: rows });
+});
+
+router.patch('/demo-requests/:id', (req, res) => {
+    const all = readDemoRequests();
+    const r = all.find(x => x.id === req.params.id);
+    if (!r) return fail(res, 404, 'Demo request not found.');
+    const { status, adminNote } = req.body || {};
+    if (status !== undefined) {
+        if (!DEMO_STATUSES.includes(status)) return fail(res, 400, 'Invalid status.');
+        r.status = status;
+    }
+    if (typeof adminNote === 'string') r.adminNote = adminNote.trim().slice(0, 2000);
+    r.reviewedAt = new Date().toISOString();
+    writeDemoRequests(all);
+    res.json({ success: true, request: r });
+});
+
+router.delete('/demo-requests/:id', (req, res) => {
+    const all = readDemoRequests();
+    if (!all.some(x => x.id === req.params.id)) return fail(res, 404, 'Demo request not found.');
+    writeDemoRequests(all.filter(x => x.id !== req.params.id));
     res.json({ success: true });
 });
 

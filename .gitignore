@@ -53,6 +53,7 @@ venv.bak/
 *.sqlite3
 *.log
 data/*.db
+data/demo_requests.json
 data/*.db-wal
 data/*.db-shm
 data/uploads/*

@@ -34,6 +34,7 @@
         <nav>
             <button class="nav-btn active" data-tab="overview">Overview</button>
             <button class="nav-btn" data-tab="submissions">Form submissions <span class="badge" id="navSubCount">0</span></button>
+            <button class="nav-btn" data-tab="demos">60-sec demo requests <span class="badge" id="navDemoCount">0</span></button>
             <button class="nav-btn" data-tab="users">Users <span class="badge" id="navUserCount">0</span></button>
             <button class="nav-btn" data-tab="calls">Calls &amp; data</button>
         </nav>
@@ -64,6 +65,27 @@
                 </select>
             </div>
             <div class="table-wrap"><table id="subTable"></table></div>
+        </section>
+
+        <section id="tab-demos" class="tab" hidden>
+            <header class="page-head"><h2>60-second demo requests</h2><button class="btn ghost" data-refresh>Refresh</button></header>
+            <p class="muted" style="margin:-8px 0 14px">Everyone who filled the demo form or typed their number in the "Get instant call" box. Click a row to see every detail.</p>
+            <div class="toolbar">
+                <input type="search" id="demoSearch" placeholder="Search name, company, email, phone…">
+                <select id="demoSource" aria-label="Filter by where it came from">
+                    <option value="">All sources</option>
+                    <option value="instant-call">Instant call box (phone only)</option>
+                    <option value="demo-form">Demo form (full details)</option>
+                </select>
+                <select id="demoStatus">
+                    <option value="">All statuses</option>
+                    <option value="new">New</option>
+                    <option value="contacted">Contacted</option>
+                    <option value="demo_done">Demo done</option>
+                    <option value="not_interested">Not interested</option>
+                </select>
+            </div>
+            <div class="table-wrap"><table id="demoTable"></table></div>
         </section>
 
         <section id="tab-users" class="tab" hidden>
@@ -108,6 +130,15 @@
     <div class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawerTitle">
         <header><h3 id="drawerTitle">Submission</h3><button class="icon-btn" data-close aria-label="Close">×</button></header>
         <div id="drawerBody" class="drawer-body"></div>
+    </div>
+</div>
+
+<!-- Demo request detail drawer -->
+<div id="demoDrawer" class="drawer" hidden>
+    <div class="drawer-bg" data-close></div>
+    <div class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="demoDrawerTitle">
+        <header><h3 id="demoDrawerTitle">Demo request</h3><button class="icon-btn" data-close aria-label="Close">×</button></header>
+        <div id="demoDrawerBody" class="drawer-body"></div>
     </div>
 </div>
 

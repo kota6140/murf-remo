@@ -3,7 +3,7 @@
     const $ = (s, r = document) => r.querySelector(s);
     const $$ = (s, r = document) => [...r.querySelectorAll(s)];
     const STATUS_LABEL = { pending: 'Pending', in_review: 'In review', approved: 'Approved', rejected: 'Rejected' };
-    const state = { users: [], subs: [], stats: null, tab: 'overview', editingId: null, openSubId: null };
+    const state = { users: [], subs: [], demos: [], stats: null, tab: 'overview', editingId: null, openSubId: null, openDemoId: null };
 
     // ── helpers ─────────────────────────────────────────────────────────────
     const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -92,8 +92,8 @@
 
     async function refreshAll() {
         try {
-            const [s, u, f] = await Promise.all([api('/stats'), api('/users'), api('/submissions')]);
-            state.stats = s.stats; state.users = u.users; state.subs = f.submissions;
+            const [s, u, f, dm] = await Promise.all([api('/stats'), api('/users'), api('/submissions'), api('/demo-requests')]);
+            state.stats = s.stats; state.users = u.users; state.subs = f.submissions; state.demos = dm.requests;
             renderAll();
         } catch (e) { toast(e.message, true); }
     }
@@ -101,7 +101,7 @@
     function renderAll() {
         $('#navSubCount').textContent = state.subs.length;
         $('#navUserCount').textContent = state.users.length;
-        renderStats(); renderRecent(); renderSubs(); renderUsers();
+        renderStats(); renderRecent(); renderSubs(); renderDemos(); renderUsers();
     }
 
     // ── overview ────────────────────────────────────────────────────────────
@@ -178,6 +178,71 @@
             const r = await confirmDialog({ title: 'Delete this submission?', text: 'The form and any uploaded files will be permanently removed.' });
             if (!r.ok) return;
             try { await api('/submissions/' + encodeURIComponent(id), { method: 'DELETE' }); closeEl($('#drawer')); await refreshAll(); toast('Submission deleted'); }
+            catch (ex) { toast(ex.message, true); }
+        }
+    });
+
+    // ── 60-second demo requests ─────────────────────────────────────────────
+    const DEMO_LABEL = { new: 'New', contacted: 'Contacted', demo_done: 'Demo done', not_interested: 'Not interested' };
+    const DEMO_SOURCE = { 'instant-call': 'Instant call box', 'demo-form': 'Demo form' };
+    const demoSource = (d) => d.source === 'instant-call' ? 'instant-call' : 'demo-form';
+    const DEMO_PILL = { new: 'pending', contacted: 'in_review', demo_done: 'approved', not_interested: 'rejected' };
+
+    function renderDemos() {
+        $('#navDemoCount').textContent = state.demos.length;
+        const q = $('#demoSearch').value.trim().toLowerCase(), st = $('#demoStatus').value, src = $('#demoSource').value;
+        const rows = state.demos.filter(d =>
+            (!st || d.status === st) &&
+            (!src || demoSource(d) === src) &&
+            (!q || [d.name, d.email, d.company, d.phone, d.useCase, d.notes].some(v => (v || '').toLowerCase().includes(q))));
+        $('#demoTable').innerHTML = !rows.length
+            ? `<tbody><tr><td class="empty">${state.demos.length ? 'No requests match your filters.' : 'No one has filled the demo form yet.'}</td></tr></tbody>`
+            : `<thead><tr><th>Submitted</th><th>Name</th><th>Company</th><th>Phone</th><th>Use case</th><th>From</th><th>Status</th></tr></thead><tbody>` +
+            rows.map(d => `<tr class="click" data-demo="${esc(d.id)}" tabindex="0">
+                <td>${esc(fmtDate(d.submittedAt))}</td>
+                <td>${d.name ? `${esc(d.name)}<div class="sub">${esc(d.email)}</div>` : '<span class="muted">Phone number only</span>'}</td>
+                <td>${esc(d.company || '—')}</td><td>${esc(d.phone)}</td><td>${esc(d.useCase || '—')}</td>
+                <td>${esc(DEMO_SOURCE[demoSource(d)])}</td>
+                <td><span class="pill ${DEMO_PILL[d.status] || ''}">${esc(DEMO_LABEL[d.status] || d.status)}</span></td></tr>`).join('') + '</tbody>';
+    }
+    $('#demoSearch').addEventListener('input', renderDemos);
+    $('#demoStatus').addEventListener('change', renderDemos);
+    $('#demoSource').addEventListener('change', renderDemos);
+
+    function onDemoOpen(e) {
+        if (e.type === 'keydown' && e.key !== 'Enter') return;
+        const tr = e.target.closest('tr[data-demo]'); if (tr) openDemo(tr.dataset.demo);
+    }
+    $('#demoTable').addEventListener('click', onDemoOpen);
+    $('#demoTable').addEventListener('keydown', onDemoOpen);
+
+    function openDemo(id) {
+        const d = state.demos.find(x => x.id === id); if (!d) return;
+        state.openDemoId = id;
+        const row = (k, v) => v ? `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>` : '';
+        $('#demoDrawerTitle').textContent = d.name || d.phone || 'Demo request';
+        $('#demoDrawerBody').innerHTML = `
+            <div><h4>Follow-up</h4>
+                <label>Status <select id="ddStatus">${Object.entries(DEMO_LABEL).map(([k, v]) => `<option value="${k}" ${k === d.status ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+                <label style="margin-top:10px">Internal note <textarea id="ddNote" rows="3" maxlength="2000" placeholder="Visible to admins only">${esc(d.adminNote || '')}</textarea></label>
+                <div class="modal-actions"><button class="btn danger sm" id="ddDelete">Delete request</button><button class="btn primary sm" id="ddSave">Save</button></div>
+            </div>
+            <div><h4>Details they filled in</h4><dl class="kv">${row('Full name', d.name)}${row('Work email', d.email)}${row('Phone', d.phone)}${row('Company', d.company)}${row('Primary use case', d.useCase)}${row('Notes', d.notes)}${row('Came from', DEMO_SOURCE[demoSource(d)])}${row('Submitted', fmtDate(d.submittedAt))}${demoSource(d) === 'demo-form' ? row('Confirmation email', d.confirmationSent ? 'Sent' : 'Not sent') : ''}</dl></div>`;
+        openEl($('#demoDrawer'));
+    }
+
+    $('#demoDrawerBody').addEventListener('click', async (e) => {
+        const id = state.openDemoId;
+        if (e.target.id === 'ddSave') {
+            try {
+                await api('/demo-requests/' + encodeURIComponent(id), { method: 'PATCH', body: { status: $('#ddStatus').value, adminNote: $('#ddNote').value } });
+                await refreshAll(); toast('Saved');
+            } catch (ex) { toast(ex.message, true); }
+        }
+        if (e.target.id === 'ddDelete') {
+            const r = await confirmDialog({ title: 'Delete this request?', text: 'The details will be permanently removed.' });
+            if (!r.ok) return;
+            try { await api('/demo-requests/' + encodeURIComponent(id), { method: 'DELETE' }); closeEl($('#demoDrawer')); await refreshAll(); toast('Request deleted'); }
             catch (ex) { toast(ex.message, true); }
         }
     });
