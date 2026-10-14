@@ -15,8 +15,16 @@ const server = createServer(app);
 const PORT = process.env.PORT || 8080;
 
 // Configure CORS
+// Browsers on other websites may not call this API. Same-site pages and server-to-server
+// calls (Plivo, ElevenLabs) don't send a cross-site Origin, so they are not affected.
+const ALLOWED_ORIGINS = new Set([
+    'https://takeremo.com',
+    'https://www.takeremo.com',
+    `http://localhost:${PORT}`,
+    `http://127.0.0.1:${PORT}`
+]);
 app.use(cors({
-    origin: (origin, callback) => callback(null, true), // Allow all origins for dev, restrict in prod
+    origin: (origin, callback) => callback(null, !origin || ALLOWED_ORIGINS.has(origin)),
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
@@ -28,7 +36,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // The project root is served statically, so keep private files (user data, uploads, source) out of it
 const safeDecode = (p) => { try { return decodeURIComponent(p); } catch { return p; } };
-const PRIVATE_PATH = /^\/(data|routes|services|middleware|docs|node_modules|\.git)(\/|$)|^\/[^/]+\.(mjs|cjs|json|md|db|wav)$|^\/(server|users_store|proposals_store)\.js$/i;
+const PRIVATE_PATH = /^\/(data|routes|services|middleware|docs|node_modules|\.git)(\/|$)|^\/[^/]+\.(mjs|cjs|json|md|db|wav)$|^\/(server|users_store|proposals_store|demo_store)\.js$/i;
 app.use((req, res, next) => (PRIVATE_PATH.test(safeDecode(req.path).replace(/\\/g, '/')) ? res.status(404).end() : next()));
 
 // Serve static files from root

@@ -343,7 +343,7 @@ export async function handlePlivoAnswer(req, res) {
     console.log(`[Plivo Answer] Received answer for CallUUID: ${callUuid}, Contact: ${contactId}, Service: ${service}`);
 
     const cfg = PlivoService.getConfig();
-    const serverUrl = cfg.serverUrl || 'https://election-driller-arguably.ngrok-free.dev';
+    const serverUrl = cfg.serverUrl || 'https://takeremo.com';
     const wsBaseUrl = serverUrl.replace(/^http:\/\//i, 'ws://').replace(/^https:\/\//i, 'wss://');
     const streamWsUrl = `${wsBaseUrl}/voicebot`;
     const extraHeaders = `callId=${callUuid},contactId=${contactId},service=${service},ownerId=${ownerId},phone=${phone},name=${encodeURIComponent(name)},role=${encodeURIComponent(role)},company=${encodeURIComponent(company)}`;
