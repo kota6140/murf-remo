@@ -1,0 +1,115 @@
+/* ==========================================================================
+   TakeRemo — Contact us. Built on the service-page hero; the form card reuses
+   the 60-second-demo form styles (.demo-modal-dialog) from styles.css.
+   ========================================================================== */
+
+.ct-hero { align-items: flex-start; }
+
+/* ---- light theme (service.css makes .sv-hero dark by default) ---- */
+body.sv.ct .ct-hero {
+  /* logo colours: navy #031740 and the orange-red #FC2415 of the "remo" pill */
+  --ink: #031740;
+  --txt: #3B4A6B;
+  --mute: #3B4A6B;
+  --line: rgba(3, 23, 64, 0.12);
+  --ac: var(--a);
+  background: linear-gradient(180deg, #FFF8F6 0%, #F2F5FC 100%);
+  color: #031740;
+}
+
+body.sv.ct .ct-hero::before {
+  background:
+    radial-gradient(620px 420px at 84% 22%, rgba(252, 36, 21, 0.14), transparent 70%),
+    radial-gradient(640px 440px at 4% 94%, rgba(3, 23, 64, 0.13), transparent 70%);
+}
+
+body.sv.ct .ct-hero::after {
+  background-image: radial-gradient(rgba(3, 23, 64, 0.1) 1px, transparent 1px);
+}
+
+/* a thin logo-colour bar under the header */
+body.sv.ct .ct-hero { border-top: 3px solid #FC2415; }
+
+body.sv.ct .ct-hero .sv-eyebrow { color: #031740; background: #FFFFFF; border-color: rgba(3, 23, 64, 0.16); box-shadow: 0 6px 16px -10px rgba(3, 23, 64, 0.35); }
+body.sv.ct .ct-hero .sv-h1 { color: #031740; }
+body.sv.ct .ct-points b { color: #031740; }
+body.sv.ct .ct-points li::before { background-color: rgba(var(--a), 0.1); border-color: rgba(var(--a), 0.4); }
+
+.ct-grid { grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr); align-items: start; gap: 64px; }
+
+.ct-hero .sv-hero-copy { padding-top: 24px; }
+.ct-hero .sv-lead { margin-bottom: 38px; }
+
+.ct-points { list-style: none; margin: 0; padding: 0; display: grid; gap: 22px; }
+
+.ct-points li {
+  position: relative;
+  padding-left: 34px;
+  opacity: 0;
+  transform: translateY(18px);
+  animation: svRise 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) 0.8s forwards;
+}
+
+.ct-points li:nth-child(2) { animation-delay: 0.95s; }
+.ct-points li:nth-child(3) { animation-delay: 1.1s; }
+
+.ct-points li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(var(--a), 0.18) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FF6A4D' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E") center / 11px no-repeat;
+  border: 1px solid rgba(var(--a), 0.5);
+}
+
+.ct-points b { display: block; font-size: 1.08rem; font-weight: 700; color: #FFFFFF; }
+.ct-points span { display: block; margin-top: 2px; font-size: 0.95rem; color: var(--mute); }
+
+/* the form card: the modal's look, but sitting in the page instead of floating over it */
+.ct-card {
+  max-width: 600px;
+  max-height: none;
+  margin-left: auto;
+  overflow: visible;
+  border: 1px solid rgba(3, 23, 64, 0.1);
+  box-shadow: 0 40px 80px -40px rgba(3, 23, 64, 0.45);
+  opacity: 0;
+  transform: translateY(22px);
+  animation: svRise 1s cubic-bezier(0.2, 0.8, 0.2, 1) 0.25s forwards;
+}
+
+.ct-card .modal-title { color: #0F172A; }
+
+@media (max-width: 980px) {
+  .ct-grid { grid-template-columns: minmax(0, 1fr); gap: 40px; }
+  .ct-card { margin: 0 auto; }
+  .ct-hero .sv-hero-copy { padding-top: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ct-points li, .ct-card { opacity: 1; transform: none; animation: none; }
+}
+
+/* ---- direct contact details ---- */
+.ct-direct { margin-top: 34px; padding-top: 26px; border-top: 1px solid rgba(3, 23, 64, 0.12); display: grid; gap: 12px; max-width: 460px; }
+.ct-direct h3 { margin: 0 0 4px; font-size: 1.05rem; color: #031740; }
+.ct-direct-row { display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-radius: 16px; text-decoration: none; background: #fff; border: 1px solid rgba(3, 23, 64, 0.12); box-shadow: 0 10px 22px -18px rgba(3, 23, 64, 0.5); transition: transform 0.25s, border-color 0.25s, box-shadow 0.25s; }
+.ct-direct-row:hover { transform: translateY(-2px); border-color: rgba(252, 36, 21, 0.5); box-shadow: 0 16px 30px -18px rgba(252, 36, 21, 0.5); }
+.ct-direct-ic { flex: none; display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; color: #FC2415; background: rgba(252, 36, 21, 0.1); }
+.ct-direct-row small { display: block; font: 600 11px 'JetBrains Mono', monospace; letter-spacing: 0.08em; text-transform: uppercase; color: #6B7894; }
+.ct-direct-row b { display: block; font-size: 1.05rem; color: #031740; }
+
+/* ---- tidy the left column so it lines up with the form card ---- */
+.ct-hero .sv-hero-copy { padding-top: 0; }
+.ct-hero .sv-lead { margin-bottom: 28px; }
+.ct-points { gap: 16px; }
+.ct-direct { max-width: none; margin-top: 26px; padding-top: 20px; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.ct-direct h3 { grid-column: 1 / -1; margin: 0; }
+.ct-direct-row:first-of-type { grid-column: 1 / -1; }
+.ct-direct-row { padding: 10px 14px; gap: 12px; min-width: 0; }
+.ct-direct-ic { width: 38px; height: 38px; }
+.ct-direct-row b { font-size: 1.02rem; white-space: nowrap; }
+@media (max-width: 1100px) { .ct-direct { grid-template-columns: 1fr; } }

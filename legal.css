@@ -1,0 +1,227 @@
+/* ==========================================================================
+   TakeRemo — Terms of Service & Privacy Policy. Simple, light, lightly animated.
+   Uses the shared nav / footer injected by service.js.
+   ========================================================================== */
+
+body.lg {
+  --ink: #031740;
+  --txt: #3B4A6B;
+  --line: rgba(3, 23, 64, 0.1);
+  --red: 252, 36, 21;
+  background: #FFFFFF;
+  color: var(--txt);
+  font-family: 'Outfit', system-ui, sans-serif;
+}
+
+/* ---- reading progress ---- */
+.lg-progress {
+  position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 1200;
+  background: transparent; pointer-events: none;
+}
+.lg-progress i {
+  display: block; height: 100%; width: 100%;
+  background: linear-gradient(90deg, #FC2415, #FF7A59);
+  transform: scaleX(0); transform-origin: left;
+}
+
+/* ---- hero ---- */
+.lg-hero {
+  position: relative; overflow: hidden;
+  padding: 180px 24px 130px;
+  background-color: #040c1e;
+  border-bottom: 1px solid var(--line);
+  text-align: center;
+}
+
+.lg-hero-bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center 30%;
+  background-repeat: no-repeat;
+  pointer-events: none;
+  z-index: 1;
+  transform: scale(1.02);
+  transition: transform 1.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+body[data-slug="terms"] .lg-hero-bg {
+  background-image: url('/assets/terms-hero-bg.jpg');
+}
+
+body[data-slug="privacy"] .lg-hero-bg {
+  background-image: url('/assets/privacy-hero-bg.jpg');
+}
+
+/* Cinematic atmospheric overlay: ensures the realistic image details shine while providing crystal clear contrast */
+.lg-hero-bg::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 90% 80% at 50% 35%, rgba(3, 15, 42, 0.5) 0%, rgba(2, 10, 28, 0.78) 60%, rgba(1, 8, 22, 0.94) 100%),
+    linear-gradient(180deg, rgba(3, 14, 38, 0.55) 0%, rgba(3, 14, 38, 0.35) 45%, rgba(2, 10, 28, 0.85) 85%, #FFFFFF 100%);
+  pointer-events: none;
+}
+
+.lg-blob {
+  position: absolute; border-radius: 50%; filter: blur(75px); opacity: 0.4; pointer-events: none; z-index: 2;
+  animation: lgFloat 14s ease-in-out infinite;
+}
+.lg-blob.b1 { width: 400px; height: 400px; top: -100px; right: 8%; background: rgba(var(--red), 0.32); }
+.lg-blob.b2 { width: 440px; height: 440px; bottom: -180px; left: 5%; background: rgba(59, 130, 246, 0.22); animation-delay: -6s; }
+
+.lg-hero-in {
+  position: relative;
+  z-index: 3;
+  max-width: 820px;
+  margin: 0 auto;
+}
+
+.lg-hero-card {
+  padding: 40px 36px 36px;
+  border-radius: 28px;
+  background: rgba(4, 18, 48, 0.52);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 24px 60px -15px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.lg-eyebrow {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 7px 16px; border-radius: 999px;
+  font: 600 12px/1 'JetBrains Mono', monospace; letter-spacing: 0.08em; text-transform: uppercase;
+  color: #FFFFFF; background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.24);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 8px 20px -6px rgba(0, 0, 0, 0.4);
+}
+.lg-eyebrow i { width: 7px; height: 7px; border-radius: 50%; background: #FC2415; box-shadow: 0 0 10px #FC2415; animation: lgPulse 2s ease-in-out infinite; }
+
+.lg-h1 {
+  margin: 22px 0 16px; color: #FFFFFF;
+  font-size: clamp(2.4rem, 6vw, 4rem); line-height: 1.05; font-weight: 700; letter-spacing: -0.02em;
+  text-shadow: 0 2px 20px rgba(0, 0, 0, 0.5);
+}
+.lg-h1 em {
+  font-style: normal;
+  background: linear-gradient(90deg, #FC2415, #FF7A59, #FC2415); background-size: 200% auto;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: lgShine 5s linear infinite;
+}
+.lg-lead {
+  margin: 0 auto 22px; max-width: 580px; font-size: 1.16rem; line-height: 1.6;
+  color: rgba(255, 255, 255, 0.88);
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.4);
+}
+.lg-meta {
+  font: 500 13px 'JetBrains Mono', monospace;
+  color: rgba(255, 255, 255, 0.72);
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+}
+.lg-meta::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%; background: rgba(255, 255, 255, 0.4);
+}
+
+.lg-hero .lg-eyebrow, .lg-hero .lg-h1, .lg-hero .lg-lead, .lg-hero .lg-meta {
+  opacity: 0; transform: translateY(18px); animation: lgRise 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+.lg-hero .lg-h1 { animation-delay: 0.1s; }
+.lg-hero .lg-lead { animation-delay: 0.2s; }
+.lg-hero .lg-meta { animation-delay: 0.3s; }
+
+/* ---- layout ---- */
+.lg-wrap {
+  max-width: 1480px; margin: 0 auto; padding: 56px 28px 96px;
+  display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 40px; align-items: start;
+}
+
+/* table of contents */
+.lg-toc { position: sticky; top: 110px; }
+.lg-toc h2 {
+  margin: 0 0 14px; font: 600 12px 'JetBrains Mono', monospace; letter-spacing: 0.1em;
+  text-transform: uppercase; color: #6B7894;
+}
+.lg-toc ol { list-style: none; margin: 0; padding: 0; border-left: 2px solid var(--line); }
+.lg-toc a {
+  display: block; padding: 7px 0 7px 16px; margin-left: -2px; border-left: 2px solid transparent;
+  color: var(--txt); text-decoration: none; font-size: 0.95rem;
+  transition: color 0.2s, border-color 0.2s, padding-left 0.2s;
+}
+.lg-toc a:hover { color: var(--ink); }
+.lg-toc a.on { color: #FC2415; border-left-color: #FC2415; font-weight: 600; padding-left: 20px; }
+
+/* content */
+.lg-main { min-width: 0; }
+
+.lg-short {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 0 0 40px;
+}
+.lg-short div {
+  padding: 18px; border-radius: 16px; background: #F6F8FD; border: 1px solid var(--line);
+  transition: transform 0.25s, box-shadow 0.25s;
+}
+.lg-short div:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -18px rgba(3, 23, 64, 0.4); }
+.lg-short b { display: block; margin-bottom: 4px; color: var(--ink); font-size: 1rem; }
+.lg-short span { font-size: 0.92rem; line-height: 1.5; }
+
+.lg-sec {
+  position: relative; padding: 30px 32px 30px 32px; margin: 0 0 18px; border-radius: 20px;
+  background: #fff; border: 1px solid var(--line); scroll-margin-top: 110px;
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+.lg-sec:hover { border-color: rgba(var(--red), 0.35); box-shadow: 0 18px 36px -26px rgba(3, 23, 64, 0.45); }
+.lg-sec::before {
+  content: attr(data-n); position: absolute; top: 18px; right: 26px;
+  font: 700 3.2rem/1 'Outfit', sans-serif; color: rgba(3, 23, 64, 0.06); pointer-events: none;
+}
+.lg-sec h2 { margin: 0 0 12px; color: var(--ink); font-size: 1.4rem; letter-spacing: -0.01em; }
+.lg-sec p, .lg-sec li { font-size: 1.02rem; line-height: 1.7; }
+.lg-sec p { margin: 0 0 12px; }
+.lg-sec p:last-child { margin-bottom: 0; }
+.lg-sec ul { margin: 0 0 12px; padding: 0; list-style: none; }
+.lg-sec li { position: relative; padding-left: 22px; margin-bottom: 6px; }
+.lg-sec li::before {
+  content: ""; position: absolute; left: 0; top: 0.72em; width: 8px; height: 8px; border-radius: 50%;
+  background: rgba(var(--red), 0.15); border: 2px solid #FC2415; box-sizing: border-box;
+}
+.lg-sec a { color: #FC2415; text-underline-offset: 3px; }
+.lg-sec strong { color: var(--ink); }
+
+/* scroll reveal (only when JS is on, so content is never hidden without it) */
+.lg-js .lg-sec, .lg-js .lg-short div {
+  opacity: 0; transform: translateY(24px);
+  transition: opacity 0.7s ease, transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.25s, box-shadow 0.25s;
+}
+.lg-js .lg-sec.in, .lg-js .lg-short div.in { opacity: 1; transform: none; }
+
+.lg-note { margin-top: 28px; font-size: 0.9rem; color: #6B7894; }
+
+@keyframes lgRise { to { opacity: 1; transform: none; } }
+@keyframes lgFloat { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(24px, 30px); } }
+@keyframes lgPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(252, 36, 21, 0.5); } 50% { box-shadow: 0 0 0 6px rgba(252, 36, 21, 0); } }
+@keyframes lgShine { to { background-position: 200% center; } }
+
+@media (max-width: 900px) {
+  .lg-wrap { grid-template-columns: 1fr; gap: 28px; padding: 36px 16px 72px; }
+  .lg-toc { position: static; }
+  .lg-toc ol { display: flex; flex-wrap: wrap; gap: 8px; border: 0; }
+  .lg-toc a, .lg-toc a.on {
+    border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; margin: 0; font-size: 0.88rem;
+  }
+  .lg-toc a.on { border-color: #FC2415; padding-left: 14px; }
+  .lg-short { grid-template-columns: 1fr; }
+  .lg-hero { padding: 140px 16px 90px; }
+  .lg-hero-card { padding: 28px 20px 24px; border-radius: 20px; }
+  .lg-sec { padding: 24px 22px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lg-blob, .lg-eyebrow i, .lg-h1 em { animation: none; }
+  .lg-hero .lg-eyebrow, .lg-hero .lg-h1, .lg-hero .lg-lead, .lg-hero .lg-meta { animation: none; opacity: 1; transform: none; }
+  .lg-js .lg-sec, .lg-js .lg-short div { opacity: 1; transform: none; transition: none; }
+}
+
+/* no hairline under the header on the legal pages */
+body.lg .top-nav,
+body.lg .top-nav.nav-dark { box-shadow: none; border-bottom: 0; }

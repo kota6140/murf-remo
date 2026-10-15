@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>How It Works | Follow One Call from Ring to Result | TakeRemo</title>
+  <meta name="description"
+    content="Follow a single Remo call from the brief to the dial, the conversation, the data and the result, one scroll at a time.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+    rel="stylesheet">
+  <link rel="icon" type="image/jpeg" href="/assets/tab.jpeg">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="TakeRemo">
+  <meta property="og:title" content="How TakeRemo Works">
+  <meta property="og:description" content="Follow one call from the first ring to the final result.">
+  <meta property="og:image" content="https://takeremo.com/assets/tab.jpeg">
+  <link rel="stylesheet" href="/styles.css?v=20261015c">
+  <link rel="stylesheet" href="/service.css?v=12">
+  <link rel="stylesheet" href="/how-it-works.css?v=6">
+  <script>document.documentElement.classList.add('sv-js');</script>
+</head>
+
+<body class="sv hw" data-slug="how-it-works" data-dark-page style="--a:96,140,255;--ad:96,140,255;--on-a:#FFFFFF">
+  <main class="hw-main">
+
+    <!-- 1. HERO -->
+    <section class="hw-hero" data-theme="dark">
+      <canvas class="hw-ribbons" id="hw-ribbons" aria-hidden="true"></canvas>
+      <div class="sv-wrap hw-hero-inner">
+        <span class="sv-eyebrow"><i></i>How it works</span>
+        <h1 class="hw-h1">A phone call, turned into <em>a business outcome.</em></h1>
+        <p class="hw-lead">Follow one Remo call from the brief to the result. Scroll slowly. Everything below is
+          one call, in six moves.</p>
+        <div class="hw-hero-actions">
+          <a class="sv-btn sv-btn-primary" href="#story">Follow the call
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+              stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <polyline points="19 12 12 19 5 12" />
+            </svg></a>
+          <button type="button" class="sv-btn sv-btn-ghost" data-open-demo>Try 60-Second Demo</button>
+        </div>
+      </div>
+      <div class="hw-scrollcue" aria-hidden="true"><span></span></div>
+    </section>
+
+    <!-- 2. THE STORY: one scroll-driven scene, six forms -->
+    <section class="hw-story" id="story" data-theme="dark"aria-label="One call in six steps">
+      <div class="hw-track" id="hw-track">
+        <div class="hw-sticky">
+          <div class="hw-copy">
+            <ol class="hw-rail" id="hw-rail" aria-label="Steps"></ol>
+            <div class="hw-steps" id="hw-steps">
+              <article class="hw-step" data-label="Brief">
+                <span class="hw-num">01 / 06</span>
+                <h2>You tell Remo who to call, and why.</h2>
+                <p>Upload a contact list, pick the goal and set the tone. That is the whole setup. No scripts to
+                  program and no dialler to configure.</p>
+              </article>
+              <article class="hw-step" data-label="Dial">
+                <span class="hw-num">02 / 06</span>
+                <h2>Remo starts calling. Many at once.</h2>
+                <p>No queue and no waiting for a free agent. Calls go out in parallel from your number, and anyone who
+                  does not pick up is retried later.</p>
+              </article>
+              <article class="hw-step" data-label="Talk">
+                <span class="hw-num">03 / 06</span>
+                <h2>A real conversation, not a menu.</h2>
+                <p>Remo listens, answers in a natural voice and copes with interruptions, accents and people changing
+                  their mind halfway through a sentence.</p>
+              </article>
+              <article class="hw-step" data-label="Understand">
+                <span class="hw-num">04 / 06</span>
+                <h2>Speech becomes structured data.</h2>
+                <p>Intent, answers, objections and preferred times are pulled out while the call is still happening, so
+                  nothing is left in a recording nobody replays.</p>
+              </article>
+              <article class="hw-step" data-label="Act">
+                <span class="hw-num">05 / 06</span>
+                <h2>Then it does the next thing, too.</h2>
+                <p>Book the slot, send the confirmation, update your records, or hand a warm call to a person when it
+                  matters. All before the line goes quiet.</p>
+              </article>
+              <article class="hw-step" data-label="See">
+                <span class="hw-num">06 / 06</span>
+                <h2>You see every result, instantly.</h2>
+                <p>Outcomes, transcripts and recordings for every call, grouped by campaign. You open the dashboard to
+                  decisions, not to homework.</p>
+              </article>
+            </div>
+          </div>
+
+          <div class="hw-stage" id="hw-stage" role="img"
+            aria-label="Animation: one cloud of particles reshapes itself into a contact list, a ring of outgoing calls, a sound wave, data cards, a calendar with check marks, and a growing chart">
+            <canvas id="hw-morph" aria-hidden="true"></canvas>
+
+            <div class="hw-read" id="hw-read" aria-hidden="true">
+              <div class="hw-r">
+                <span class="hw-chip hw-file" data-at="0">contacts.csv</span>
+                <span class="hw-chip" data-at="0.2"><b data-count="2400">0</b> contacts</span>
+                <span class="hw-chip is-good" data-at="0.5">✓ numbers checked</span>
+              </div>
+              <div class="hw-r">
+                <span class="hw-chip" data-at="0"><b data-count="40">0</b> calls in parallel</span>
+                <span class="hw-chip" data-at="0.3">retry if no answer</span>
+                <span class="hw-chip is-good" data-at="0.55">● dialling</span>
+              </div>
+              <div class="hw-r hw-r-talk">
+                <p class="hw-line" data-at="0"><em>Remo</em><span data-type="Hi Priya, this is Remo from Apollo Clinic. Is now a good time?"></span></p>
+                <p class="hw-line hw-them" data-at="0.4"><em>Priya</em><span data-type="Yes, go ahead. Can you do tomorrow evening?"></span></p>
+              </div>
+              <div class="hw-r">
+                <span class="hw-chip" data-at="0">Intent <b>Reschedule</b></span>
+                <span class="hw-chip" data-at="0.2">Time <b>Tue 4:00 PM</b></span>
+                <span class="hw-chip" data-at="0.4">Mood <b>Positive</b></span>
+                <span class="hw-chip" data-at="0.6">Language <b>English</b></span>
+              </div>
+              <div class="hw-r">
+                <span class="hw-chip is-good" data-at="0">✓ Slot booked</span>
+                <span class="hw-chip is-good" data-at="0.25">✓ Confirmation sent</span>
+                <span class="hw-chip is-good" data-at="0.5">✓ Records updated</span>
+              </div>
+              <div class="hw-r">
+                <span class="hw-chip" data-at="0"><b data-count="62" data-suffix="%">0</b> answered</span>
+                <span class="hw-chip" data-at="0.2"><b data-count="318">0</b> booked</span>
+                <span class="hw-chip is-good" data-at="0.4">0 missed follow-ups</span>
+              </div>
+            </div>
+            <span class="hw-sample">Sample campaign · illustrative numbers</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. THE LOOP -->
+    <section class="hw-loop" data-theme="light">
+      <div class="sv-wrap">
+        <div class="sv-head sv-reveal hw-head-c">
+          <span class="sv-kicker">Under the hood</span>
+          <h2 class="sv-h2">Every sentence takes the same four beats.</h2>
+          <p class="sv-sub">It happens faster than a pause in conversation, and it happens again for every line the
+            caller says.</p>
+        </div>
+        <div class="hw-beats">
+          <div class="hw-beat sv-reveal" style="--d:0s">
+            <span class="hw-beat-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /></svg></span>
+            <h3>Listens</h3>
+            <p>Hears the caller in real time, through background noise and mid-sentence interruptions.</p>
+          </div>
+          <div class="hw-beat sv-reveal" style="--d:0.1s">
+            <span class="hw-beat-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1" /></svg></span>
+            <h3>Understands</h3>
+            <p>Works out what the person means and what they need, not just which keywords they used.</p>
+          </div>
+          <div class="hw-beat sv-reveal" style="--d:0.2s">
+            <span class="hw-beat-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3v12" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></svg></span>
+            <h3>Decides</h3>
+            <p>Follows your brief: answer, book, escalate to a person, or close the call politely.</p>
+          </div>
+          <div class="hw-beat sv-reveal" style="--d:0.3s">
+            <span class="hw-beat-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h2M7 8v8M11 5v14M15 8v8M19 10v4M21 12h0" /></svg></span>
+            <h3>Speaks</h3>
+            <p>Replies in a natural voice, so the conversation keeps its rhythm.</p>
+          </div>
+          <span class="hw-beat-line" aria-hidden="true"><i></i></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. CONTROL -->
+    <section class="hw-control" data-theme="dark">
+      <div class="sv-wrap">
+        <div class="sv-head sv-reveal hw-head-c">
+          <span class="sv-kicker">You stay in charge</span>
+          <h2 class="sv-h2">Automation you can see into.</h2>
+        </div>
+        <div class="hw-cards">
+          <div class="hw-card sv-reveal" style="--d:0s">
+            <h3>You hold the brief</h3>
+            <p>Remo says what you told it to say, in the voice and tone you chose. Change the brief and the next call
+              changes with it.</p>
+          </div>
+          <div class="hw-card sv-reveal" style="--d:0.1s">
+            <h3>People stay in the loop</h3>
+            <p>Hard conversations and high-value moments can be handed to your team, with the context already
+              written up.</p>
+          </div>
+          <div class="hw-card sv-reveal" style="--d:0.2s">
+            <h3>Nothing is a black box</h3>
+            <p>Every call has a transcript, an outcome and a recording you can open from your dashboard.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. TEAM -->
+    <section class="hw-team" data-theme="light">
+      <div class="sv-wrap">
+        <div class="sv-head sv-reveal">
+          <span class="sv-kicker">Pick a voice employee</span>
+          <h2 class="sv-h2">Same call. Five different jobs.</h2>
+        </div>
+        <div class="sv-more-grid" id="sv-more-grid"></div>
+      </div>
+    </section>
+
+    <!-- CLOSING CTA -->
+    <section class="sv-cta" data-theme="dark">
+      <h2>Hear one call for yourself.</h2>
+      <p>Get a live demo call from Remo in about a minute.</p>
+      <button type="button" class="sv-btn sv-btn-primary" data-open-demo>Try 60-Second Demo
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+          stroke-linecap="round" stroke-linejoin="round">
+          <line x1="5" y1="12" x2="19" y2="12" />
+          <polyline points="12 5 19 12 12 19" />
+        </svg></button>
+      <span class="sv-cta-note">Free demo · No credit card · Confirmation email in seconds</span>
+    </section>
+  </main>
+
+  <script src="/service.js?v=11"></script>
+  <script src="/how-it-works.js?v=4"></script>
+</body>
+
+</html>

@@ -763,7 +763,10 @@ body.sv .top-nav.nav-dark { background: rgba(6, 11, 24, 0.96); box-shadow: 0 1px
 
 .top-nav.nav-dark .nav-link { color: #CBD5E1; }
 .top-nav.nav-dark .nav-link:hover { color: #FFFFFF; }
-
+.top-nav.nav-dark .nav-dd-menu { background: #0E1730; border-color: rgba(255, 255, 255, 0.12); box-shadow: 0 24px 48px -16px rgba(0, 0, 0, 0.6); }
+.top-nav.nav-dark .nav-dd-menu a { color: #F1F5F9; }
+.top-nav.nav-dark .nav-dd-menu a:hover { background: rgba(255, 255, 255, 0.07); }
+.top-nav.nav-dark .nav-dd-menu small { color: #94A3B8; }
 .top-nav.nav-dark .btn-outline { color: #FFFFFF; background: transparent; border-color: rgba(255, 255, 255, 0.28); }
 .top-nav.nav-dark .btn-outline:hover { color: #FFFFFF; background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.45); }
 

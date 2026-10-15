@@ -1,0 +1,207 @@
+/* ==========================================================================
+   TakeRemo — /industry/<key>. Dark and light sections alternate:
+   dark hero with a scene > light before/after wipe > dark call timeline >
+   light sample call > dark outcomes > light call-to-action.
+   The page colour comes from --c (set by industry.js).
+   ========================================================================== */
+
+@property --ang { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+
+body.ip {
+  --night: #050B1A;
+  --paper: #F6F8FD;
+  --ink: #031740;
+  --txt: #3B4A6B;
+  --line: rgba(3, 23, 64, 0.1);
+  background: var(--paper);
+  color: var(--txt);
+  font-family: 'Outfit', system-ui, sans-serif;
+  overflow-x: clip;
+}
+.ip section { position: relative; }
+
+.ip-head { max-width: 760px; margin: 0 auto 44px; text-align: center; }
+.ip-head h2 { margin: 0 0 12px; color: var(--ink); font-size: clamp(2.2rem, 4.8vw, 3.8rem); line-height: 1.08; letter-spacing: -0.02em; }
+.ip-head h2 em, .ip-hear h2 em, .ip-cta h2 em { font-style: normal; color: rgb(var(--c)); }
+.ip-head p { margin: 0; font-size: 1.15rem; line-height: 1.6; }
+.ip-head-dk h2 { color: #fff; }
+.ip-head-dk p { color: #B7C2DC; }
+
+/* ==================================================================== HERO */
+.ip-hero { padding: 24px 0 36px; background: var(--night); color: #fff; overflow: hidden; }
+.ip-hero-glow { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(720px 520px at 78% 50%, rgba(var(--c), 0.28), transparent 70%), radial-gradient(520px 380px at 6% 100%, rgba(96, 140, 255, 0.14), transparent 70%); }
+.ip-hero::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0.5; background-image: linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px); background-size: 64px 64px; -webkit-mask-image: radial-gradient(ellipse at 72% 50%, #000 5%, transparent 70%); mask-image: radial-gradient(ellipse at 72% 50%, #000 5%, transparent 70%); }
+.ip-hero-grid { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); gap: 20px; align-items: center; }
+
+.ip-crumb { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; font: 500 13px 'JetBrains Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0; animation: ipFade 0.8s ease 0.1s forwards; }
+.ip-crumb a { color: #9BA9C8; text-decoration: none; transition: color 0.2s; }
+.ip-crumb a:hover { color: #fff; }
+.ip-crumb i { color: #52617F; font-style: normal; }
+.ip-crumb span { color: rgb(var(--c)); filter: brightness(1.25); }
+
+.ip-h1 { margin: 0 0 18px; font-size: clamp(2.5rem, 4.9vw, 4.6rem); line-height: 1.04; font-weight: 700; letter-spacing: -0.03em; }
+.ip-w { display: inline-block; opacity: 0; transform: translateY(40px); filter: blur(12px); animation: ipWord 1s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; animation-delay: calc(var(--i) * 0.09s + 0.2s); }
+.ip-h1 em { font-style: normal; background: linear-gradient(90deg, rgb(var(--c)), #fff 45%, rgb(var(--c))); background-size: 250% auto; -webkit-background-clip: text; background-clip: text; color: transparent; animation: ipWord 1s cubic-bezier(0.2, 0.8, 0.2, 1) forwards, ipShine 5s linear infinite; animation-delay: calc(var(--i) * 0.09s + 0.2s), 0s; }
+.ip-lead { max-width: 500px; margin: 0 0 26px; font-size: 1.15rem; line-height: 1.6; color: #B7C2DC; opacity: 0; animation: ipFade 1s ease 1s forwards; }
+.ip-actions { display: flex; flex-wrap: wrap; gap: 12px; opacity: 0; animation: ipFade 1s ease 1.2s forwards; }
+
+.ip-scene { position: relative; width: 100%; aspect-ratio: 1.12; max-width: 760px; margin-left: auto; }
+.ip-scene canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ip-live { position: absolute; left: 4%; right: 4%; bottom: 3%; padding: 16px 18px; border-radius: 22px; background: rgba(8, 14, 30, 0.78); backdrop-filter: blur(10px); border: 1px solid rgba(var(--c), 0.5); box-shadow: 0 30px 60px -24px rgba(var(--c), 0.8); }
+.ip-live-top { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.ip-live-ic { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; color: #fff; background: rgb(var(--c)); }
+.ip-live-ic svg { width: 19px; height: 19px; }
+.ip-live-top b { font: 700 11px 'JetBrains Mono', monospace; letter-spacing: 0.1em; }
+.ip-live-top em { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font: 700 11px 'JetBrains Mono', monospace; font-style: normal; color: #FF8A8A; }
+.ip-live-top em i { width: 8px; height: 8px; border-radius: 50%; background: #FF4D4D; animation: ipBlink 1.2s ease-in-out infinite; }
+.ip-wave { display: flex; align-items: center; gap: 3px; height: 26px; margin-bottom: 10px; }
+.ip-wave i { flex: 1; max-width: 5px; min-width: 2px; height: 100%; border-radius: 3px; background: rgb(var(--c)); filter: brightness(1.35); transform: scaleY(0.2); animation: ipWaveBar 1s ease-in-out infinite; animation-delay: calc(var(--k) * -0.08s); }
+.ip-live-say { min-height: 3.1em; margin: 0; font-size: 0.98rem; line-height: 1.55; color: #E6EDFF; }
+.ip-live-say::after { content: ""; display: inline-block; width: 2px; height: 1em; margin-left: 2px; background: rgb(var(--c)); filter: brightness(1.4); vertical-align: -2px; animation: ipBlink 0.9s step-end infinite; }
+
+/* ============================================================== BEFORE / AFTER */
+.ip-why { padding: 70px 0 76px; background: var(--paper); }
+.ip-rows { display: grid; gap: 18px; max-width: 980px; margin: 0 auto; }
+.ip-row { --p: 0; position: relative; display: grid; border-radius: 24px; overflow: hidden; box-shadow: 0 24px 50px -36px rgba(3, 23, 64, 0.5); }
+.ip-pain, .ip-sol { grid-area: 1 / 1; display: flex; align-items: center; gap: 18px; padding: 30px 32px 30px 30px; border-radius: 24px; }
+.ip-pain { background: #fff; border: 1px solid var(--line); color: #5B6988; }
+.ip-sol { background: linear-gradient(110deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.16)), rgb(var(--c)); color: #fff; clip-path: inset(0 calc((1 - var(--p)) * 100%) 0 0); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2); }
+.ip-row p { margin: 0; flex: 1; font-size: clamp(1.15rem, 2.2vw, 1.65rem); line-height: 1.3; font-weight: 600; letter-spacing: -0.01em; }
+.ip-pain p { color: #5B6988; }
+.ip-tag { position: absolute; top: 10px; left: 30px; font: 600 10.5px 'JetBrains Mono', monospace; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.7; }
+.ip-sym { flex: none; display: inline-grid; place-items: center; width: 46px; height: 46px; margin-top: 8px; border-radius: 50%; }
+.ip-sym svg { width: 22px; height: 22px; }
+.ip-pain .ip-sym { background: #EEF1F8; color: #8895B3; }
+.ip-sol .ip-sym { background: rgba(255, 255, 255, 0.22); color: #fff; }
+.ip-pain, .ip-sol { position: relative; }
+.ip-pain .ip-tag, .ip-sol .ip-tag { position: absolute; }
+.ip-pain p, .ip-sol p { margin-top: 8px; }
+.ip-edge { position: absolute; top: 0; bottom: 0; left: calc(var(--p) * 100%); width: 4px; margin-left: -2px; background: #fff; box-shadow: 0 0 22px 6px rgba(var(--c), 0.9); opacity: 0; pointer-events: none; }
+.ip-row.run .ip-edge { opacity: 1; }
+
+/* ============================================================== TIMELINE */
+.ip-flow { padding: 76px 0 84px; background: var(--night); color: #fff; overflow: hidden; }
+.ip-flow::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(700px 440px at 50% 0%, rgba(var(--c), 0.2), transparent 70%); }
+.ip-tl { --fill: 0px; position: relative; max-width: 820px; margin: 0 auto; padding-left: 96px; }
+.ip-tl-line { position: absolute; left: 31px; top: 28px; bottom: 28px; width: 4px; border-radius: 4px; background: rgba(255, 255, 255, 0.1); }
+.ip-tl-fill { position: absolute; left: 0; top: 0; width: 100%; height: var(--fill); border-radius: 4px; background: linear-gradient(180deg, rgba(var(--c), 0.2), rgb(var(--c))); box-shadow: 0 0 18px rgba(var(--c), 0.8); }
+.ip-tl-dot { position: absolute; left: 33px; top: calc(28px + var(--fill)); width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 6px rgba(var(--c), 0.35), 0 0 30px 8px rgba(var(--c), 0.9); }
+.ip-step { position: relative; padding: 0 0 44px; }
+.ip-step:last-child { padding-bottom: 0; }
+.ip-node { position: absolute; left: -96px; top: 0; width: 64px; height: 64px; display: grid; place-items: center; border-radius: 50%; background: #0B1226; border: 2px solid rgba(255, 255, 255, 0.18); transition: background 0.4s, border-color 0.4s, box-shadow 0.4s, transform 0.4s; }
+.ip-node b { font: 700 1.4rem 'Outfit', sans-serif; color: #7F8FB3; transition: color 0.4s; }
+.ip-step.on .ip-node { background: rgb(var(--c)); border-color: rgb(var(--c)); box-shadow: 0 0 0 8px rgba(var(--c), 0.2), 0 0 34px rgba(var(--c), 0.8); transform: scale(1.06); }
+.ip-step.on .ip-node b { color: #fff; }
+.ip-step-card { padding: 24px 28px; border-radius: 22px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.1); opacity: 0.45; transform: translateX(26px); transition: opacity 0.6s, transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.5s, background 0.5s; }
+.ip-step.on .ip-step-card { opacity: 1; transform: none; border-color: rgba(var(--c), 0.6); background: rgba(var(--c), 0.1); }
+.ip-step-card h3 { margin: 0 0 8px; font-size: 1.5rem; letter-spacing: -0.01em; }
+.ip-step-card p { margin: 0; font-size: 1.05rem; line-height: 1.6; color: #B7C2DC; }
+
+/* ============================================================== HEAR IT */
+.ip-hear { padding: 76px 0 84px; background: var(--paper); }
+.ip-hear-grid { display: grid; grid-template-columns: minmax(0, 540px) minmax(0, 600px); justify-content: center; gap: 36px; align-items: center; }
+.ip-hear h2 { margin: 0 0 14px; color: var(--ink); font-size: clamp(2.2rem, 4.6vw, 3.6rem); line-height: 1.08; letter-spacing: -0.02em; }
+.ip-hear-copy > p { margin: 0 0 26px; max-width: 520px; font-size: 1.15rem; line-height: 1.6; }
+.ip-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 10px; }
+.ip-chips li { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 999px; font-weight: 600; font-size: 0.95rem; color: var(--ink); background: #fff; border: 1px solid rgba(var(--c), 0.4); box-shadow: 0 10px 22px -16px rgba(var(--c), 0.8); transition: transform 0.25s, background 0.25s; }
+.ip-chips li:hover { transform: translateY(-3px); background: rgba(var(--c), 0.1); }
+.ip-chips svg { width: 14px; height: 14px; color: rgb(var(--c)); }
+
+.ip-phone { max-width: 600px; width: 100%; border-radius: 32px; overflow: hidden; color: #fff; background: linear-gradient(180deg, #0B1226, #070D1D); border: 1px solid rgba(var(--c), 0.45); box-shadow: 0 50px 90px -40px rgba(var(--c), 0.9); }
+.ip-phone-top { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); background: linear-gradient(90deg, rgba(var(--c), 0.3), transparent); }
+.ip-phone-ic { display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: rgb(var(--c)); }
+.ip-phone-ic svg { width: 22px; height: 22px; }
+.ip-phone-top b { display: block; font-size: 1.05rem; }
+.ip-phone-top small { color: #8FA0C6; font: 500 10.5px 'JetBrains Mono', monospace; letter-spacing: 0.08em; }
+.ip-phone-top em { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font: 600 11px 'JetBrains Mono', monospace; font-style: normal; color: #A8F3D5; }
+.ip-phone-top em i { width: 8px; height: 8px; border-radius: 50%; background: #34D399; animation: ipBlink 1.4s ease-in-out infinite; }
+.ip-chat { display: flex; flex-direction: column; gap: 12px; min-height: 420px; padding: 22px 20px; }
+.ip-msg { max-width: 84%; padding: 12px 16px; border-radius: 18px; font-size: 0.98rem; line-height: 1.5; opacity: 0; transform: translateY(10px) scale(0.97); animation: ipPop 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+.ip-msg.r { align-self: flex-start; background: rgba(var(--c), 0.22); border: 1px solid rgba(var(--c), 0.5); border-bottom-left-radius: 5px; }
+.ip-msg.c { align-self: flex-end; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.16); border-bottom-right-radius: 5px; }
+.ip-msg small { display: block; margin-bottom: 4px; font: 700 9.5px 'JetBrains Mono', monospace; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.65; }
+.ip-typing { display: inline-flex; gap: 5px; padding: 14px 16px; }
+.ip-typing i { width: 7px; height: 7px; border-radius: 50%; background: #fff; opacity: 0.8; animation: ipBob 0.9s ease-in-out infinite; }
+.ip-typing i:nth-child(2) { animation-delay: 0.15s; } .ip-typing i:nth-child(3) { animation-delay: 0.3s; }
+.ip-replay { display: block; margin: 0 20px 20px auto; padding: 9px 16px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.22); background: rgba(255, 255, 255, 0.06); color: #fff; font: 600 0.85rem 'Outfit', sans-serif; cursor: pointer; transition: background 0.2s; }
+.ip-replay:hover { background: rgba(255, 255, 255, 0.14); }
+
+/* ============================================================== OUTCOMES */
+.ip-out { padding: 76px 0 84px; background: var(--night); color: #fff; overflow: hidden; }
+.ip-out::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(760px 460px at 50% 100%, rgba(var(--c), 0.2), transparent 70%); }
+.ip-out-grid { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; }
+.ip-out-card { position: relative; padding: 34px 30px 36px; border-radius: 26px; border: 2px solid transparent; background: linear-gradient(#0B1226, #0B1226) padding-box, conic-gradient(from var(--ang), rgba(var(--c), 0.08), rgb(var(--c)), rgba(var(--c), 0.08) 40%, rgba(var(--c), 0.08)) border-box; animation: ipSpin 6s linear infinite; }
+.ip-out-card:nth-child(2) { animation-delay: -2s; } .ip-out-card:nth-child(3) { animation-delay: -4s; }
+.ip-out-n { display: block; margin-bottom: 18px; font: 800 3.2rem/1 'Outfit', sans-serif; color: rgba(var(--c), 0.5); }
+.ip-out-card h3 { margin: 0 0 10px; font-size: 1.55rem; letter-spacing: -0.01em; }
+.ip-out-card p { margin: 0; font-size: 1.05rem; line-height: 1.6; color: #B7C2DC; }
+
+/* ============================================================== CTA */
+.ip-cta { padding: 70px 0 84px; background: var(--paper); }
+.ip-cta-card { position: relative; overflow: hidden; text-align: center; padding: 76px 24px; border-radius: 36px; color: #fff; background: linear-gradient(135deg, #031740, #0A2A6B 55%, #031740); box-shadow: 0 50px 90px -50px rgba(3, 23, 64, 0.8); }
+.ip-cta-orb { position: absolute; width: 520px; height: 520px; top: -260px; right: -120px; border-radius: 50%; background: radial-gradient(circle, rgba(var(--c), 0.7), transparent 65%); animation: ipFloat 12s ease-in-out infinite; }
+.ip-cta-card::after { content: ""; position: absolute; width: 480px; height: 480px; bottom: -260px; left: -100px; border-radius: 50%; background: radial-gradient(circle, rgba(96, 140, 255, 0.5), transparent 65%); animation: ipFloat 14s ease-in-out infinite reverse; }
+.ip-cta-card h2 { position: relative; z-index: 1; margin: 0 0 12px; font-size: clamp(2.1rem, 4.6vw, 3.6rem); line-height: 1.1; letter-spacing: -0.02em; }
+.ip-cta-card p { position: relative; z-index: 1; margin: 0 auto 28px; max-width: 520px; font-size: 1.15rem; color: #C3CEE8; }
+.ip-cta-actions { position: relative; z-index: 1; display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; }
+.ip-ghost-btn { display: inline-flex; align-items: center; padding: 15px 28px; border-radius: 999px; font-weight: 700; color: #fff; text-decoration: none; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.28); transition: background 0.25s, transform 0.25s; }
+.ip-ghost-btn:hover { background: rgba(255, 255, 255, 0.16); transform: translateY(-2px); }
+.ip-others { margin-top: 56px; text-align: center; }
+.ip-others h3 { margin: 0 0 20px; color: var(--ink); font-size: 1.4rem; }
+.ip-others-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+.ip-others-row a { display: inline-flex; align-items: center; gap: 10px; padding: 10px 20px 10px 10px; border-radius: 999px; text-decoration: none; font-weight: 600; color: var(--ink); background: #fff; border: 1px solid var(--line); transition: transform 0.25s, border-color 0.25s, box-shadow 0.25s; }
+.ip-others-row a span { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; color: #fff; background: rgb(var(--c)); }
+.ip-others-row a svg { width: 18px; height: 18px; }
+.ip-others-row a:hover { transform: translateY(-4px); border-color: rgb(var(--c)); box-shadow: 0 16px 30px -18px rgba(var(--c), 0.9); }
+
+/* ============================================================ keyframes */
+@keyframes ipWord { to { opacity: 1; transform: none; filter: none; } }
+@keyframes ipFade { to { opacity: 1; } }
+@keyframes ipShine { to { background-position: 250% center; } }
+@keyframes ipBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+@keyframes ipWaveBar { 0%, 100% { transform: scaleY(0.2); } 50% { transform: scaleY(1); } }
+@keyframes ipPop { to { opacity: 1; transform: none; } }
+@keyframes ipBob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+@keyframes ipSpin { to { --ang: 360deg; } }
+@keyframes ipFloat { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(-30px, 34px); } }
+
+/* ============================================================ responsive */
+@media (max-width: 1000px) {
+  .ip-hero-grid { grid-template-columns: 1fr; gap: 12px; }
+  .ip-scene { margin: 0 auto; max-width: 560px; }
+  .ip-hear-grid { grid-template-columns: 1fr; gap: 32px; }
+  .ip-phone { margin: 0 auto; }
+  .ip-out-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .ip-tl { padding-left: 64px; }
+  .ip-tl-line { left: 15px; }
+  .ip-tl-dot { left: 17px; }
+  .ip-node { left: -64px; width: 46px; height: 46px; }
+  .ip-node b { font-size: 1.1rem; }
+  .ip-pain, .ip-sol { padding: 34px 20px 22px; flex-direction: column; align-items: flex-start; gap: 4px; }
+  .ip-tag { left: 20px; }
+  .ip-cta-card { padding: 56px 20px; border-radius: 26px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ip-w, .ip-crumb, .ip-lead, .ip-actions { animation: none; opacity: 1; transform: none; filter: none; }
+  .ip-h1 em, .ip-wave i, .ip-out-card, .ip-cta-orb, .ip-cta-card::after, .ip-live-top em i { animation: none; }
+  .ip-msg { animation: none; opacity: 1; transform: none; }
+}
+
+/* service.css colours sections by position (nth-of-type); these pages alternate differently, so pin each one */
+body.sv.ip main > section { border-top: 0; }
+body.sv.ip main > section.ip-hero,
+body.sv.ip main > section.ip-flow,
+body.sv.ip main > section.ip-out { background: #050B1A; --ink: #FFFFFF; --txt: #E2E8F0; --line: rgba(255, 255, 255, 0.09); color: #E2E8F0; }
+body.sv.ip main > section.ip-why,
+body.sv.ip main > section.ip-hear,
+body.sv.ip main > section.ip-cta { background: #F6F8FD; --ink: #031740; --txt: #3B4A6B; --line: rgba(3, 23, 64, 0.1); color: #3B4A6B; }
+
+/* hero: lift the left-hand text a little */
+.ip-hero-copy { position: relative; top: -34px; }
+@media (max-width: 1000px) { .ip-hero-copy { top: 0; } }
+
+/* the live call card is gone from the hero, so trim the empty strip under each scene */
+@media (min-width: 1001px) { .ip-scene { margin-bottom: -110px; } }

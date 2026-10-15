@@ -43,12 +43,34 @@
 
   function buildShell() {
     // Same header as the homepage (links point back to the homepage sections)
-    const navLinks = [
-      ['/#services', 'Services'], ['/#instant-call-demo', '60-Sec Test'], ['/#recruitment', 'Recruitment'],
-      ['/#sales', 'Sales'], ['/#support', 'Customer Support'], ['/#human-touch', 'Human Touch'],
-      ['/#how-it-works', 'How It Works'], ['/#industries', 'Industries']
+    const INDUSTRIES = [
+      ['healthcare', 'Healthcare'], ['recruitment', 'Recruitment'], ['sales', 'Sales'], ['education', 'Education'],
+      ['realestate', 'Real Estate'], ['support', 'Customer Support'], ['finance', 'Finance'], ['automotive', 'Automotive']
     ];
-    const navLinkHtml = navLinks.map(([href, text]) => `<a href="${href}" class="nav-link">${text}</a>`).join('');
+    const chev = '<svg class="nav-dd-chev" width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="2 4 6 8 10 4" /></svg>';
+    const dropdown = (label, menuClass, items, href) => `
+      <div class="nav-dd">
+        <button type="button" class="nav-link nav-dd-btn"${href ? ` data-href="${href}"` : ''} aria-haspopup="true" aria-expanded="false">${label}${chev}</button>
+        <div class="nav-dd-menu ${menuClass}">${items}</div>
+      </div>`;
+    const serviceItems = SERVICES.map((s) => `<a href="${s.path}"><i style="--c:${s.rgb}"></i><span><b>${s.name}</b><small>${s.line}</small></span></a>`).join('');
+    const industryItems = INDUSTRIES.map(([k, n]) => `<a href="/industry/${k}"><span><b>${n}</b></span></a>`).join('');
+    const navLinkHtml = [
+      dropdown('Services', '', serviceItems, '/our-services'),
+      '<a href="/#instant-call-demo" class="nav-link">60-Sec Test</a>',
+      '<a href="/#human-touch" class="nav-link">Human Touch</a>',
+      '<a href="/how-it-works" class="nav-link">How It Works</a>',
+      dropdown('Industries', 'nav-dd-menu--cols', industryItems, '/industries'),
+      '<a href="/contact" class="nav-link">Contact Us</a>'
+    ].join('');
+    const mobileNavHtml = [
+      `<details class="nav-acc"><summary class="nav-link">Services</summary><a href="/our-services" class="nav-link nav-sub">All Services</a>${SERVICES.map((s) => `<a href="${s.path}" class="nav-link nav-sub">${s.name}</a>`).join('')}</details>`,
+      '<a href="/#instant-call-demo" class="nav-link">60-Sec Test</a>',
+      '<a href="/#human-touch" class="nav-link">Human Touch</a>',
+      '<a href="/how-it-works" class="nav-link">How It Works</a>',
+      `<details class="nav-acc"><summary class="nav-link">Industries</summary><a href="/industries" class="nav-link nav-sub">All Industries</a>${INDUSTRIES.map(([k, n]) => `<a href="/industry/${k}" class="nav-link nav-sub">${n}</a>`).join('')}</details>`,
+      '<a href="/contact" class="nav-link">Contact Us</a>'
+    ].join('');
     body.insertAdjacentHTML('afterbegin', `
       <div class="sv-progress" id="sv-progress"></div>
       <header class="top-nav" id="top-nav">
@@ -67,7 +89,7 @@
           </div>
         </div>
         <nav class="mobile-nav-panel" id="mobile-nav-panel" aria-label="Mobile navigation">
-          ${navLinkHtml}
+          ${mobileNavHtml}
           <div class="mobile-nav-cta">
             <a href="/signin" class="btn btn-outline btn-sm">Login</a>
             <a href="/signup" class="btn btn-primary btn-sm">Create Account</a>
@@ -84,6 +106,9 @@
     };
     menuBtn.addEventListener('click', () => setMenu(!topNav.classList.contains('menu-open')));
     $('#mobile-nav-panel').addEventListener('click', (e) => { if (e.target.closest('a')) setMenu(false); });
+    const dd = document.createElement('script');
+    dd.src = '/nav-dropdown.js?v=2';
+    body.appendChild(dd);
 
     body.insertAdjacentHTML('beforeend', `
       <footer class="site-footer-light" id="footer">
@@ -96,10 +121,13 @@
               <span>Talk to Remo</span>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
             </button>
-            <div class="footer-status-indicator">
-              <span class="pulse-dot-blue" style="width:6px;height:6px;"></span>
-              <span>All AI Voice Gateways Operational</span>
-            </div>
+            <p class="footer-regions" aria-label="Regions">India · US · UK · Australia · Germany</p>
+        <div class="footer-social" aria-label="Social media">
+          <a href="https://www.instagram.com/takeremo" target="_blank" rel="noopener noreferrer" aria-label="TakeRemo on Instagram"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="2.5" width="19" height="19" rx="5.5"/><circle cx="12" cy="12" r="4.2"/><circle cx="17.6" cy="6.4" r="1" fill="currentColor" stroke="none"/></svg></a>
+          <a href="https://www.linkedin.com/company/take-remo/" target="_blank" rel="noopener noreferrer" aria-label="TakeRemo on LinkedIn"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg></a>
+          <a href="https://www.facebook.com/takeremo" target="_blank" rel="noopener noreferrer" aria-label="TakeRemo on Facebook"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg></a>
+          <a href="https://x.com/takeremo" target="_blank" rel="noopener noreferrer" aria-label="TakeRemo on X"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a>
+        </div>
           </div>
 
           <div class="footer-links-col">
@@ -112,10 +140,7 @@
           <div class="footer-links-col">
             <h4 class="footer-col-title">CAPABILITIES</h4>
             <ul class="footer-links-list">
-              <li><a href="/#recruitment">Recruitment</a></li>
-              <li><a href="/#sales">Sales</a></li>
-              <li><a href="/#support">Customer Support</a></li>
-              <li><a href="/#how-it-works">How It Works</a></li>
+              <li><a href="/how-it-works">How It Works</a></li>
               <li><a href="/#industries">Industries</a></li>
             </ul>
           </div>
@@ -137,13 +162,14 @@
               <li><a href="/#hero">Overview</a></li>
               <li><a href="/#final-cta">Enterprise</a></li>
               <li><a href="#">Security &amp; Compliance</a></li>
+              <li><a href="/contact">Contact Us</a></li>
             </ul>
           </div>
         </div>
 
         <div class="container footer-bottom-bar">
           <p class="footer-copyright">© 2026 TakeRemo. All rights reserved. Built with precision for human-led voice operations.</p>
-          <p class="footer-credit">Design and developed by <strong>Scorelabs Inc</strong></p>
+          <p class="footer-credit"><a href="/terms" class="footer-credit-link">Terms</a> · <a href="/privacy" class="footer-credit-link">Privacy</a> · Design and developed by <a href="https://scorelabsinc.com" target="_blank" rel="noopener" class="footer-credit-link"><strong>Scorelabs Inc</strong></a></p>
         </div>
       </footer>
 
@@ -306,6 +332,24 @@
     const nav = $('#top-nav');
     const sections = $$('main > section');
     if (!nav || !sections.length) return;
+    if (body.hasAttribute('data-light-page')) return; // fully light page: the header stays light
+    if (body.hasAttribute('data-dark-page')) { // sections declare data-theme; the header follows the one behind it
+      const footer = $('#footer');
+      const sync = () => {
+        const probe = nav.offsetHeight / 2;
+        let dark = window.scrollY < 2;
+        if (!dark) {
+          const under = sections.find((s) => { const r = s.getBoundingClientRect(); return r.top <= probe && r.bottom > probe; });
+          dark = !!under && under.dataset.theme === 'dark';
+          if (!under && footer && footer.getBoundingClientRect().top <= probe) dark = false;
+        }
+        nav.classList.toggle('nav-dark', dark);
+      };
+      window.addEventListener('scroll', sync, { passive: true });
+      window.addEventListener('resize', sync);
+      sync();
+      return;
+    }
     const darkSections = new Set([sections[0], sections[3], sections[sections.length - 1]].filter(Boolean));
 
     const update = () => {
@@ -488,16 +532,28 @@
       .sort((a, b) => cands[a].ct - cands[b].ct)
       .forEach((ci, j) => { cands[ci].slot = j; });
 
+    // What each of the five dots stands for, top to bottom
+    const STEPS = ['Calling', 'Screening', 'Shortlisting', 'Scheduling interview', 'Follow-up'];
+    const slotCand = [];
+    cands.forEach((c) => { if (c.slot !== undefined) slotCand[c.slot] = c; });
+
     stage(host, (ctx, t, w, h) => {
       const tc = t % CYCLE;
       ctx.globalAlpha = Math.min(clamp(tc / 0.7), clamp((CYCLE - tc) / 1.2));
       const ox = O.x * w, oy = O.y * h;
 
       for (let j = 0; j < 5; j++) {
+        const sy = (0.2 + j * 0.15) * h;
         ctx.strokeStyle = 'rgba(255,255,255,0.14)'; ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.arc(SLOT_X * w, (0.2 + j * 0.15) * h, 12, 0, TAU); ctx.stroke();
+        ctx.beginPath(); ctx.arc(SLOT_X * w, sy, 12, 0, TAU); ctx.stroke();
+
+        // Step name above its dot; lights up once that dot is filled. Kept inside the frame on narrow screens.
+        const c = slotCand[j];
+        const filled = c && tc >= c.ct + 0.7 + j * 0.45 + 1.5;
+        const half = STEPS[j].length * 3.3 + 4;
+        const lx = Math.min(SLOT_X * w, w - half);
+        label(ctx, STEPS[j], lx, sy - 26, { size: 10, align: 'center', color: filled ? rgba(1) : '#94A3B8' });
       }
-      label(ctx, 'SHORTLIST', SLOT_X * w, 0.1 * h, { size: 10, align: 'center' });
 
       [0.7, 2.4, 4.1].forEach((k0) => {
         const age = tc - k0;
@@ -682,18 +738,23 @@
      no-show is caught and instantly rebooked.
      ==================================================================== */
   function sceneAppointment(host) {
+    const now = new Date();
+    const monthLabel = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    const OFFSET = (new Date(now.getFullYear(), now.getMonth(), 1).getDay() + 6) % 7; // Monday-first
+    const DAYS_IN_MONTH = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const ROWS = Math.ceil((OFFSET + DAYS_IN_MONTH) / 7);
     host.insertAdjacentHTML('beforeend', `
       <div class="sv-cal">
-        <div class="sv-cal-head"><strong>October 2026</strong><span class="sv-cal-count">0 booked</span></div>
+        <div class="sv-cal-head"><strong>${monthLabel}</strong><span class="sv-cal-count">0 booked</span></div>
         <div class="sv-cal-dow">${['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d) => `<span>${d}</span>`).join('')}</div>
         <div class="sv-cal-grid"></div>
       </div>`);
     const grid = $('.sv-cal-grid', host);
     const count = $('.sv-cal-count', host);
-    const OFFSET = 3; // 1 Oct 2026 is a Thursday
+    grid.style.gridTemplateRows = `repeat(${ROWS}, 1fr)`;
     const cells = [];
-    for (let i = 0; i < 35; i++) {
-      const day = i - OFFSET + 1, ok = day >= 1 && day <= 31;
+    for (let i = 0; i < ROWS * 7; i++) {
+      const day = i - OFFSET + 1, ok = day >= 1 && day <= DAYS_IN_MONTH;
       const el = document.createElement('i');
       el.className = 'sv-cell' + (ok ? '' : ' is-blank');
       if (ok) el.innerHTML = `<b>${day}</b><u class="sv-chip"><s></s><span></span></u>`;

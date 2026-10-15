@@ -150,6 +150,16 @@ app.get('/service/:slug', (req, res, next) => {
     res.sendFile(path.join(__dirname, file));
 });
 
+app.get('/how-it-works', (req, res) => res.sendFile(path.join(__dirname, 'how-it-works.html')));
+// (not /services: that path is blocked above as a private source folder)
+const INDUSTRY_SLUGS = ['healthcare', 'recruitment', 'sales', 'education', 'realestate', 'support', 'finance', 'automotive'];
+app.get('/industry/:slug', (req, res, next) => (INDUSTRY_SLUGS.includes(req.params.slug) ? res.sendFile(path.join(__dirname, 'industry.html')) : next()));
+app.get('/industries', (req, res) => res.sendFile(path.join(__dirname, 'industries.html')));
+app.get('/our-services', (req, res) => res.sendFile(path.join(__dirname, 'our-services.html')));
+app.get('/contact', (req, res) => res.sendFile(path.join(__dirname, 'contact.html')));
+app.get('/terms', (req, res) => res.sendFile(path.join(__dirname, 'terms.html')));
+app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, 'privacy.html')));
+
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
 // Webhooks for Plivo Telephony
