@@ -275,23 +275,38 @@ const AdminClient = {
     });
   },
 
-  async previewCampaignPdf(file, service = 'recruitment') {
+  async previewCampaignDocument(file, service = 'recruitment') {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('service', service);
-    return this.request('/api/admin/campaigns/preview-pdf', {
+    return this.request('/api/admin/campaigns/preview-doc', {
+      method: 'POST',
+      body: formData
+    });
+  },
+
+  async previewCampaignPdf(file, service = 'recruitment') {
+    return this.previewCampaignDocument(file, service);
+  },
+
+  async uploadCampaignDocument(id, file) {
+    if (!id) throw new Error('Campaign ID is required');
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.request(`/api/admin/campaigns/${encodeURIComponent(id)}/upload-doc`, {
       method: 'POST',
       body: formData
     });
   },
 
   async uploadCampaignPdf(id, file) {
+    return this.uploadCampaignDocument(id, file);
+  },
+
+  async removeCampaignDocument(id) {
     if (!id) throw new Error('Campaign ID is required');
-    const formData = new FormData();
-    formData.append('file', file);
-    return this.request(`/api/admin/campaigns/${encodeURIComponent(id)}/upload-pdf`, {
-      method: 'POST',
-      body: formData
+    return this.request(`/api/admin/campaigns/${encodeURIComponent(id)}/document`, {
+      method: 'DELETE'
     });
   },
 

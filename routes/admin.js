@@ -21,6 +21,7 @@ import SalesService from '../services/sales_service.js';
 import SupportService from '../services/support_service.js';
 import CampaignService from '../services/campaign_service.js';
 import { PDFService } from '../services/pdf_service.js';
+import { DocumentService } from '../services/document_service.js';
 import { QuestionPlanner } from '../services/question_planner.js';
 import { CallQueueWorker } from '../services/call_queue_worker.js';
 import PlivoService from '../services/plivo_service.js';
@@ -34,7 +35,7 @@ const SERVICES = {
 
 const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB
+    limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB
     fileFilter: (req, file, cb) => {
         const ext = path.extname(file.originalname).toLowerCase();
         if (['.xlsx', '.xls', '.csv'].includes(ext)) return cb(null, true);
@@ -42,15 +43,16 @@ const upload = multer({
     }
 });
 
-const uploadPdf = multer({
+const uploadDoc = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB
+    limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB
     fileFilter: (req, file, cb) => {
         const ext = path.extname(file.originalname).toLowerCase();
-        if (ext === '.pdf') return cb(null, true);
-        cb(new Error(`Unsupported file type ${ext}. Only PDF documents allowed.`));
+        if (['.pdf', '.docx', '.doc'].includes(ext)) return cb(null, true);
+        cb(new Error(`Unsupported file type ${ext}. Only PDF documents (.pdf) and Microsoft Word (.docx, .doc) are allowed.`));
     }
 });
+const uploadPdf = uploadDoc; // Backward-compatible alias
 
 const router = express.Router();
 router.use(requireAdmin);
@@ -350,29 +352,32 @@ router.get('/campaigns', wrap(async (req, res) => {
     res.json({ success: true, campaigns });
 }));
 
-// Preview and extract PDF requirements without saving immediately
-router.post('/campaigns/preview-pdf', uploadPdf.single('file'), wrap(async (req, res) => {
-    if (!req.file) return fail(res, 400, 'Please select a PDF file to preview.');
+// Preview and extract PDF/Word requirements without saving immediately
+const previewDocHandler = wrap(async (req, res) => {
+    if (!req.file) return fail(res, 400, 'Please select a PDF or Word document (.docx, .doc) to preview.');
     const service = (req.body.service || 'recruitment').toLowerCase();
     let extracted = null;
     let questionPlan = [];
     if (service === 'recruitment') {
-        extracted = await PDFService.parseRecruitmentJD(req.file.buffer, req.file.originalname);
+        extracted = await DocumentService.parseRecruitmentJD(req.file.buffer, req.file.originalname);
         questionPlan = await QuestionPlanner.generateRecruitmentPlan(extracted);
     } else if (service === 'sales') {
-        extracted = await PDFService.parseSalesKnowledge(req.file.buffer, req.file.originalname);
+        extracted = await DocumentService.parseSalesKnowledge(req.file.buffer, req.file.originalname);
         questionPlan = QuestionPlanner.generateSalesPlan(extracted);
     } else {
-        extracted = await PDFService.parseSupportKnowledge(req.file.buffer, req.file.originalname);
+        extracted = await DocumentService.parseSupportKnowledge(req.file.buffer, req.file.originalname);
         questionPlan = QuestionPlanner.generateSupportPlan(extracted);
     }
     res.json({
         success: true,
         filename: req.file.originalname,
+        documentType: extracted.document_type || DocumentService.getDocumentType(req.file.originalname),
         extractedData: extracted,
         questionPlan
     });
-}));
+});
+router.post('/campaigns/preview-pdf', uploadDoc.single('file'), previewDocHandler);
+router.post('/campaigns/preview-doc', uploadDoc.single('file'), previewDocHandler);
 
 // Get single campaign
 router.get('/campaigns/:id', wrap(async (req, res) => {
@@ -401,11 +406,19 @@ router.put('/campaigns/:id', wrap(async (req, res) => {
     res.json({ success: true, campaign: updated });
 }));
 
-// Upload PDF (Job Description or Sales/Support Guide)
-router.post('/campaigns/:id/upload-pdf', uploadPdf.single('file'), wrap(async (req, res) => {
-    if (!req.file) return fail(res, 400, 'Please select a PDF file to upload.');
-    const result = await CampaignService.attachPdf(req.params.id, req.file.buffer, req.file.originalname, req.user.id);
+// Upload PDF / Word Document (Job Description or Sales/Support Guide)
+const uploadDocHandler = wrap(async (req, res) => {
+    if (!req.file) return fail(res, 400, 'Please select a PDF or Word document (.docx, .doc) to upload.');
+    const result = await CampaignService.attachDocument(req.params.id, req.file.buffer, req.file.originalname, req.user.id);
     res.json({ success: true, ...result });
+});
+router.post('/campaigns/:id/upload-pdf', uploadDoc.single('file'), uploadDocHandler);
+router.post('/campaigns/:id/upload-doc', uploadDoc.single('file'), uploadDocHandler);
+
+// Remove Attached Document from Campaign
+router.delete('/campaigns/:id/document', wrap(async (req, res) => {
+    const result = await CampaignService.removeDocument(req.params.id, req.user.id);
+    res.json(result);
 }));
 
 // Upload Excel / CSV

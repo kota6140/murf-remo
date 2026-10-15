@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import db, { utcNow, ensureCampaignSchema } from './db.js';
+import DocumentService from './document_service.js';
 import PDFService from './pdf_service.js';
 import QuestionPlanner from './question_planner.js';
 import ExcelService from './excel_service.js';
@@ -28,6 +29,8 @@ export class CampaignService {
         service = 'recruitment',
         description = '',
         config = {},
+        extracted_data = null,
+        question_plan = null,
         ownerUserId = null
     }) {
         await ensureCampaignSchema();
@@ -46,11 +49,14 @@ export class CampaignService {
             ...config
         });
 
+        const initialExtracted = extracted_data ? JSON.stringify(extracted_data) : null;
+        const initialPlan = question_plan ? JSON.stringify(question_plan) : null;
+
         await db.run(`
             INSERT INTO campaigns (
-                id, name, service, description, status, config, owner_user_id, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?)
-        `, [id, name.trim(), validService, (description || '').trim(), initialConfig, ownerUserId, now, now]);
+                id, name, service, description, status, config, extracted_data, question_plan, owner_user_id, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?)
+        `, [id, name.trim(), validService, (description || '').trim(), initialConfig, initialExtracted, initialPlan, ownerUserId, now, now]);
 
         return this.getCampaign(id, ownerUserId);
     }
@@ -179,16 +185,16 @@ export class CampaignService {
     }
 
     /**
-     * Attaches and extracts a Job Description or Knowledge Base PDF to the campaign.
+     * Attaches and extracts a Job Description or Knowledge Base document (PDF or Word) to the campaign.
      */
-    static async attachPdf(campaignId, fileBuffer, originalName, ownerUserId = null) {
+    static async attachDocument(campaignId, fileBuffer, originalName, ownerUserId = null) {
         await ensureCampaignSchema();
         const campaign = await this.getCampaign(campaignId, ownerUserId);
         if (!campaign) throw new Error('Campaign not found.');
 
-        const ext = path.extname(originalName).toLowerCase();
-        if (ext !== '.pdf') {
-            throw new Error('Only PDF documents (.pdf) are supported for campaign knowledge / job descriptions.');
+        const ext = path.extname(originalName || '').toLowerCase();
+        if (!['.pdf', '.docx', '.doc'].includes(ext)) {
+            throw new Error(`Unsupported document format "${ext}". Supported formats are PDF (.pdf) and Microsoft Word (.docx, .doc).`);
         }
 
         const safeFilename = `camp_${campaignId}_${Date.now()}_${originalName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
@@ -198,17 +204,14 @@ export class CampaignService {
         let extracted = null;
         let questionPlan = [];
 
+        console.log(`[CampaignService] Parsing ${campaign.service.toUpperCase()} document (${ext}) for campaign: ${campaign.name}...`);
+        extracted = await DocumentService.parseCampaignDocument(fileBuffer, originalName, campaign.service);
+
         if (campaign.service === 'recruitment') {
-            console.log(`[CampaignService] Parsing Recruitment JD PDF for campaign: ${campaign.name}...`);
-            extracted = await PDFService.parseRecruitmentJD(fileBuffer, originalName);
             questionPlan = await QuestionPlanner.generateRecruitmentPlan(extracted);
         } else if (campaign.service === 'sales') {
-            console.log(`[CampaignService] Parsing Sales Guide PDF for campaign: ${campaign.name}...`);
-            extracted = await PDFService.parseSalesKnowledge(fileBuffer, originalName);
             questionPlan = QuestionPlanner.generateSalesPlan(extracted);
         } else {
-            console.log(`[CampaignService] Parsing Support Guide PDF for campaign: ${campaign.name}...`);
-            extracted = await PDFService.parseSupportKnowledge(fileBuffer, originalName);
             questionPlan = QuestionPlanner.generateSupportPlan(extracted);
         }
 
@@ -222,9 +225,40 @@ export class CampaignService {
         return {
             campaignId,
             pdfFilename: originalName,
+            documentFilename: originalName,
+            documentType: extracted.document_type || DocumentService.getDocumentType(originalName),
             extractedData: extracted,
             questionPlan
         };
+    }
+
+    /**
+     * Backward-compatible alias for attachDocument.
+     */
+    static async attachPdf(campaignId, fileBuffer, originalName, ownerUserId = null) {
+        return this.attachDocument(campaignId, fileBuffer, originalName, ownerUserId);
+    }
+
+    /**
+     * Removes an attached document and its extracted instructions from a campaign.
+     */
+    static async removeDocument(campaignId, ownerUserId = null) {
+        await ensureCampaignSchema();
+        const campaign = await this.getCampaign(campaignId, ownerUserId);
+        if (!campaign) throw new Error('Campaign not found.');
+
+        if (campaign.pdf_path && fs.existsSync(campaign.pdf_path)) {
+            try { fs.unlinkSync(campaign.pdf_path); } catch (e) {}
+        }
+
+        const now = utcNow();
+        await db.run(`
+            UPDATE campaigns SET
+                pdf_filename = NULL, pdf_path = NULL, extracted_data = NULL, question_plan = NULL, updated_at = ?
+            WHERE id = ?
+        `, [now, campaignId]);
+
+        return { success: true, campaignId, message: 'Attached document removed.' };
     }
 
     /**
@@ -287,6 +321,10 @@ export class CampaignService {
 
         if (!campaign.batch_id) {
             throw new Error('Please upload an Excel contact sheet before starting the campaign.');
+        }
+
+        if (campaign.service === 'recruitment' && !campaign.pdf_filename && (!campaign.extracted_data || Object.keys(campaign.extracted_data).length === 0)) {
+            throw new Error('Please upload a Job Description document (PDF or Word) before starting a recruitment screening campaign.');
         }
 
         const now = utcNow();

@@ -152,24 +152,42 @@ Return ONLY a valid JSON array matching this format:
     }
 
     /**
-     * Generates a tailored outbound sales qualification question plan.
+     * Generates a tailored outbound sales qualification question plan grounded in document knowledge.
      */
     static generateSalesPlan(salesKnowledge = {}) {
         const prod = salesKnowledge.product_name || 'Scorelabs IT & Software Development';
-        const cta = salesKnowledge.call_to_action || 'schedule a brief 15-minute technical discovery session';
+        const isScorelabs = !salesKnowledge.product_name || salesKnowledge.product_name.includes('Scorelabs');
+        const cta = salesKnowledge.call_to_action || (isScorelabs ? 'schedule a brief 15-minute technical discovery session' : 'schedule a quick 15-minute walkthrough');
+        const features = Array.isArray(salesKnowledge.key_features) && salesKnowledge.key_features.length ? salesKnowledge.key_features.slice(0, 2).join(' or ') : '';
+
+        const introText = isScorelabs
+            ? "Do you have a quick moment to speak about your current software or engineering initiatives?"
+            : `Do you have a quick moment to speak about your initiatives regarding ${prod}?`;
+
+        const discoveryText = isScorelabs
+            ? "Are you currently looking to build new custom software, modernize existing systems, or scale up your engineering team?"
+            : `Are you currently exploring solutions for ${prod}${features ? `, such as ${features}` : ''}?`;
+
+        const ctaText = isScorelabs
+            ? `Would it be helpful to ${cta} with our senior solutions architect this week?`
+            : `Would it be helpful to ${cta} with our team this week?`;
+
+        const questionsText = isScorelabs
+            ? "Do you have any specific technical questions about our delivery model or past case studies?"
+            : `Do you have any specific questions about ${prod} or our implementation timeline?`;
 
         return [
             {
                 id: "q_sales_intro",
                 stage: "INTRODUCTION",
-                text: "Do you have a quick moment to speak about your current software or engineering initiatives?",
+                text: introText,
                 field_to_collect: "interest_level",
                 mandatory: true
             },
             {
                 id: "q_sales_discovery",
                 stage: "DISCOVERY",
-                text: "Are you currently looking to build new custom software, modernize existing systems, or scale up your engineering team?",
+                text: discoveryText,
                 field_to_collect: "pain_point",
                 mandatory: true
             },
@@ -183,14 +201,14 @@ Return ONLY a valid JSON array matching this format:
             {
                 id: "q_sales_cta",
                 stage: "NEXT_STEPS",
-                text: `Would it be helpful to ${cta} with our senior solutions architect this week?`,
+                text: ctaText,
                 field_to_collect: "demo_agreement",
                 mandatory: true
             },
             {
                 id: "q_sales_questions",
                 stage: "PROSPECT_QUESTIONS",
-                text: "Do you have any specific technical questions about our delivery model or past case studies?",
+                text: questionsText,
                 field_to_collect: "prospect_inquiry",
                 mandatory: false
             }
@@ -198,35 +216,45 @@ Return ONLY a valid JSON array matching this format:
     }
 
     /**
-     * Generates a tailored customer support diagnostic question plan.
+     * Generates a tailored customer support diagnostic question plan grounded in document knowledge.
      */
     static generateSupportPlan(supportKnowledge = {}) {
+        const prod = supportKnowledge.product_name || 'Scorelabs Support';
+        const isScorelabs = !supportKnowledge.product_name || supportKnowledge.product_name.includes('Scorelabs') || supportKnowledge.product_name.includes('TakeRemo');
+        const diagStep = Array.isArray(supportKnowledge.troubleshooting_steps) && supportKnowledge.troubleshooting_steps.length ? supportKnowledge.troubleshooting_steps[0] : null;
+
         return [
             {
                 id: "q_support_greeting",
                 stage: "ISSUE_IDENTIFICATION",
-                text: "Could you describe the issue or error you are currently encountering?",
+                text: isScorelabs 
+                    ? "Could you describe the issue or error you are currently encountering?"
+                    : `Could you describe the issue you are experiencing with ${prod}?`,
                 field_to_collect: "issue_description",
                 mandatory: true
             },
             {
                 id: "q_support_diagnostic",
                 stage: "DIAGNOSTIC",
-                text: "When did this issue begin, and does it happen consistently or intermittently?",
+                text: diagStep && diagStep.diagnostics
+                    ? `To troubleshoot this, ${diagStep.diagnostics}. What do you see?`
+                    : "When did this issue begin, and does it happen consistently or intermittently?",
                 field_to_collect: "reproduction_frequency",
                 mandatory: true
             },
             {
                 id: "q_support_resolution",
                 stage: "RESOLUTION",
-                text: "Have you tried refreshing the session or restarting the service?",
+                text: diagStep && diagStep.resolution
+                    ? `Have you tried to ${diagStep.resolution}?`
+                    : "Have you tried refreshing the session or restarting the service?",
                 field_to_collect: "troubleshooting_attempted",
                 mandatory: false
             },
             {
                 id: "q_support_wrapup",
                 stage: "CLOSING",
-                text: "Is there anything else I can help you with today?",
+                text: supportKnowledge.closing_note || "Is there anything else I can help you with today?",
                 field_to_collect: "additional_needs",
                 mandatory: false
             }

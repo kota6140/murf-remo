@@ -1211,51 +1211,99 @@
           </div>
         </div>
 
-        <!-- Step 4: PDF Upload (Job Description / Knowledge Base) -->
+        <!-- Step 4: Document Upload (Job Description / Knowledge Base / SOP) -->
         <div class="form-group-wrap">
           <label class="form-label-bold" id="label-camp-pdf-upload">
-            <span class="form-step-badge">4</span>Upload Job Description PDF (Required for Recruitment)
+            <span class="form-step-badge">4</span>Upload Campaign Document (.pdf, .docx, .doc)
           </label>
-          <div class="upload-dropzone" id="camp-pdf-dropzone" style="padding: 20px; border-width: 1.5px; cursor: pointer;">
-            <input type="file" id="camp-pdf-file-input" accept=".pdf" aria-label="Upload PDF">
+          <div class="upload-dropzone" id="camp-pdf-dropzone" style="padding: 20px; border-width: 1.5px; cursor: pointer; position: relative;">
+            <input type="file" id="camp-pdf-file-input" accept=".pdf,.docx,.doc" aria-label="Upload PDF or Word Document">
             <div style="display: flex; align-items: center; justify-content: center; gap: 12px;">
-              <span style="font-size: 1.6rem;">📄</span>
-              <div style="text-align: left;">
-                <div style="font-weight: 700; font-size: 0.85rem; color: #0F172A;" id="camp-pdf-status-text">Click to choose or drop PDF file</div>
-                <div style="font-size: 0.72rem; color: #64748B;">Extracts role, technical skills, notice period & generates custom interview plan</div>
+              <span style="font-size: 1.6rem;" id="camp-pdf-icon">📄</span>
+              <div style="text-align: left; flex: 1;">
+                <div style="font-weight: 700; font-size: 0.85rem; color: #0F172A;" id="camp-pdf-status-text">Click to choose or drop PDF or Word document (.docx, .doc)</div>
+                <div style="font-size: 0.72rem; color: #64748B;" id="camp-pdf-sub-text">Extracts campaign instructions, offering details, objection handling & custom questions</div>
               </div>
+              <button type="button" class="btn-card-secondary" id="btn-camp-remove-staged-pdf" style="display: none; padding: 4px 10px; font-size: 0.75rem; color: #DC2626; z-index: 2;" title="Remove this document">✕ Remove</button>
             </div>
           </div>
 
-          <!-- Live Extracted JD Criteria Preview & Correction Area -->
+          <!-- Live Extracted Knowledge Preview & Correction Area -->
           <div class="extracted-jd-preview-box" id="camp-extracted-preview" style="display: none;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-              <span style="font-size: 0.75rem; font-weight: 700; color: #031740; text-transform: uppercase;">Extracted Job Requirements (Editable)</span>
-              <span class="badge-pill badge-status-completed" style="font-size: 0.65rem;">PDF PARSED</span>
+              <span style="font-size: 0.75rem; font-weight: 700; color: #031740; text-transform: uppercase;" id="camp-extracted-preview-title">Extracted Document Knowledge (Editable)</span>
+              <div style="display: flex; gap: 6px; align-items: center;">
+                <span class="badge-pill" id="camp-extracted-doctype-badge" style="font-size: 0.65rem; background: #EEF2FF; color: #4338CA; font-weight: 700;">DOCUMENT</span>
+                <span class="badge-pill badge-status-completed" style="font-size: 0.65rem;">PARSED</span>
+              </div>
             </div>
-            <div class="editable-field-row">
-              <span class="editable-field-label">Target Role Title:</span>
-              <input type="text" id="edit-jd-role" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;">
+
+            <!-- Recruitment Extracted Fields -->
+            <div id="preview-fields-recruitment">
+              <div class="editable-field-row">
+                <span class="editable-field-label">Target Role Title:</span>
+                <input type="text" id="edit-jd-role" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;">
+              </div>
+              <div class="editable-field-row">
+                <span class="editable-field-label">Required Skills:</span>
+                <input type="text" id="edit-jd-skills" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. SAP FICO, S/4HANA, GL, AP">
+              </div>
+              <div class="editable-field-row">
+                <span class="editable-field-label">Min Experience (Yrs):</span>
+                <input type="text" id="edit-jd-exp" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. 5">
+              </div>
+              <div class="editable-field-row">
+                <span class="editable-field-label">Notice Period:</span>
+                <input type="text" id="edit-jd-notice" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. 30 days">
+              </div>
+              <div class="editable-field-row">
+                <span class="editable-field-label">Work Location:</span>
+                <input type="text" id="edit-jd-location" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Hyderabad / Hybrid">
+              </div>
             </div>
-            <div class="editable-field-row">
-              <span class="editable-field-label">Required Skills:</span>
-              <input type="text" id="edit-jd-skills" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. SAP FICO, S/4HANA, GL, AP">
+
+            <!-- Sales Extracted Fields -->
+            <div id="preview-fields-sales" style="display: none;">
+              <div class="editable-field-row">
+                <span class="editable-field-label">Product / Offering:</span>
+                <input type="text" id="edit-sales-product" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Enterprise Cloud SaaS">
+              </div>
+              <div class="editable-field-row">
+                <span class="editable-field-label">Company Name:</span>
+                <input type="text" id="edit-sales-company" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. TechCorp Solutions">
+              </div>
+              <div class="editable-field-row">
+                <span class="editable-field-label">Value Propositions:</span>
+                <input type="text" id="edit-sales-value" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. 90% reduction in manual screening time">
+              </div>
+              <div class="editable-field-row">
+                <span class="editable-field-label">Pricing / Plans:</span>
+                <input type="text" id="edit-sales-pricing" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Flexible monthly tiers">
+              </div>
+              <div class="editable-field-row">
+                <span class="editable-field-label">Call to Action (CTA):</span>
+                <input type="text" id="edit-sales-cta" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Schedule a 15-minute live platform demonstration">
+              </div>
             </div>
-            <div class="editable-field-row">
-              <span class="editable-field-label">Min Experience (Yrs):</span>
-              <input type="text" id="edit-jd-exp" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. 5">
-            </div>
-            <div class="editable-field-row">
-              <span class="editable-field-label">Notice Period:</span>
-              <input type="text" id="edit-jd-notice" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. 30 days">
-            </div>
-            <div class="editable-field-row">
-              <span class="editable-field-label">Work Location:</span>
-              <input type="text" id="edit-jd-location" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Hyderabad / Hybrid">
+
+            <!-- Support Extracted Fields -->
+            <div id="preview-fields-support" style="display: none;">
+              <div class="editable-field-row">
+                <span class="editable-field-label">Supported Product:</span>
+                <input type="text" id="edit-support-product" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. TakeRemo Voice Platform">
+              </div>
+              <div class="editable-field-row">
+                <span class="editable-field-label">Supported Topics:</span>
+                <input type="text" id="edit-support-topics" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Account Access, Audio Quality, Billing">
+              </div>
+              <div class="editable-field-row">
+                <span class="editable-field-label">Escalation Policy:</span>
+                <input type="text" id="edit-support-escalation" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Escalate to senior technician if unresolved after 2 steps">
+              </div>
             </div>
 
             <div style="margin-top: 10px;">
-              <span style="font-size: 0.72rem; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Tailored Screening Question Plan:</span>
+              <span style="font-size: 0.72rem; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Tailored AI Conversation Plan:</span>
               <div class="question-plan-list" id="camp-generated-questions">
                 <!-- Dynamically injected questions -->
               </div>
@@ -1321,6 +1369,24 @@
           <label class="form-label-bold">Description</label>
           <textarea id="edit-camp-desc" class="form-input-styled" rows="2"></textarea>
         </div>
+
+        <!-- Attached Instructions Document Area -->
+        <div class="form-group-wrap" style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <label class="form-label-bold" style="margin:0;">Campaign Instructions Document (.pdf, .docx, .doc)</label>
+            <span id="edit-camp-doc-badge" class="badge-pill" style="font-size:0.65rem;">NO DOC</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+            <span id="edit-camp-doc-name" style="font-size:0.8rem; color:#475569; font-family:monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">No document attached</span>
+            <div style="display:flex; gap:6px; flex:none;">
+              <input type="file" id="edit-camp-file-input" accept=".pdf,.docx,.doc" style="display:none;">
+              <button type="button" class="btn-card-secondary" id="btn-edit-camp-replace-doc" style="padding:4px 10px; font-size:0.75rem;">Upload / Replace</button>
+              <button type="button" class="btn-card-secondary" id="btn-edit-camp-remove-doc" style="padding:4px 10px; font-size:0.75rem; color:#DC2626; display:none;">Remove</button>
+            </div>
+          </div>
+          <div id="edit-camp-doc-status-msg" style="font-size:0.72rem; color:#16A34A; margin-top:4px; display:none;"></div>
+        </div>
+
         <div class="form-group-wrap" id="edit-camp-recruitment-fields">
           <label class="form-label-bold">Target Job Role</label>
           <input type="text" id="edit-camp-role" class="form-input-styled" style="margin-bottom: 8px;">
@@ -2378,15 +2444,41 @@
 
       function updateCreateModalLabels(service) {
         const pdfLabel = document.getElementById('label-camp-pdf-upload');
+        const pdfSubText = document.getElementById('camp-pdf-sub-text');
         if (pdfLabel) {
           if (service === 'recruitment') {
-            pdfLabel.innerHTML = '<span class="form-step-badge">4</span>Upload Job Description PDF (Required for Recruitment)';
+            pdfLabel.innerHTML = '<span class="form-step-badge">4</span>Upload Job Description Document (.pdf, .docx, .doc) (Required)';
           } else if (service === 'sales') {
-            pdfLabel.innerHTML = '<span class="form-step-badge">4</span>Upload Product Guide & Sales Script PDF (Optional)';
+            pdfLabel.innerHTML = '<span class="form-step-badge">4</span>Upload Product Guide & Sales Document (.pdf, .docx, .doc)';
           } else {
-            pdfLabel.innerHTML = '<span class="form-step-badge">4</span>Upload Support Manual & FAQs PDF (Optional)';
+            pdfLabel.innerHTML = '<span class="form-step-badge">4</span>Upload Support SOP & FAQ Document (.pdf, .docx, .doc)';
           }
         }
+        if (pdfSubText) {
+          if (service === 'recruitment') {
+            pdfSubText.textContent = 'Extracts job title, core requirements, screening questions and notice period';
+          } else if (service === 'sales') {
+            pdfSubText.textContent = 'Extracts product features, pricing, value propositions, objection handling & custom questions';
+          } else {
+            pdfSubText.textContent = 'Extracts product procedures, troubleshooting steps, FAQs, and escalation policies';
+          }
+        }
+      }
+
+      function resetStagedDocument() {
+        const pdfInput = document.getElementById('camp-pdf-file-input');
+        const pdfStatus = document.getElementById('camp-pdf-status-text');
+        const removeBtn = document.getElementById('btn-camp-remove-staged-pdf');
+        const extractedPreview = document.getElementById('camp-extracted-preview');
+        const questionsList = document.getElementById('camp-generated-questions');
+        if (pdfInput) pdfInput.value = '';
+        if (pdfStatus) pdfStatus.textContent = 'Click to choose or drop PDF or Word document (.docx, .doc)';
+        if (removeBtn) removeBtn.style.display = 'none';
+        if (extractedPreview) extractedPreview.style.display = 'none';
+        if (questionsList) questionsList.innerHTML = '';
+        stagedCreatePdfFile = null;
+        stagedExtractedData = null;
+        stagedQuestionPlan = null;
       }
 
       function openCampaignCreateModal(service = 'recruitment') {
@@ -2408,18 +2500,8 @@
         });
         updateCreateModalLabels(service);
 
-        // Reset PDF preview
-        const pdfInput = document.getElementById('camp-pdf-file-input');
-        const pdfStatus = document.getElementById('camp-pdf-status-text');
-        const extractedPreview = document.getElementById('camp-extracted-preview');
-        const questionsList = document.getElementById('camp-generated-questions');
-        if (pdfInput) pdfInput.value = '';
-        if (pdfStatus) pdfStatus.textContent = 'Click to choose or drop PDF file';
-        if (extractedPreview) extractedPreview.style.display = 'none';
-        if (questionsList) questionsList.innerHTML = '';
-        stagedCreatePdfFile = null;
-        stagedExtractedData = null;
-        stagedQuestionPlan = null;
+        // Reset Document preview
+        resetStagedDocument();
 
         // Reset Excel preview
         const excelInput = document.getElementById('camp-excel-file-input');
@@ -2446,11 +2528,20 @@
       function setupCreatePdfDropzone() {
         const dropzone = document.getElementById('camp-pdf-dropzone');
         const fileInput = document.getElementById('camp-pdf-file-input');
+        const removeBtn = document.getElementById('btn-camp-remove-staged-pdf');
         if (!dropzone || !fileInput) return;
 
         dropzone.addEventListener('click', (e) => {
-          if (e.target !== fileInput) fileInput.click();
+          if (e.target !== fileInput && e.target !== removeBtn) fileInput.click();
         });
+
+        if (removeBtn) {
+          removeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            resetStagedDocument();
+          });
+        }
 
         ['dragenter', 'dragover'].forEach(name => {
           dropzone.addEventListener(name, (e) => {
@@ -2483,43 +2574,77 @@
       }
 
       async function handlePdfSelection(file) {
-        if (!file.name.toLowerCase().endsWith('.pdf')) {
-          alert('Please select a valid PDF file (.pdf)');
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (!['pdf', 'docx', 'doc'].includes(ext)) {
+          alert('Please select a valid PDF or Word document (.pdf, .docx, .doc)');
           return;
         }
 
         const pdfStatus = document.getElementById('camp-pdf-status-text');
+        const removeBtn = document.getElementById('btn-camp-remove-staged-pdf');
+        const docBadge = document.getElementById('camp-extracted-doctype-badge');
         const alertBox = document.getElementById('camp-modal-alert');
         const extractedPreview = document.getElementById('camp-extracted-preview');
         const questionsList = document.getElementById('camp-generated-questions');
         const service = document.getElementById('camp-input-service')?.value || 'recruitment';
 
         if (pdfStatus) {
-          pdfStatus.innerHTML = `<span class="auth-spinner" style="width:12px;height:12px;margin-right:6px;"></span> Extracting criteria & interview questions from PDF...`;
+          pdfStatus.innerHTML = `<span class="auth-spinner" style="width:12px;height:12px;margin-right:6px;"></span> Extracting instructions & custom questions from ${ext.toUpperCase()} document...`;
         }
 
         try {
-          const res = await AdminClient.previewCampaignPdf(file, service);
+          const res = await AdminClient.previewCampaignDocument(file, service);
           stagedCreatePdfFile = file;
           stagedExtractedData = res.extractedData || {};
           stagedQuestionPlan = res.questionPlan || [];
 
           if (pdfStatus) {
-            pdfStatus.innerHTML = `<span style="color:#16A34A;font-weight:700;">✓ ${file.name}</span> (Extracted successfully)`;
+            pdfStatus.innerHTML = `<span style="color:#16A34A;font-weight:700;">✓ ${file.name}</span> (${(file.size / 1024).toFixed(1)} KB — Extracted & Ready)`;
           }
+          if (removeBtn) removeBtn.style.display = 'inline-block';
+          if (docBadge) docBadge.textContent = ext.toUpperCase();
 
-          // Populate editable preview inputs
-          const editRole = document.getElementById('edit-jd-role');
-          const editSkills = document.getElementById('edit-jd-skills');
-          const editExp = document.getElementById('edit-jd-exp');
-          const editNotice = document.getElementById('edit-jd-notice');
-          const editLoc = document.getElementById('edit-jd-location');
+          // Toggle service-specific preview sections
+          const pRec = document.getElementById('preview-fields-recruitment');
+          const pSales = document.getElementById('preview-fields-sales');
+          const pSupp = document.getElementById('preview-fields-support');
+          if (pRec) pRec.style.display = service === 'recruitment' ? 'block' : 'none';
+          if (pSales) pSales.style.display = service === 'sales' ? 'block' : 'none';
+          if (pSupp) pSupp.style.display = service === 'support' ? 'block' : 'none';
 
-          if (editRole) editRole.value = stagedExtractedData.job_title || '';
-          if (editSkills) editSkills.value = (stagedExtractedData.required_skills || []).join(', ');
-          if (editExp) editExp.value = stagedExtractedData.min_experience_years || '';
-          if (editNotice) editNotice.value = stagedExtractedData.max_notice_period_days ? `${stagedExtractedData.max_notice_period_days} days` : '30 days';
-          if (editLoc) editLoc.value = stagedExtractedData.work_arrangement || '';
+          if (service === 'recruitment') {
+            const editRole = document.getElementById('edit-jd-role');
+            const editSkills = document.getElementById('edit-jd-skills');
+            const editExp = document.getElementById('edit-jd-exp');
+            const editNotice = document.getElementById('edit-jd-notice');
+            const editLoc = document.getElementById('edit-jd-location');
+
+            if (editRole) editRole.value = stagedExtractedData.job_title || '';
+            if (editSkills) editSkills.value = (stagedExtractedData.required_skills || []).join(', ');
+            if (editExp) editExp.value = stagedExtractedData.min_experience_years || '';
+            if (editNotice) editNotice.value = stagedExtractedData.max_notice_period_days ? `${stagedExtractedData.max_notice_period_days} days` : (stagedExtractedData.notice_period_description || '30 days');
+            if (editLoc) editLoc.value = stagedExtractedData.work_arrangement || '';
+          } else if (service === 'sales') {
+            const editProd = document.getElementById('edit-sales-product');
+            const editComp = document.getElementById('edit-sales-company');
+            const editVal = document.getElementById('edit-sales-value');
+            const editPrice = document.getElementById('edit-sales-pricing');
+            const editCta = document.getElementById('edit-sales-cta');
+
+            if (editProd) editProd.value = stagedExtractedData.product_name || '';
+            if (editComp) editComp.value = stagedExtractedData.company_name || '';
+            if (editVal) editVal.value = (stagedExtractedData.value_propositions || []).join('; ');
+            if (editPrice) editPrice.value = stagedExtractedData.pricing_summary || '';
+            if (editCta) editCta.value = stagedExtractedData.desired_outcome || '';
+          } else if (service === 'support') {
+            const editProd = document.getElementById('edit-support-product');
+            const editTopics = document.getElementById('edit-support-topics');
+            const editEsc = document.getElementById('edit-support-escalation');
+
+            if (editProd) editProd.value = stagedExtractedData.product_name || '';
+            if (editTopics) editTopics.value = (stagedExtractedData.supported_topics || []).join(', ');
+            if (editEsc) editEsc.value = stagedExtractedData.escalation_policy || '';
+          }
 
           // Render tailored question plan
           if (questionsList) {
@@ -2539,10 +2664,11 @@
           if (extractedPreview) extractedPreview.style.display = 'block';
           if (alertBox) alertBox.style.display = 'none';
         } catch (err) {
-          if (pdfStatus) pdfStatus.textContent = 'Click to choose or drop PDF file';
+          if (pdfStatus) pdfStatus.textContent = 'Click to choose or drop PDF or Word document (.docx, .doc)';
+          if (removeBtn) removeBtn.style.display = 'none';
           if (alertBox) {
             alertBox.className = 'admin-alert-banner error';
-            alertBox.textContent = `PDF Analysis Error: ${err.message}`;
+            alertBox.textContent = `Document Analysis Error: ${err.message}`;
             alertBox.style.display = 'flex';
           }
         }
@@ -2684,24 +2810,50 @@
         }
 
         try {
-          // 1. Sync manual edits made to JD criteria
+          // 1. Sync manual edits made to extracted criteria
           if (stagedExtractedData) {
-            const roleVal = document.getElementById('edit-jd-role')?.value.trim();
-            if (roleVal) stagedExtractedData.job_title = roleVal;
+            if (service === 'recruitment') {
+              const roleVal = document.getElementById('edit-jd-role')?.value.trim();
+              if (roleVal) stagedExtractedData.job_title = roleVal;
 
-            const skillsVal = document.getElementById('edit-jd-skills')?.value.trim();
-            if (skillsVal) {
-              stagedExtractedData.required_skills = skillsVal.split(',').map(s => s.trim()).filter(Boolean);
+              const skillsVal = document.getElementById('edit-jd-skills')?.value.trim();
+              if (skillsVal) {
+                stagedExtractedData.required_skills = skillsVal.split(',').map(s => s.trim()).filter(Boolean);
+              }
+
+              const expVal = parseInt(document.getElementById('edit-jd-exp')?.value.trim(), 10);
+              if (!isNaN(expVal)) stagedExtractedData.min_experience_years = expVal;
+
+              const locVal = document.getElementById('edit-jd-location')?.value.trim();
+              if (locVal) stagedExtractedData.work_arrangement = locVal;
+
+              const noticeVal = document.getElementById('edit-jd-notice')?.value.trim();
+              if (noticeVal) stagedExtractedData.notice_period_description = noticeVal;
+            } else if (service === 'sales') {
+              const prodVal = document.getElementById('edit-sales-product')?.value.trim();
+              if (prodVal) stagedExtractedData.product_name = prodVal;
+
+              const compVal = document.getElementById('edit-sales-company')?.value.trim();
+              if (compVal) stagedExtractedData.company_name = compVal;
+
+              const valProps = document.getElementById('edit-sales-value')?.value.trim();
+              if (valProps) stagedExtractedData.value_propositions = valProps.split(';').map(s => s.trim()).filter(Boolean);
+
+              const priceVal = document.getElementById('edit-sales-pricing')?.value.trim();
+              if (priceVal) stagedExtractedData.pricing_summary = priceVal;
+
+              const ctaVal = document.getElementById('edit-sales-cta')?.value.trim();
+              if (ctaVal) stagedExtractedData.desired_outcome = ctaVal;
+            } else if (service === 'support') {
+              const prodVal = document.getElementById('edit-support-product')?.value.trim();
+              if (prodVal) stagedExtractedData.product_name = prodVal;
+
+              const topicsVal = document.getElementById('edit-support-topics')?.value.trim();
+              if (topicsVal) stagedExtractedData.supported_topics = topicsVal.split(',').map(s => s.trim()).filter(Boolean);
+
+              const escVal = document.getElementById('edit-support-escalation')?.value.trim();
+              if (escVal) stagedExtractedData.escalation_policy = escVal;
             }
-
-            const expVal = parseInt(document.getElementById('edit-jd-exp')?.value.trim(), 10);
-            if (!isNaN(expVal)) stagedExtractedData.min_experience_years = expVal;
-
-            const locVal = document.getElementById('edit-jd-location')?.value.trim();
-            if (locVal) stagedExtractedData.work_arrangement = locVal;
-
-            const noticeVal = document.getElementById('edit-jd-notice')?.value.trim();
-            if (noticeVal) stagedExtractedData.notice_period_description = noticeVal;
           }
 
           // 2. Create Campaign record
@@ -2716,9 +2868,9 @@
           });
           const campaign = campRes.campaign;
 
-          // 3. Attach PDF if provided
+          // 3. Attach Document if provided
           if (stagedCreatePdfFile) {
-            await AdminClient.uploadCampaignPdf(campaign.id, stagedCreatePdfFile);
+            await AdminClient.uploadCampaignDocument(campaign.id, stagedCreatePdfFile);
             if (stagedExtractedData) {
               await AdminClient.updateCampaign(campaign.id, {
                 extracted_data: stagedExtractedData
@@ -2831,9 +2983,10 @@
             } catch(e) {}
           }
 
+          const docExt = c.pdf_filename ? c.pdf_filename.split('.').pop().toUpperCase() : '';
           const pdfFileTag = c.pdf_filename
-            ? `<span class="camp-file-tag" title="${c.pdf_filename}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> ${c.pdf_filename}</span>`
-            : `<span class="camp-file-tag tag-muted"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> No JD PDF</span>`;
+            ? `<span class="camp-file-tag" title="${c.pdf_filename}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> [${docExt}] ${c.pdf_filename}</span>`
+            : `<span class="camp-file-tag tag-muted"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> No Document</span>`;
 
           const excelFileTag = c.excel_filename
             ? `<span class="camp-file-tag tag-excel" title="${c.excel_filename}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${c.excel_filename}</span>`
@@ -3038,6 +3191,91 @@
           document.getElementById('edit-camp-id').value = c.id;
           document.getElementById('edit-camp-name').value = c.name;
           document.getElementById('edit-camp-desc').value = c.description || '';
+
+          // Setup Document Area in Edit Modal
+          const docBadge = document.getElementById('edit-camp-doc-badge');
+          const docName = document.getElementById('edit-camp-doc-name');
+          const replaceBtn = document.getElementById('btn-edit-camp-replace-doc');
+          const removeBtn = document.getElementById('btn-edit-camp-remove-doc');
+          const fileInput = document.getElementById('edit-camp-file-input');
+          const statusMsg = document.getElementById('edit-camp-doc-status-msg');
+
+          if (statusMsg) {
+            statusMsg.style.display = 'none';
+            statusMsg.textContent = '';
+          }
+
+          if (c.pdf_filename) {
+            const ext = c.pdf_filename.split('.').pop().toUpperCase();
+            if (docBadge) {
+              docBadge.textContent = ext;
+              docBadge.className = 'badge-pill badge-status-completed';
+            }
+            if (docName) docName.textContent = c.pdf_filename;
+            if (removeBtn) removeBtn.style.display = 'inline-block';
+          } else {
+            if (docBadge) {
+              docBadge.textContent = 'NO DOC';
+              docBadge.className = 'badge-pill';
+            }
+            if (docName) docName.textContent = 'No document attached';
+            if (removeBtn) removeBtn.style.display = 'none';
+          }
+
+          if (replaceBtn && fileInput) {
+            replaceBtn.onclick = () => fileInput.click();
+            fileInput.onchange = async () => {
+              if (fileInput.files && fileInput.files.length > 0) {
+                const file = fileInput.files[0];
+                replaceBtn.disabled = true;
+                replaceBtn.textContent = 'Uploading...';
+                try {
+                  const uploadRes = await AdminClient.uploadCampaignDocument(campaignId, file);
+                  if (docName) docName.textContent = file.name;
+                  if (docBadge) {
+                    docBadge.textContent = file.name.split('.').pop().toUpperCase();
+                    docBadge.className = 'badge-pill badge-status-completed';
+                  }
+                  if (removeBtn) removeBtn.style.display = 'inline-block';
+                  if (statusMsg) {
+                    statusMsg.textContent = `✓ Document ${file.name} attached & parsed successfully.`;
+                    statusMsg.style.display = 'block';
+                  }
+                  await loadCampaigns(activeCampaignFilter);
+                } catch (err) {
+                  alert(`Document upload failed: ${err.message}`);
+                } finally {
+                  replaceBtn.disabled = false;
+                  replaceBtn.textContent = 'Upload / Replace';
+                }
+              }
+            };
+          }
+
+          if (removeBtn) {
+            removeBtn.onclick = async () => {
+              if (!confirm('Remove document from this campaign?')) return;
+              removeBtn.disabled = true;
+              try {
+                await AdminClient.removeCampaignDocument(campaignId);
+                if (docName) docName.textContent = 'No document attached';
+                if (docBadge) {
+                  docBadge.textContent = 'NO DOC';
+                  docBadge.className = 'badge-pill';
+                }
+                removeBtn.style.display = 'none';
+                if (statusMsg) {
+                  statusMsg.textContent = 'Document removed.';
+                  statusMsg.style.display = 'block';
+                }
+                await loadCampaigns(activeCampaignFilter);
+              } catch (err) {
+                alert(`Failed to remove document: ${err.message}`);
+              } finally {
+                removeBtn.disabled = false;
+              }
+            };
+          }
 
           const recFields = document.getElementById('edit-camp-recruitment-fields');
           if (c.service === 'recruitment') {

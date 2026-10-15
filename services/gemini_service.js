@@ -11,14 +11,38 @@ const FALLBACK_TEXT = {
 
 export default class GeminiService {
     /**
-     * Returns the opening greeting tailored to the specific campaign service.
+     * Returns the opening greeting tailored to the specific campaign service and attached document.
      */
     static getOpeningGreeting(service = 'recruitment', contactInfo = {}) {
         const s = String(service || 'recruitment').toLowerCase();
+        const safeContact = contactInfo || {};
+        const ctx = safeContact.campaignContext || safeContact.extracted_data || safeContact.jdCriteria || safeContact;
+        const rawName = (safeContact.name || '').trim();
+        const isValidName = rawName && !rawName.startsWith('Caller') && !rawName.startsWith('Candidate') && !rawName.startsWith('Contact') && !rawName.startsWith('Row');
 
         if (s === 'sales') {
-            const rawName = (contactInfo.name || '').trim();
-            const isValidName = rawName && !rawName.startsWith('Caller') && !rawName.startsWith('Candidate') && !rawName.startsWith('Contact');
+            // Check if uploaded document provided a specific opening greeting
+            if (ctx.opening_greeting && typeof ctx.opening_greeting === 'string' && ctx.opening_greeting.length > 15) {
+                let docGreeting = ctx.opening_greeting.trim();
+                if (isValidName && !docGreeting.includes(rawName)) {
+                    docGreeting = `Hello, am I speaking with ${rawName}? ` + docGreeting;
+                }
+                return docGreeting;
+            }
+
+            const company = ctx.company_name || 'Scorelabs Inc.';
+            const product = ctx.product_name || '';
+            const valueProp = Array.isArray(ctx.value_propositions) && ctx.value_propositions.length ? ctx.value_propositions[0] : '';
+
+            // Document-driven custom sales greeting
+            if (product && !product.includes('Scorelabs IT') && !product.includes('Scorelabs AI Voice Automation')) {
+                if (isValidName) {
+                    return `Hello, am I speaking with ${rawName}? Hi ${rawName}, this is Remo calling on behalf of ${company}. We provide ${product}${valueProp ? ` — ${valueProp}` : ''}. I wanted to see if now is a good time for a quick conversation?`;
+                }
+                return `Hello, this is Remo calling on behalf of ${company}. We provide ${product}${valueProp ? ` — ${valueProp}` : ''}. I wanted to see if now is a good time for a quick conversation?`;
+            }
+
+            // Standard verified greeting for Scorelabs Inc.
             if (isValidName) {
                 return `Hello, am I speaking with ${rawName}? Hi ${rawName}, this is Remo calling on behalf of Scorelabs Inc. We help businesses with IT solutions such as custom software development, website and mobile app development, ERP and CRM solutions, software testing, and technical support. I wanted to check whether your company is planning any new software projects or looking for an IT partner. Is now a convenient time for a quick conversation?`;
             }
@@ -26,8 +50,25 @@ export default class GeminiService {
         }
 
         if (s === 'support') {
-            const rawName = (contactInfo.name || '').trim();
-            const isValidName = rawName && !rawName.startsWith('Caller') && !rawName.startsWith('Candidate') && !rawName.startsWith('Contact');
+            if (ctx.opening_greeting && typeof ctx.opening_greeting === 'string' && ctx.opening_greeting.length > 15) {
+                let docGreeting = ctx.opening_greeting.trim();
+                if (isValidName && !docGreeting.includes(rawName)) {
+                    docGreeting = `Hello, am I speaking with ${rawName}? ` + docGreeting;
+                }
+                return docGreeting;
+            }
+
+            const company = ctx.company_name || 'Scorelabs Inc.';
+            const product = ctx.product_name || '';
+
+            // Document-driven custom support greeting
+            if (product && !product.includes('Scorelabs') && !product.includes('TakeRemo')) {
+                if (isValidName) {
+                    return `Hello, am I speaking with ${rawName}? Hi ${rawName}, this is Remo calling from ${company} customer support regarding your ${product} service inquiry. Is now a convenient time to speak?`;
+                }
+                return `Hello, this is Remo calling from ${company} customer support regarding your ${product} service inquiry. Is now a convenient time to speak?`;
+            }
+
             if (isValidName) {
                 return `Hello, am I speaking with ${rawName}? Hi ${rawName}, this is Remo calling from Scorelabs Inc. customer support. I'm following up regarding your recent support inquiry or service ticket. Is now a convenient time to speak?`;
             }
@@ -35,7 +76,7 @@ export default class GeminiService {
         }
 
         // Recruitment
-        const role = contactInfo.job_role || contactInfo.role || 'the open position';
+        const role = ctx.job_title || contactInfo.job_role || contactInfo.role || 'the open position';
         return `${EXACT_GREETING} I'm calling regarding your application for ${role}. Do you have a couple of minutes to talk?`;
     }
 
@@ -169,12 +210,31 @@ export default class GeminiService {
 
         if (service === 'sales') {
             classificationOptions = `"Interested" | "Meeting Requested" | "Email Requested" | "Callback Requested" | "Not Interested" | "Wrong Contact" | "Do Not Call"`;
+            const prodName = jdCriteria.product_name || 'IT Solutions & Custom Software';
+            const compName = jdCriteria.company_name || 'Scorelabs Inc.';
+            const valueProps = Array.isArray(jdCriteria.value_propositions) && jdCriteria.value_propositions.length ? jdCriteria.value_propositions.join('; ') : '';
+            const keyFeatures = Array.isArray(jdCriteria.key_features) && jdCriteria.key_features.length ? jdCriteria.key_features.join('; ') : '';
+            const pricing = jdCriteria.pricing_summary || '';
+            const cta = jdCriteria.call_to_action || 'schedule a 15-minute introductory discovery session';
+            const faqs = Array.isArray(jdCriteria.approved_faqs) && jdCriteria.approved_faqs.length ? JSON.stringify(jdCriteria.approved_faqs.slice(0, 4)) : '';
+            const objections = Array.isArray(jdCriteria.objections_and_counters) && jdCriteria.objections_and_counters.length ? JSON.stringify(jdCriteria.objections_and_counters.slice(0, 3)) : '';
+
             serviceInstructions = `
-### SALES WORKFLOW (Scorelabs Inc.):
-- Goal: Qualify IT needs (Software, Web, Mobile, ERP/CRM, QA, Support) and schedule a 15-min follow-up.
-- If interested: Ask what IT projects they are currently considering.
-- Objections: "Have vendor" -> Ask if can share profile for future. "Send info" -> Request business email. "Not interested" -> Polite exit, set should_end_call: true.
-- Ask ONE question at a time. Never mention job applications.`;
+### SALES WORKFLOW (${compName} — Offering: ${prodName}):
+- Product/Service: "${prodName}" by "${compName}".
+${valueProps ? `- Value Propositions: ${valueProps}` : ''}
+${keyFeatures ? `- Key Features: ${keyFeatures}` : ''}
+${pricing ? `- Pricing/Plans: ${pricing}` : ''}
+${cta ? `- Primary Objective / CTA: ${cta}` : ''}
+${faqs ? `- Approved FAQs from Document: ${faqs}` : ''}
+${objections ? `- Objection Handling from Document: ${objections}` : ''}
+- STRICT GROUNDING RULES:
+  1. Base all answers EXCLUSIVELY on the verified facts above.
+  2. NEVER invent features, prices, discounts, or promises not in the document.
+  3. If information is not in the document, say: "I don't have that detail right in front of me, but I'll make sure our team confirms and follows up with you."
+  4. Never ask repeatedly about details the prospect already provided.
+  5. Never mention job applications or recruitment.
+  6. Objections: "Have vendor" -> Ask if can share profile for future. "Send info" -> Request business email. "Not interested" -> Polite exit, set should_end_call: true.`;
         } else if (service === 'recruitment') {
             classificationOptions = `"Selected" | "Rejected" | "On Hold"`;
             serviceInstructions = `
@@ -186,16 +246,35 @@ export default class GeminiService {
 - Classification: "Selected" (meets skills/exp), "Rejected" (explicit refusal/lacks mandatory skills), "On Hold" (incomplete/short answers).`;
         } else {
             classificationOptions = `"RESOLVED" | "ESCALATED" | "PENDING_INFO" | "Wrong Contact"`;
+            const compName = jdCriteria.company_name || 'Scorelabs Inc.';
+            const prodName = jdCriteria.product_name || 'Customer Support';
+            const topics = Array.isArray(jdCriteria.supported_topics) && jdCriteria.supported_topics.length ? jdCriteria.supported_topics.join(', ') : '';
+            const troubleshooting = Array.isArray(jdCriteria.troubleshooting_steps) && jdCriteria.troubleshooting_steps.length ? JSON.stringify(jdCriteria.troubleshooting_steps.slice(0, 3)) : '';
+            const faqs = Array.isArray(jdCriteria.approved_faqs) && jdCriteria.approved_faqs.length ? JSON.stringify(jdCriteria.approved_faqs.slice(0, 4)) : '';
+            const refundPolicy = jdCriteria.refund_and_cancellation_policy || '';
+            const escalationPolicy = jdCriteria.escalation_policy || 'If issue is unresolved after diagnostic steps, log high-priority ticket and offer a callback.';
+
             serviceInstructions = `
-### CUSTOMER SUPPORT WORKFLOW (Scorelabs Inc.):
-- Clarify issue -> Ask 1 diagnostic question -> Offer solution or escalation.
-- Never pitch sales or recruit.`;
+### CUSTOMER SUPPORT WORKFLOW (${compName} — Product: ${prodName}):
+- Support Domain: "${prodName}" by "${compName}".
+${topics ? `- Supported Topics: ${topics}` : ''}
+${troubleshooting ? `- Troubleshooting Procedures: ${troubleshooting}` : ''}
+${faqs ? `- Approved FAQs: ${faqs}` : ''}
+${refundPolicy ? `- Refund / Cancellation Policy: ${refundPolicy}` : ''}
+${escalationPolicy ? `- Escalation Policy: ${escalationPolicy}` : ''}
+- STRICT GROUNDING RULES:
+  1. First understand the customer's exact issue before offering a resolution.
+  2. Guide the caller step-by-step through the troubleshooting procedures above.
+  3. NEVER invent policies, refund promises, or technical fixes not in the document.
+  4. If the issue cannot be resolved using the document, state: "I will escalate this to our technical support team for further assistance" and capture their details.
+  5. Never pitch sales or recruitment.`;
         }
 
         const currentStage = options.currentStage || 'AVAILABILITY';
+        const organizationName = jdCriteria.company_name || 'Scorelabs Inc.';
 
-        const systemPrompt = `You are Remo, a warm, professional, human-like AI Voice Agent for Scorelabs Inc.
-Mode: ${service.toUpperCase()} | Stage: ${currentStage} | Contact: ${contactInfo.name || 'Caller'} (${contactInfo.company || 'Scorelabs'}) | Role: ${role}
+        const systemPrompt = `You are Remo, a warm, professional, human-like AI Voice Agent representing ${organizationName}.
+Mode: ${service.toUpperCase()} | Stage: ${currentStage} | Contact: ${contactInfo.name || 'Caller'} (${contactInfo.company || organizationName}) | Subject: ${role}
 
 RULES:
 1. Speak in natural telephone dialogue: strictly 1-2 short sentences (under 25 words).

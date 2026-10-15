@@ -389,7 +389,10 @@ export class CallSession {
         this.greetingInProgress = true;
         this.latencyTracker.markGreetingStart();
 
-        const greeting = GeminiService.getOpeningGreeting(this.service, this.contact);
+        const greeting = GeminiService.getOpeningGreeting(this.service, {
+            ...this.contact,
+            campaignContext: this.campaignContext
+        });
         this.currentQuestion = greeting;
         this.currentStage = 'AVAILABILITY';
 
@@ -814,6 +817,7 @@ export class CallSession {
             collectedData: this.collectedData,
             history: this.conversationHistory,
             questionPlan: this.questionPlan,
+            campaignContext: this.campaignContext,
             memory: this.memory
         };
 
