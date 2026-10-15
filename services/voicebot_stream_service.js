@@ -412,7 +412,7 @@ export class CallSession {
         try {
             // 1. Instant Cache Check (< 1ms delivery)
             const voiceId = ElevenLabsService.getVoiceIdForLanguage(this.detectedLanguage);
-            const modelId = ElevenLabsService.getModelId();
+            const modelId = ElevenLabsService.selectTtsModel({ language: this.detectedLanguage, voiceId });
             const cachedAudio = ElevenLabsService.getCachedAudio(greeting, { voiceId, modelId });
             if (cachedAudio) {
                 console.log(`[CallSession] Instant cache hit for opening greeting! Dispatching audio in < 5ms.`);
@@ -494,19 +494,52 @@ export class CallSession {
             this.latencyTracker.markTtsStart();
 
             const voiceId = ElevenLabsService.getVoiceIdForLanguage(this.detectedLanguage);
-            const modelId = ElevenLabsService.getModelId();
+            const modelId = ElevenLabsService.selectTtsModel({ language: this.detectedLanguage, voiceId });
             const voiceName = (voiceId === (process.env.ELEVENLABS_VOICE_ID_CHAITRA || 'oyjIr5XAhIyRjfNq6spl')) ? 'Chaitra (Telugu)' : 'Pari (English/Hindi)';
-            console.log(`[CallSession] Voice selected: ${voiceName} (VoiceID: ${voiceId}, Lang: ${this.detectedLanguage})`);
+            console.log(`[CallSession] Voice selected: ${voiceName} (VoiceID: ${voiceId}, Lang: ${this.detectedLanguage}, Model: ${modelId})`);
 
             // Check cache
-            let audioBuffer = ElevenLabsService.getCachedAudio(text, { voiceId, modelId });
+            let audioBuffer = ElevenLabsService.getCachedAudio(text, { voiceId, modelId, language: this.detectedLanguage });
             const isCached = Boolean(audioBuffer);
+
+            // Stream TTS audio chunks directly to Plivo in real-time as they arrive
+            let firstChunkSent = false;
+            let streamedBytes = 0;
 
             if (!audioBuffer && ElevenLabsService.isConfigured()) {
                 audioBuffer = await ElevenLabsService.textToSpeech(text, {
                     voiceId,
                     modelId,
-                    outputFormat: 'ulaw_8000'
+                    language: this.detectedLanguage,
+                    outputFormat: 'ulaw_8000',
+                    onChunk: (chunk) => {
+                        if (!chunk || this.isClosed || !this.ws || this.ws.readyState !== this.ws.OPEN) return;
+                        streamedBytes += chunk.length;
+                        this.isAiSpeaking = true;
+
+                        // Mark first audio chunk sent for precise caller-endpoint-to-audible-response metric
+                        if (!firstChunkSent) {
+                            firstChunkSent = true;
+                            this.latencyTracker.markFirstAudioChunkSent();
+                            console.log(`[CallSession] First audio chunk streamed to Plivo (${chunk.length} bytes)`);
+                        }
+
+                        // Stream audio frame incrementally to Plivo
+                        const payloadBase64 = Buffer.from(chunk).toString('base64');
+                        const playMsg = {
+                            event: 'playAudio',
+                            media: {
+                                contentType: 'audio/x-mulaw',
+                                sampleRate: 8000,
+                                payload: payloadBase64
+                            }
+                        };
+                        if (this.streamId) {
+                            playMsg.streamId = this.streamId;
+                            playMsg.stream_id = this.streamId;
+                        }
+                        this.ws.send(JSON.stringify(playMsg));
+                    }
                 });
             }
 
@@ -527,7 +560,25 @@ export class CallSession {
                 return;
             }
 
-            await this.dispatchAudioBuffer(audioBuffer, text);
+            // If audio was already streamed chunk-by-chunk, calculate total duration and set completion timer
+            if (firstChunkSent) {
+                const totalDurationMs = Math.round((streamedBytes / 8000) * 1000);
+                this.aiSpeechEndTime = Date.now() + totalDurationMs;
+                console.log(`[CallSession] Incremental stream complete: ${streamedBytes} bytes (~${totalDurationMs}ms at 8kHz ulaw)`);
+                this.latencyTracker.markAudioDispatched();
+
+                if (this.activeSpeechTimer) clearTimeout(this.activeSpeechTimer);
+                this.activeSpeechTimer = setTimeout(() => {
+                    if (Date.now() >= this.aiSpeechEndTime && this.isAiSpeaking) {
+                        this.isAiSpeaking = false;
+                        console.log('[CallSession] AI finished speaking turn. Now listening for caller.');
+                    }
+                }, totalDurationMs);
+            } else {
+                // If loaded from RAM cache, dispatch complete buffer instantly
+                this.latencyTracker.markFirstAudioChunkSent();
+                await this.dispatchAudioBuffer(audioBuffer, text);
+            }
 
         } catch (e) {
             console.error('[CallSession] playAiAudio error:', e.message);
@@ -599,10 +650,14 @@ export class CallSession {
                 this.callerMulawChunks.push(mulawChunk);
                 this.consecutiveSilenceFrames++;
 
-                // Adaptive silence threshold:
-                // Short answers (< 1.2s speech, e.g. "yes", "okay", "no") trigger after 18 frames (~360ms)
-                // Longer speech triggers after 24 frames (~480ms) to allow breathing pauses
-                const silenceRequired = this.consecutiveSpeechFrames < 60 ? 18 : 24;
+                // Configurable, low-latency adaptive silence threshold:
+                // Default: 14 frames (~280ms) for brief answers ("yes", "okay", "no")
+                // 18 frames (~360ms) for longer speech to allow natural breathing pauses
+                // Configurable via VAD_SILENCE_THRESHOLD_MS (e.g. 250 - 350ms)
+                const baseShortFrames = process.env.VAD_SILENCE_THRESHOLD_MS
+                    ? Math.max(12, Math.round(parseInt(process.env.VAD_SILENCE_THRESHOLD_MS, 10) / 20))
+                    : 14;
+                const silenceRequired = this.consecutiveSpeechFrames < 60 ? baseShortFrames : (baseShortFrames + 4);
 
                 if (this.consecutiveSilenceFrames >= silenceRequired) {
                     const silenceMs = this.consecutiveSilenceFrames * 20;
@@ -757,7 +812,9 @@ export class CallSession {
             stage: this.currentStage,
             contact: this.contact,
             collectedData: this.collectedData,
-            history: this.conversationHistory
+            history: this.conversationHistory,
+            questionPlan: this.questionPlan,
+            memory: this.memory
         };
 
         const intent = IntentService.matchIntent(transcript, intentContext);
@@ -958,8 +1015,10 @@ export class CallSession {
             this.latencyTracker.logFinalSummary();
         }
 
-        // Asynchronously persist call results
-        await this.persistCallResults();
+        // Asynchronously persist call results off the critical path (non-blocking)
+        this.persistCallResults().catch(err => {
+            console.error(`[CallSession] Error during async persistCallResults for call ${this.callId}:`, err.message);
+        });
     }
 
     async persistCallResults() {
@@ -1248,10 +1307,14 @@ export async function precacheStandardGreetings() {
         // Sequential pre-warm (concurrency = 1) to respect ElevenLabs rate limits
         console.log('[VoicebotStream] Pre-warming standard opening greetings in TTS cache...');
         const salesGreeting = GeminiService.getOpeningGreeting('sales', {});
-        await ElevenLabsService.textToSpeech(salesGreeting, { outputFormat: 'ulaw_8000', timeoutMs: 10000 });
+        const salesVoice = ElevenLabsService.getVoiceIdForLanguage('en');
+        const salesModel = ElevenLabsService.selectTtsModel({ language: 'en', voiceId: salesVoice });
+        await ElevenLabsService.textToSpeech(salesGreeting, { voiceId: salesVoice, modelId: salesModel, language: 'en', outputFormat: 'ulaw_8000', timeoutMs: 10000 });
 
         const recGreeting = GeminiService.getOpeningGreeting('recruitment', { job_role: 'the open position' });
-        await ElevenLabsService.textToSpeech(recGreeting, { outputFormat: 'ulaw_8000', timeoutMs: 10000 });
+        const recVoice = ElevenLabsService.getVoiceIdForLanguage('en');
+        const recModel = ElevenLabsService.selectTtsModel({ language: 'en', voiceId: recVoice });
+        await ElevenLabsService.textToSpeech(recGreeting, { voiceId: recVoice, modelId: recModel, language: 'en', outputFormat: 'ulaw_8000', timeoutMs: 10000 });
         console.log('[VoicebotStream] Standard greetings cached in RAM successfully.');
     } catch (e) {
         // Non-fatal

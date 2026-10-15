@@ -175,7 +175,11 @@ export class LLMService {
                 max_tokens: maxTokens,
                 messages: claudeMessages
             };
-            // Claude Haiku 5.5 deprecates temperature; only send for legacy models
+            // Claude Haiku 5.5 / 4.5: Explicitly disable internal thinking tokens to eliminate
+            // 3-4s latency overhead on real-time conversational voice calls.
+            if (model.includes('haiku') || model.includes('claude')) {
+                bodyPayload.thinking = { type: 'disabled' };
+            }
             if (!model.includes('5-5') && typeof temperature === 'number') {
                 bodyPayload.temperature = temperature;
             }
@@ -201,7 +205,8 @@ export class LLMService {
             }
 
             const data = await res.json();
-            const text = data.content?.map(c => c.text || '').join('\n') || '';
+            // Filter specifically for text content blocks (ignoring any thinking/signature blocks)
+            const text = data.content?.filter(c => c.type === 'text').map(c => c.text || '').join('\n') || '';
             return { text };
         } finally {
             clearTimeout(timer);

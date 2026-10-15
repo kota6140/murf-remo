@@ -374,7 +374,7 @@ export default class IntentService {
         // 9. CONTEXT-AWARE YES
         // -------------------------------------------------------------
         if (isYes) {
-            return this.handleYes(service, stage, currentLang, role, company);
+            return this.handleYes(service, stage, currentLang, role, company, context.questionPlan, context.memory);
         }
 
         // -------------------------------------------------------------
@@ -390,7 +390,7 @@ export default class IntentService {
     /**
      * Context-aware handling for affirmative answers ("yes", "sure", "okay", "correct")
      */
-    static handleYes(service, stage, lang, role, company) {
+    static handleYes(service, stage, lang, role, company, questionPlan = null, memory = null) {
         if (service === 'sales') {
             switch (stage) {
                 case 'AVAILABILITY':
@@ -467,13 +467,22 @@ export default class IntentService {
         }
 
         if (service === 'recruitment') {
+            // Check if there is a tailored question plan from the campaign
+            let plannedNext = null;
+            if (memory && typeof memory.getNextPlannedQuestion === 'function' && Array.isArray(questionPlan)) {
+                plannedNext = memory.getNextPlannedQuestion(questionPlan);
+            }
+
             switch (stage) {
                 case 'AVAILABILITY':
                 case 'GREETING':
+                    const nextQText = (plannedNext && plannedNext.text)
+                        ? plannedNext.text
+                        : `Great, thank you! I'm calling about the ${role} position. Could you briefly share your total years of hands-on experience in this field?`;
                     return {
                         matched: true,
                         spoken_response: this.localize(
-                            `Great, thank you! I'm calling about the ${role} position. Could you briefly share your total years of hands-on experience in this field?`,
+                            nextQText,
                             `बहुत बढ़िया, धन्यवाद! मैं ${role} पद के संबंध में बात कर रहा हूँ। क्या आप इस क्षेत्र में अपने कुल वर्षों के अनुभव के बारे में बता सकते हैं?`,
                             `చాలా సంతోషం, ధన్యవాదాలు! నేను ${role} రోల్ గురించి మాట్లాడుతున్నాను. ఈ ఫీల్డ్‌లో మీ మొత్తం అనుభవం ఎన్ని సంవత్సరాలు?`,
                             lang
@@ -481,7 +490,7 @@ export default class IntentService {
                         detected_language: lang,
                         extracted_fields: { available_to_talk: 'Yes', candidate_interest: 'Interested' },
                         classification: 'On Hold',
-                        next_stage: 'EXPERIENCE',
+                        next_stage: plannedNext ? (plannedNext.stage || 'EXPERIENCE') : 'EXPERIENCE',
                         should_end_call: false,
                         reason: 'recruitment_availability_yes'
                     };

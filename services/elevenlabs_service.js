@@ -40,8 +40,89 @@ export default class ElevenLabsService {
         return (process.env.ELEVENLABS_VOICE_ID_PARI || process.env.ELEVENLABS_VOICE_ID || '06llJPvI62CjqSWOX9Gp').trim();
     }
 
-    static getModelId() {
-        return (process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2').trim();
+    static getFastModelId() {
+        return (process.env.ELEVENLABS_FAST_MODEL_ID || 'eleven_flash_v2_5').trim();
+    }
+
+    static getMultilingualModelId() {
+        return (process.env.ELEVENLABS_MULTILINGUAL_MODEL_ID || process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2').trim();
+    }
+
+    /**
+     * Centralized TTS model selection function.
+     * Evaluates language, voice, and configured preferences to select either
+     * Flash v2.5 (low-latency) or Multilingual v2 (phonetic stability).
+     * 
+     * @param {object|string} options - Selection options or language code string
+     * @param {string} [options.language='en'] - Conversation language (e.g. en, hi, te)
+     * @param {string} [options.voiceId=null] - Voice ID
+     * @param {string} [options.preferModel=null] - Optional override ('fast' | 'multilingual')
+     * @param {string} [options.overrideModel=null] - Explicit model ID override
+     * @returns {string} Model ID
+     */
+    static selectTtsModel(options = {}) {
+        if (typeof options === 'string') {
+            options = { language: options };
+        }
+        const { language = 'en', voiceId = null, preferModel = null, overrideModel = null } = options;
+
+        if (overrideModel && typeof overrideModel === 'string' && overrideModel.trim()) {
+            return overrideModel.trim();
+        }
+
+        const fastModel = this.getFastModelId();
+        const multilingualModel = this.getMultilingualModelId();
+
+        // Explicit preference override via option or env
+        const globalPref = (preferModel || process.env.ELEVENLABS_PREFERRED_MODEL || '').toLowerCase().trim();
+        if (globalPref === 'multilingual' || globalPref === 'eleven_multilingual_v2') {
+            return multilingualModel;
+        }
+        if (globalPref === 'fast' || globalPref === 'flash' || globalPref === 'eleven_flash_v2_5') {
+            return fastModel;
+        }
+
+        // Language normalization
+        const l = (language || '').toLowerCase().trim();
+
+        // Check language-specific override env if configured
+        if ((l === 'te' || l === 'tel' || l === 'telugu') && process.env.ELEVENLABS_TELUGU_MODEL_ID) {
+            return process.env.ELEVENLABS_TELUGU_MODEL_ID.trim();
+        }
+
+        // Policy:
+        // 1. English (en/eng) -> Flash v2.5 (preferred low-latency conversational model)
+        // 2. Hindi (hi/hin) -> Flash v2.5 (verified sub-500ms synthesis with Pari voice)
+        // 3. Telugu (te/tel) -> Multilingual v2 (verified stability for complex Telugu script with Chaitra)
+        // 4. Default -> Flash v2.5
+        if (l === 'te' || l === 'tel' || l === 'telugu') {
+            return multilingualModel;
+        }
+        if (l === 'hi' || l === 'hin' || l === 'hindi') {
+            return fastModel;
+        }
+        if (l === 'en' || l === 'eng' || l === 'english') {
+            return fastModel;
+        }
+
+        return fastModel;
+    }
+
+    /**
+     * Backward-compatible alias for selectTtsModel.
+     */
+    static getModelId(options = {}) {
+        return this.selectTtsModel(options);
+    }
+
+    /**
+     * Returns the configured alternative model for compatibility fallback.
+     */
+    static getAlternativeModel(currentModel) {
+        const fast = this.getFastModelId();
+        const multi = this.getMultilingualModelId();
+        if (currentModel === fast) return multi;
+        return fast;
     }
 
     static getWebhookSecret() {
@@ -62,8 +143,8 @@ export default class ElevenLabsService {
      */
     static getCachedAudio(text, options = {}) {
         if (!text || !text.trim()) return null;
-        const voiceId = options.voiceId || this.getVoiceId();
-        const modelId = options.modelId || this.getModelId();
+        const voiceId = options.voiceId || this.getVoiceId(options.language || options.lang);
+        const modelId = options.modelId || this.selectTtsModel(options);
         const outputFormat = options.outputFormat || 'ulaw_8000';
         const key = getCacheKey(text, voiceId, modelId, outputFormat);
         return ttsAudioCache.get(key) || null;
@@ -74,8 +155,8 @@ export default class ElevenLabsService {
      */
     static precacheAudio(text, buffer, options = {}) {
         if (!text || !buffer) return;
-        const voiceId = options.voiceId || this.getVoiceId();
-        const modelId = options.modelId || this.getModelId();
+        const voiceId = options.voiceId || this.getVoiceId(options.language || options.lang);
+        const modelId = options.modelId || this.selectTtsModel(options);
         const outputFormat = options.outputFormat || 'ulaw_8000';
         const key = getCacheKey(text, voiceId, modelId, outputFormat);
 
@@ -87,24 +168,89 @@ export default class ElevenLabsService {
     }
 
     /**
-     * Converts text into speech audio using ElevenLabs REST API with in-memory caching.
+     * Converts text into speech audio using ElevenLabs REST API with in-memory caching,
+     * centralized model selection, streaming byte tracking, and compatibility fallback.
+     * 
      * @param {string} text - Spoken dialogue text
-     * @param {object} options - Optional settings (voiceId, modelId, outputFormat, timeoutMs)
+     * @param {object} options - Optional settings (voiceId, modelId, language, outputFormat, timeoutMs, onChunk)
      * @returns {Promise<Buffer|null>} Audio buffer or null on error
      */
     static async textToSpeech(text, options = {}) {
         if (!text || !text.trim()) return null;
 
-        const voiceId = options.voiceId || this.getVoiceId();
-        const modelId = options.modelId || this.getModelId();
+        const language = options.language || options.lang || 'en';
+        const voiceId = options.voiceId || this.getVoiceId(language);
+        const modelId = options.modelId || this.selectTtsModel({
+            language,
+            voiceId,
+            preferModel: options.preferModel,
+            overrideModel: options.overrideModel
+        });
         const outputFormat = options.outputFormat || 'ulaw_8000';
+
+        // Timing Log 1: Centralized Model Selection
+        console.log(`[ElevenLabsService] Model selected: ${modelId} (Lang: ${language}, Voice: ${voiceId})`);
+
         const cacheKey = getCacheKey(text, voiceId, modelId, outputFormat);
 
         // Instant cache hit (< 1ms)
         if (ttsAudioCache.has(cacheKey)) {
+            console.log(`[ElevenLabsService] TTS cache hit for model ${modelId} (< 1ms)`);
             return ttsAudioCache.get(cacheKey);
         }
 
+        return await this._synthesizeWithFallback(text, {
+            ...options,
+            voiceId,
+            modelId,
+            language,
+            outputFormat
+        });
+    }
+
+    /**
+     * Performs TTS synthesis with single automatic retry on model compatibility errors.
+     * Prevents serial retries on rate limits, auth errors, or timeouts.
+     */
+    static async _synthesizeWithFallback(text, options) {
+        const primaryModel = options.modelId;
+        const voiceId = options.voiceId;
+        const outputFormat = options.outputFormat;
+        const timeoutMs = options.timeoutMs || 8000;
+
+        const res = await this._executeTtsFetch(text, primaryModel, voiceId, outputFormat, timeoutMs, options.onChunk);
+
+        if (res.success && res.buffer) {
+            this.precacheAudio(text, res.buffer, { voiceId, modelId: primaryModel, outputFormat });
+            return res.buffer;
+        }
+
+        // Retry policy: Only retry on model compatibility errors (HTTP 400/422 indicating model/voice/lang mismatch)
+        const isModelCompatError = (res.status === 400 || res.status === 422) &&
+            (res.errorText?.toLowerCase().includes('model') ||
+             res.errorText?.toLowerCase().includes('not supported') ||
+             res.errorText?.toLowerCase().includes('language') ||
+             res.errorText?.toLowerCase().includes('voice'));
+
+        if (isModelCompatError && !options._isRetry) {
+            const altModel = this.getAlternativeModel(primaryModel);
+            if (altModel && altModel !== primaryModel) {
+                console.warn(`[ElevenLabsService] TTS fallback triggered: Primary model ${primaryModel} failed (HTTP ${res.status} - ${res.errorText?.slice(0, 80)}). Retrying with alternative model ${altModel}...`);
+                const retryRes = await this._executeTtsFetch(text, altModel, voiceId, outputFormat, timeoutMs, options.onChunk);
+                if (retryRes.success && retryRes.buffer) {
+                    this.precacheAudio(text, retryRes.buffer, { voiceId, modelId: altModel, outputFormat });
+                    return retryRes.buffer;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Executes the HTTP POST request to ElevenLabs with streaming byte metrics and timing logs.
+     */
+    static async _executeTtsFetch(text, modelId, voiceId, outputFormat, timeoutMs, onChunk = null) {
         const apiKey = this.getApiKey();
         const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=${outputFormat}`;
 
@@ -112,16 +258,19 @@ export default class ElevenLabsService {
             text: text.trim(),
             model_id: modelId,
             voice_settings: {
-                stability: options.stability ?? 0.5,
-                similarity_boost: options.similarity_boost ?? 0.75,
-                style: options.style ?? 0.0,
-                use_speaker_boost: options.use_speaker_boost ?? true
+                stability: 0.5,
+                similarity_boost: 0.75,
+                style: 0.0,
+                use_speaker_boost: true
             }
         };
 
-        const timeoutMs = options.timeoutMs || 8000;
         const controller = new AbortController();
-        const timeoutTimer = setTimeout(() => controller.abort(), timeoutMs);
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        const startTime = performance.now();
+
+        // Timing Log 2: Request Start
+        console.log(`[ElevenLabsService] TTS request start: Model=${modelId}, Voice=${voiceId}, Format=${outputFormat}, Length=${text.trim().length} chars`);
 
         try {
             const res = await fetch(url, {
@@ -135,26 +284,61 @@ export default class ElevenLabsService {
                 signal: controller.signal
             });
 
-            clearTimeout(timeoutTimer);
+            clearTimeout(timer);
 
-            if (res.ok) {
+            if (!res.ok) {
+                const errorText = await res.text();
+                console.error(`[ElevenLabsService] TTS API error (HTTP ${res.status}, Model: ${modelId}):`, errorText.slice(0, 180));
+                return { success: false, status: res.status, errorText };
+            }
+
+            let buffer;
+            let firstByteMs = null;
+
+            // Stream reading to capture first audio chunk timing
+            if (res.body && typeof res.body.getReader === 'function') {
+                const reader = res.body.getReader();
+                const chunks = [];
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    if (firstByteMs === null && value && value.length > 0) {
+                        firstByteMs = Math.round(performance.now() - startTime);
+                        // Timing Log 3: First Audio Byte/Chunk
+                        console.log(`[ElevenLabsService] First audio byte received in ${firstByteMs}ms (Model: ${modelId})`);
+                    }
+                    chunks.push(value);
+                    if (typeof onChunk === 'function') {
+                        try { onChunk(value); } catch (_) {}
+                    }
+                }
+                buffer = Buffer.concat(chunks);
+            } else {
                 const arrayBuf = await res.arrayBuffer();
-                const buffer = Buffer.from(arrayBuf);
-                this.precacheAudio(text, buffer, { voiceId, modelId, outputFormat });
-                return buffer;
-            } else {
-                const errText = await res.text();
-                console.error(`[ElevenLabsService] TTS API error (HTTP ${res.status}):`, errText.slice(0, 200));
-                return null;
+                buffer = Buffer.from(arrayBuf);
+                firstByteMs = Math.round(performance.now() - startTime);
+                console.log(`[ElevenLabsService] First audio byte received in ${firstByteMs}ms (Model: ${modelId})`);
             }
+
+            const totalMs = Math.round(performance.now() - startTime);
+            const estDurationMs = outputFormat === 'ulaw_8000' ? Math.round((buffer.length / 8000) * 1000) : null;
+            // Timing Log 4: Audio Completion
+            console.log(`[ElevenLabsService] Audio complete: ${buffer.length} bytes in ${totalMs}ms (Model: ${modelId}${estDurationMs ? `, ~${estDurationMs}ms audio` : ''})`);
+
+            return {
+                success: true,
+                buffer,
+                firstByteMs,
+                totalMs
+            };
         } catch (err) {
-            clearTimeout(timeoutTimer);
+            clearTimeout(timer);
             if (err.name === 'AbortError') {
-                console.warn(`[ElevenLabsService] TTS request timed out after ${timeoutMs}ms.`);
+                console.warn(`[ElevenLabsService] TTS request timed out after ${timeoutMs}ms (Model: ${modelId}).`);
             } else {
-                console.error('[ElevenLabsService] TTS network exception:', err.message);
+                console.error(`[ElevenLabsService] TTS network exception (Model: ${modelId}):`, err.message);
             }
-            return null;
+            return { success: false, status: 0, errorText: err.message };
         }
     }
 

@@ -45,6 +45,7 @@ export default class LatencyTracker {
         this.currentTurn = {
             turnIndex: this.turns.length + 1,
             turnStartTime: Date.now(),
+            speechEndpointDetectedTime: null,
             vadSilenceDetectedTime: null,
             vadDurationMs: 0,
             sttStartTime: null,
@@ -55,17 +56,27 @@ export default class LatencyTracker {
             decisionDurationMs: 0,
             decisionType: 'UNKNOWN',
             ttsStartTime: null,
+            ttsFirstByteTime: null,
             ttsEndTime: null,
             ttsDurationMs: 0,
             isTtsCached: false,
+            firstAudioSentTime: null,
             audioDispatchedTime: null,
+            playbackCompletedTime: null,
+            endpointToFirstAudioMs: 0,
             totalTurnLatencyMs: 0
         };
     }
 
-    markVadSilence(silenceMs = 360) {
+    markSpeechEndpointDetected() {
+        if (!this.currentTurn) this.startTurn();
+        this.currentTurn.speechEndpointDetectedTime = Date.now();
+    }
+
+    markVadSilence(silenceMs = 280) {
         if (!this.currentTurn) this.startTurn();
         this.currentTurn.vadSilenceDetectedTime = Date.now();
+        this.currentTurn.speechEndpointDetectedTime = this.currentTurn.speechEndpointDetectedTime || Date.now();
         this.currentTurn.vadDurationMs = silenceMs;
     }
 
@@ -97,6 +108,11 @@ export default class LatencyTracker {
         this.currentTurn.ttsStartTime = Date.now();
     }
 
+    markTtsFirstByte() {
+        if (!this.currentTurn) return;
+        this.currentTurn.ttsFirstByteTime = Date.now();
+    }
+
     markTtsEnd(isCached = false) {
         if (!this.currentTurn || !this.currentTurn.ttsStartTime) return;
         this.currentTurn.ttsEndTime = Date.now();
@@ -104,12 +120,25 @@ export default class LatencyTracker {
         this.currentTurn.isTtsCached = isCached;
     }
 
+    markFirstAudioChunkSent() {
+        if (!this.currentTurn) return;
+        if (!this.currentTurn.firstAudioSentTime) {
+            this.currentTurn.firstAudioSentTime = Date.now();
+            const endpoint = this.currentTurn.speechEndpointDetectedTime || this.currentTurn.vadSilenceDetectedTime || this.currentTurn.turnStartTime;
+            this.currentTurn.endpointToFirstAudioMs = this.currentTurn.firstAudioSentTime - endpoint;
+        }
+    }
+
     markAudioDispatched() {
         if (!this.currentTurn) return;
         this.currentTurn.audioDispatchedTime = Date.now();
+        if (!this.currentTurn.firstAudioSentTime) {
+            this.currentTurn.firstAudioSentTime = this.currentTurn.audioDispatchedTime;
+        }
 
-        const baseTime = this.currentTurn.vadSilenceDetectedTime || this.currentTurn.turnStartTime;
-        this.currentTurn.totalTurnLatencyMs = this.currentTurn.audioDispatchedTime - baseTime;
+        const endpoint = this.currentTurn.speechEndpointDetectedTime || this.currentTurn.vadSilenceDetectedTime || this.currentTurn.turnStartTime;
+        this.currentTurn.endpointToFirstAudioMs = this.currentTurn.firstAudioSentTime - endpoint;
+        this.currentTurn.totalTurnLatencyMs = this.currentTurn.audioDispatchedTime - endpoint;
 
         const t = this.currentTurn;
         console.log(
@@ -118,6 +147,7 @@ export default class LatencyTracker {
             `STT=${t.sttDurationMs}ms | ` +
             `Decision=${t.decisionDurationMs}ms (${t.decisionType}) | ` +
             `TTS=${t.ttsDurationMs}ms${t.isTtsCached ? ' (CACHED)' : ''} | ` +
+            `EndpointToFirstAudio=${t.endpointToFirstAudioMs}ms | ` +
             `TOTAL=${t.totalTurnLatencyMs}ms`
         );
 
