@@ -459,335 +459,43 @@
             </div>
           </div>
 
-          <!-- 5. THREE CLEARLY SEPARATED SERVICE COLUMNS/CARDS -->
-          <section style="margin-bottom: 24px;">
-            <div class="section-subhead-row">
-              <h3 class="section-subhead">Service Workflows & Excel Operations</h3>
+
+
+          <!-- ======================================================================
+               4B. SAVED VOICE CAMPAIGNS & SCREENING MANAGEMENT SECTION
+               ====================================================================== -->
+          <section class="campaigns-management-section" style="margin-bottom: 28px;">
+            <div class="section-subhead-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
+              <div>
+                <h3 class="section-subhead" style="margin-bottom: 2px;">Saved Voice Campaigns & Job Screening</h3>
+                <p style="font-size: 0.775rem; color: #64748B;">Isolated campaigns with independent JD criteria, candidate spreadsheets, custom interview plans, and updated Excel outcomes.</p>
+              </div>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <button type="button" class="btn-create-campaign-hero" id="btn-hero-new-campaign">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  <span>+ Create Campaign</span>
+                </button>
+                <button type="button" class="btn-refresh-campaigns" id="btn-refresh-campaigns-list" title="Refresh Campaigns List">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                </button>
+              </div>
             </div>
 
-            <div class="remo-services-grid">
+            <!-- Campaign Filter Pills -->
+            <div class="campaigns-filter-bar">
+              <button type="button" class="camp-filter-pill active" data-filter="all">All Campaigns (<span id="cnt-filter-all">0</span>)</button>
+              <button type="button" class="camp-filter-pill" data-filter="recruitment">Recruitment (<span id="cnt-filter-rec">0</span>)</button>
+              <button type="button" class="camp-filter-pill" data-filter="sales">Sales (<span id="cnt-filter-sales">0</span>)</button>
+              <button type="button" class="camp-filter-pill" data-filter="support">Support (<span id="cnt-filter-support">0</span>)</button>
+            </div>
 
-              <!-- ==========================================
-                   SERVICE CARD 1: RECRUITMENT
-                   ========================================== -->
-              <div class="remo-service-card recruitment-card" id="card-service-recruitment">
-                <div class="remo-card-top-header">
-                  <div class="remo-card-title-group">
-                    <h3>
-                      <span>💼</span> Recruitment
-                    </h3>
-                    <p class="remo-card-desc">Screen candidate qualifications, skills, notice period, and availability.</p>
-                  </div>
-                  <span class="badge-pill badge-recruitment">Recruitment</span>
-                </div>
-
-                <!-- Excel Upload Area -->
-                <div class="remo-card-upload-zone" id="zone-upload-recruitment" data-service="recruitment">
-                  <input type="file" id="file-input-recruitment" accept=".xlsx,.xls,.csv" aria-label="Upload Recruitment Excel">
-                  <div class="remo-upload-icon-circle">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                      <polyline points="17 8 12 3 7 8"/>
-                      <line x1="12" y1="3" x2="12" y2="15"/>
-                    </svg>
-                  </div>
-                  <span class="remo-upload-label-main">Upload Candidate Sheet</span>
-                  <span class="remo-upload-label-sub">Drop .xlsx, .xls, or .csv file</span>
-                </div>
-
-                <!-- Selected Filename & Status -->
-                <div class="remo-file-meta-bar" id="bar-file-recruitment">
-                  <span class="remo-file-name-text" id="name-file-recruitment">candidates.xlsx</span>
-                  <span class="badge-pill badge-status-completed" id="badge-file-recruitment">READY</span>
-                </div>
-
-                <!-- Excel Validation Results -->
-                <div class="remo-validation-card">
-                  <div class="remo-val-header">
-                    <span>Validation Summary</span>
-                    <button type="button" class="btn-text-link btn-view-errors" data-service="recruitment" style="background:none; border:none; font-size:0.68rem; color:#FC2415; font-weight:700; cursor:pointer;" id="btn-errors-recruitment">View Errors</button>
-                  </div>
-                  <div class="remo-val-grid">
-                    <div class="remo-val-stat-box">
-                      <div class="remo-val-stat-val val-valid" id="val-valid-recruitment">0</div>
-                      <div class="remo-val-stat-lbl">Valid Contacts</div>
-                    </div>
-                    <div class="remo-val-stat-box">
-                      <div class="remo-val-stat-val val-invalid" id="val-invalid-recruitment">0</div>
-                      <div class="remo-val-stat-lbl">Invalid Rows</div>
-                    </div>
-                    <div class="remo-val-stat-box">
-                      <div class="remo-val-stat-val val-pending" id="val-pending-recruitment">0</div>
-                      <div class="remo-val-stat-lbl">Pending Calls</div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Call Button -->
-                <button type="button" class="btn-card-call-action" id="btn-call-recruitment" data-service="recruitment">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-                  <span>Start Recruitment Calls</span>
-                </button>
-
-                <!-- Calling Progress -->
-                <div class="remo-call-progress-wrap">
-                  <div class="remo-prog-label-row">
-                    <span id="label-prog-recruitment">Calling Progress</span>
-                    <span id="percent-prog-recruitment">0%</span>
-                  </div>
-                  <div class="remo-prog-track">
-                    <div class="remo-prog-fill" id="fill-prog-recruitment"></div>
-                  </div>
-                </div>
-
-                <!-- Progress Counts -->
-                <div class="remo-stats-grid-four">
-                  <div>
-                    <div class="remo-stat-col-num" id="stat-completed-recruitment" style="color:#16A34A;">0</div>
-                    <div class="remo-stat-col-lbl">Completed</div>
-                  </div>
-                  <div>
-                    <div class="remo-stat-col-num" id="stat-failed-recruitment" style="color:#DC2626;">0</div>
-                    <div class="remo-stat-col-lbl">Failed</div>
-                  </div>
-                  <div>
-                    <div class="remo-stat-col-num" id="stat-skipped-recruitment" style="color:#64748B;">0</div>
-                    <div class="remo-stat-col-lbl">Skipped</div>
-                  </div>
-                  <div>
-                    <div class="remo-stat-col-num" id="stat-inprogress-recruitment" style="color:#2563EB;">0</div>
-                    <div class="remo-stat-col-lbl">In-Progress</div>
-                  </div>
-                </div>
-
-                <!-- Card Actions Footer -->
-                <div class="remo-card-footer">
-                  <button type="button" class="btn-card-secondary btn-view-service-convs" data-service="recruitment">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                    <span>Conversations</span>
-                  </button>
-                  <a href="/api/admin/recruitment/download" class="btn-card-secondary btn-download-excel" id="btn-dl-recruitment">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                    <span>Updated Excel</span>
-                  </a>
-                </div>
+            <!-- Saved Campaigns Cards Grid -->
+            <div class="saved-campaigns-container" id="saved-campaigns-container">
+              <div style="text-align: center; padding: 36px; color: #94A3B8; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px;">
+                <span class="auth-spinner" style="margin-right: 8px;"></span> Loading persistent campaigns...
               </div>
-
-              <!-- ==========================================
-                   SERVICE CARD 2: OUTBOUND SALES
-                   ========================================== -->
-              <div class="remo-service-card sales-card" id="card-service-sales">
-                <div class="remo-card-top-header">
-                  <div class="remo-card-title-group">
-                    <h3>
-                      <span>📈</span> Outbound Sales
-                    </h3>
-                    <p class="remo-card-desc">B2B lead qualification, consultative discovery, and demo scheduling.</p>
-                  </div>
-                  <span class="badge-pill badge-sales">Sales</span>
-                </div>
-
-                <!-- Excel Upload Area -->
-                <div class="remo-card-upload-zone" id="zone-upload-sales" data-service="sales">
-                  <input type="file" id="file-input-sales" accept=".xlsx,.xls,.csv" aria-label="Upload Sales Excel">
-                  <div class="remo-upload-icon-circle">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                      <polyline points="17 8 12 3 7 8"/>
-                      <line x1="12" y1="3" x2="12" y2="15"/>
-                    </svg>
-                  </div>
-                  <span class="remo-upload-label-main">Upload Sales Leads Sheet</span>
-                  <span class="remo-upload-label-sub">Drop .xlsx, .xls, or .csv file</span>
-                </div>
-
-                <!-- Selected Filename & Status -->
-                <div class="remo-file-meta-bar" id="bar-file-sales">
-                  <span class="remo-file-name-text" id="name-file-sales">prospects.xlsx</span>
-                  <span class="badge-pill badge-status-completed" id="badge-file-sales">READY</span>
-                </div>
-
-                <!-- Excel Validation Results -->
-                <div class="remo-validation-card">
-                  <div class="remo-val-header">
-                    <span>Validation Summary</span>
-                    <button type="button" class="btn-text-link btn-view-errors" data-service="sales" style="background:none; border:none; font-size:0.68rem; color:#FC2415; font-weight:700; cursor:pointer;" id="btn-errors-sales">View Errors</button>
-                  </div>
-                  <div class="remo-val-grid">
-                    <div class="remo-val-stat-box">
-                      <div class="remo-val-stat-val val-valid" id="val-valid-sales">0</div>
-                      <div class="remo-val-stat-lbl">Valid Contacts</div>
-                    </div>
-                    <div class="remo-val-stat-box">
-                      <div class="remo-val-stat-val val-invalid" id="val-invalid-sales">0</div>
-                      <div class="remo-val-stat-lbl">Invalid Rows</div>
-                    </div>
-                    <div class="remo-val-stat-box">
-                      <div class="remo-val-stat-val val-pending" id="val-pending-sales">0</div>
-                      <div class="remo-val-stat-lbl">Pending Calls</div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Call Button -->
-                <button type="button" class="btn-card-call-action" id="btn-call-sales" data-service="sales">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-                  <span>Start Sales Calls</span>
-                </button>
-
-                <!-- Calling Progress -->
-                <div class="remo-call-progress-wrap">
-                  <div class="remo-prog-label-row">
-                    <span id="label-prog-sales">Calling Progress</span>
-                    <span id="percent-prog-sales">0%</span>
-                  </div>
-                  <div class="remo-prog-track">
-                    <div class="remo-prog-fill" id="fill-prog-sales"></div>
-                  </div>
-                </div>
-
-                <!-- Progress Counts -->
-                <div class="remo-stats-grid-four">
-                  <div>
-                    <div class="remo-stat-col-num" id="stat-completed-sales" style="color:#16A34A;">0</div>
-                    <div class="remo-stat-col-lbl">Completed</div>
-                  </div>
-                  <div>
-                    <div class="remo-stat-col-num" id="stat-failed-sales" style="color:#DC2626;">0</div>
-                    <div class="remo-stat-col-lbl">Failed</div>
-                  </div>
-                  <div>
-                    <div class="remo-stat-col-num" id="stat-skipped-sales" style="color:#64748B;">0</div>
-                    <div class="remo-stat-col-lbl">Skipped</div>
-                  </div>
-                  <div>
-                    <div class="remo-stat-col-num" id="stat-inprogress-sales" style="color:#2563EB;">0</div>
-                    <div class="remo-stat-col-lbl">In-Progress</div>
-                  </div>
-                </div>
-
-                <!-- Card Actions Footer -->
-                <div class="remo-card-footer">
-                  <button type="button" class="btn-card-secondary btn-view-service-convs" data-service="sales">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                    <span>Conversations</span>
-                  </button>
-                  <a href="/api/admin/sales/download" class="btn-card-secondary btn-download-excel" id="btn-dl-sales">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                    <span>Updated Excel</span>
-                  </a>
-                </div>
-              </div>
-
-              <!-- ==========================================
-                   SERVICE CARD 3: CUSTOMER SUPPORT
-                   ========================================== -->
-              <div class="remo-service-card support-card" id="card-service-support">
-                <div class="remo-card-top-header">
-                  <div class="remo-card-title-group">
-                    <h3>
-                      <span>🎧</span> Customer Support
-                    </h3>
-                    <p class="remo-card-desc">Triage inquiries, diagnostic resolution steps, and warm human handoffs.</p>
-                  </div>
-                  <span class="badge-pill badge-support">Support</span>
-                </div>
-
-                <!-- Excel Upload Area -->
-                <div class="remo-card-upload-zone" id="zone-upload-support" data-service="support">
-                  <input type="file" id="file-input-support" accept=".xlsx,.xls,.csv" aria-label="Upload Support Excel">
-                  <div class="remo-upload-icon-circle">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                      <polyline points="17 8 12 3 7 8"/>
-                      <line x1="12" y1="3" x2="12" y2="15"/>
-                    </svg>
-                  </div>
-                  <span class="remo-upload-label-main">Upload Support Batch</span>
-                  <span class="remo-upload-label-sub">Drop .xlsx, .xls, or .csv file</span>
-                </div>
-
-                <!-- Selected Filename & Status -->
-                <div class="remo-file-meta-bar" id="bar-file-support">
-                  <span class="remo-file-name-text" id="name-file-support">support_tickets.xlsx</span>
-                  <span class="badge-pill badge-status-completed" id="badge-file-support">READY</span>
-                </div>
-
-                <!-- Excel Validation Results -->
-                <div class="remo-validation-card">
-                  <div class="remo-val-header">
-                    <span>Validation Summary</span>
-                    <button type="button" class="btn-text-link btn-view-errors" data-service="support" style="background:none; border:none; font-size:0.68rem; color:#FC2415; font-weight:700; cursor:pointer;" id="btn-errors-support">View Errors</button>
-                  </div>
-                  <div class="remo-val-grid">
-                    <div class="remo-val-stat-box">
-                      <div class="remo-val-stat-val val-valid" id="val-valid-support">0</div>
-                      <div class="remo-val-stat-lbl">Valid Contacts</div>
-                    </div>
-                    <div class="remo-val-stat-box">
-                      <div class="remo-val-stat-val val-invalid" id="val-invalid-support">0</div>
-                      <div class="remo-val-stat-lbl">Invalid Rows</div>
-                    </div>
-                    <div class="remo-val-stat-box">
-                      <div class="remo-val-stat-val val-pending" id="val-pending-support">0</div>
-                      <div class="remo-val-stat-lbl">Pending Calls</div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Call Button -->
-                <button type="button" class="btn-card-call-action" id="btn-call-support" data-service="support">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-                  <span>Start Support Calls</span>
-                </button>
-
-                <!-- Calling Progress -->
-                <div class="remo-call-progress-wrap">
-                  <div class="remo-prog-label-row">
-                    <span id="label-prog-support">Calling Progress</span>
-                    <span id="percent-prog-support">0%</span>
-                  </div>
-                  <div class="remo-prog-track">
-                    <div class="remo-prog-fill" id="fill-prog-support"></div>
-                  </div>
-                </div>
-
-                <!-- Progress Counts -->
-                <div class="remo-stats-grid-four">
-                  <div>
-                    <div class="remo-stat-col-num" id="stat-completed-support" style="color:#16A34A;">0</div>
-                    <div class="remo-stat-col-lbl">Completed</div>
-                  </div>
-                  <div>
-                    <div class="remo-stat-col-num" id="stat-failed-support" style="color:#DC2626;">0</div>
-                    <div class="remo-stat-col-lbl">Failed</div>
-                  </div>
-                  <div>
-                    <div class="remo-stat-col-num" id="stat-skipped-support" style="color:#64748B;">0</div>
-                    <div class="remo-stat-col-lbl">Skipped</div>
-                  </div>
-                  <div>
-                    <div class="remo-stat-col-num" id="stat-inprogress-support" style="color:#2563EB;">0</div>
-                    <div class="remo-stat-col-lbl">In-Progress</div>
-                  </div>
-                </div>
-
-                <!-- Card Actions Footer -->
-                <div class="remo-card-footer">
-                  <button type="button" class="btn-card-secondary btn-view-service-convs" data-service="support">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                    <span>Conversations</span>
-                  </button>
-                  <a href="/api/admin/support/download" class="btn-card-secondary btn-download-excel" id="btn-dl-support">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                    <span>Updated Excel</span>
-                  </a>
-                </div>
-              </div>
-
             </div>
           </section>
-
 
           <!-- 5. Quick Actions Grid -->
           <section style="margin-bottom: 24px;">
@@ -981,12 +689,15 @@
              ================================================================== -->
         <div class="admin-view-panel" id="view-campaigns">
           <div class="admin-card">
-            <div class="admin-card-header">
+            <div class="admin-card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
               <div class="admin-card-title-group">
                 <h3>Voice Automation Campaigns</h3>
-                <p>Upload Excel contact spreadsheets (.xlsx, .xls, .csv) and initiate automated AI calling campaigns.
-                </p>
+                <p>Upload Excel contact spreadsheets (.xlsx, .xls, .csv) and initiate automated AI calling campaigns.</p>
               </div>
+              <button type="button" class="btn-create-campaign-hero" onclick="openCampaignCreateModal('recruitment')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                <span>+ Create Campaign</span>
+              </button>
             </div>
 
             <!-- Service Selection Tabs -->
@@ -1276,10 +987,11 @@
   <!-- ======================================================================
        5. CONVERSATION TRANSCRIPT & AI SUMMARY MODAL
        ====================================================================== -->
-  <div class="modal-backdrop-layer" id="conversation-detail-modal">
+  <div class="modal-backdrop-layer conv-modal-backdrop-layer" id="conversation-detail-modal">
     <div class="modal-dialog-card conversation-modal-dialog">
       <button type="button" class="modal-close-x" id="conv-modal-close" aria-label="Close modal">×</button>
 
+      <!-- Sticky Modal Header -->
       <div class="conv-meta-header">
         <div class="conv-contact-info">
           <h4 id="conv-modal-contact">Rahul Sharma</h4>
@@ -1293,25 +1005,49 @@
         </div>
       </div>
 
-      <!-- AI Summary Box -->
-      <div class="conv-summary-box">
-        <div class="conv-summary-label">✨ AI Automated Conversation Summary</div>
-        <div class="conv-summary-text" id="conv-modal-summary-text">Loading conversation summary...</div>
-        <div class="conv-extracted-grid" id="conv-modal-extracted-grid">
-          <!-- Dynamically populated key-value chips -->
+      <!-- Tab View Controls -->
+      <div class="conv-modal-tabs-bar">
+        <button type="button" class="conv-tab-btn active" data-conv-tab="all" id="conv-tab-all">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          <span>All Details</span>
+        </button>
+        <button type="button" class="conv-tab-btn" data-conv-tab="transcript" id="conv-tab-transcript">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span>Exact Dialogue Transcript (<span id="conv-turns-count">0</span> turns)</span>
+        </button>
+        <button type="button" class="conv-tab-btn" data-conv-tab="summary" id="conv-tab-summary">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          <span>AI Summary & Criteria</span>
+        </button>
+      </div>
+
+      <!-- Scrollable Inner Content Area -->
+      <div class="conv-modal-scrollable-body" id="conv-modal-scroll-area">
+        <!-- AI Summary Block -->
+        <div class="conv-section-block" id="conv-section-summary">
+          <div class="conv-summary-box">
+            <div class="conv-summary-label">✨ AI Automated Conversation Summary</div>
+            <div class="conv-summary-text" id="conv-modal-summary-text">Loading conversation summary...</div>
+            <div class="conv-extracted-grid" id="conv-modal-extracted-grid">
+              <!-- Dynamically populated key-value chips -->
+            </div>
+          </div>
         </div>
-      </div>
 
-      <!-- Turn-by-Turn Audio & Transcript Dialogue -->
-      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-        <span
-          style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--dash-text-muted); letter-spacing: 0.05em;">Turn-by-Turn
-          Voice Transcript</span>
-        <span style="font-size: 0.72rem; color: #64748B;" id="conv-modal-timestamp">Oct 05, 2026</span>
-      </div>
+        <!-- Turn-by-Turn Audio & Transcript Dialogue Block -->
+        <div class="conv-section-block" id="conv-section-transcript">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding: 6px 0; border-bottom: 1px solid #E2E8F0;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              <span style="font-size: 0.8rem; font-weight: 700; text-transform: uppercase; color: #1E293B; letter-spacing: 0.04em;">Turn-by-Turn Voice Transcript</span>
+            </div>
+            <span style="font-size: 0.72rem; color: #64748B;" id="conv-modal-timestamp">Oct 05, 2026</span>
+          </div>
 
-      <div class="transcript-stream-container" id="conv-modal-transcript-stream">
-        <!-- Dynamically injected turn-by-turn chat bubbles -->
+          <div class="transcript-stream-container" id="conv-modal-transcript-stream">
+            <!-- Dynamically injected turn-by-turn chat bubbles -->
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -1404,6 +1140,244 @@
         <button type="button" class="btn-card-secondary" id="val-errors-dismiss-btn" style="padding: 8px 20px;">
           <span>Close Report</span>
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================================
+       8. MULTI-CAMPAIGN CREATION MODAL
+       ====================================================================== -->
+  <div class="modal-backdrop-layer" id="modal-campaign-create">
+    <div class="modal-dialog-card" style="max-width: 760px; width: 95%; max-height: 90vh; overflow-y: auto;">
+      <button type="button" class="modal-close-x" id="modal-camp-create-close" aria-label="Close modal">×</button>
+      
+      <div style="margin-bottom: 20px;">
+        <h3 class="modal-title-text" style="font-size: 1.3rem; margin-bottom: 4px;">Create New Voice Campaign</h3>
+        <p class="modal-subtitle-text">Configure an isolated campaign with dedicated JD criteria, PDF knowledge, Excel candidate contacts, and conversational AI model settings.</p>
+      </div>
+
+      <div id="camp-modal-alert" class="admin-alert-banner" style="display: none; margin-bottom: 16px;"></div>
+
+      <form id="form-create-campaign">
+        <!-- Step 1: Select Service Workflow -->
+        <div class="form-group-wrap">
+          <label class="form-label-bold"><span class="form-step-badge">1</span>Select Service Workflow</label>
+          <div class="service-selector-row">
+            <div class="service-choice-btn selected" data-service-choice="recruitment">
+              <span class="service-choice-icon">💼</span>
+              <span class="service-choice-title">Recruitment</span>
+              <span class="service-choice-sub">PDF Job Screening</span>
+            </div>
+            <div class="service-choice-btn" data-service-choice="sales">
+              <span class="service-choice-icon">📈</span>
+              <span class="service-choice-title">Outbound Sales</span>
+              <span class="service-choice-sub">Lead Qualification</span>
+            </div>
+            <div class="service-choice-btn" data-service-choice="support">
+              <span class="service-choice-icon">🎧</span>
+              <span class="service-choice-title">Customer Support</span>
+              <span class="service-choice-sub">Diagnostic Triage</span>
+            </div>
+          </div>
+          <input type="hidden" id="camp-input-service" value="recruitment">
+        </div>
+
+        <!-- Step 2: Campaign Details -->
+        <div class="form-group-wrap">
+          <label class="form-label-bold"><span class="form-step-badge">2</span>Campaign Name & Description</label>
+          <input type="text" id="camp-input-name" class="form-input-styled" placeholder="e.g. SAP Consultant Recruitment — October 2026" required style="margin-bottom: 10px;">
+          <textarea id="camp-input-desc" class="form-input-styled" rows="2" placeholder="Campaign objective, target profiles, or special instructions..."></textarea>
+        </div>
+
+        <!-- Step 3: AI Model & Voice Pipeline -->
+        <div class="form-group-wrap" style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 14px;">
+          <label class="form-label-bold" style="margin-bottom: 8px;"><span class="form-step-badge">3</span>AI Model & Voice Configuration</label>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div>
+              <span style="font-size: 0.72rem; color: #64748B; font-weight: 700; display: block; margin-bottom: 4px;">Primary LLM Engine:</span>
+              <select id="camp-input-model" class="admin-select" style="width: 100%;">
+                <option value="claude-haiku-5-5" selected>Claude Haiku (Fast Primary) + Gemini Fallback</option>
+                <option value="gemini-3.1-flash-lite">Gemini Flash Lite (Direct)</option>
+              </select>
+            </div>
+            <div>
+              <span style="font-size: 0.72rem; color: #64748B; font-weight: 700; display: block; margin-bottom: 4px;">Telugu Voice Routing:</span>
+              <select id="camp-input-voice" class="admin-select" style="width: 100%;">
+                <option value="auto" selected>Auto: Chaitra (Telugu) / Pari (English)</option>
+                <option value="chaitra">ElevenLabs Chaitra (Telugu Preferred)</option>
+                <option value="pari">ElevenLabs Pari (English Default)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 4: PDF Upload (Job Description / Knowledge Base) -->
+        <div class="form-group-wrap">
+          <label class="form-label-bold" id="label-camp-pdf-upload">
+            <span class="form-step-badge">4</span>Upload Job Description PDF (Required for Recruitment)
+          </label>
+          <div class="upload-dropzone" id="camp-pdf-dropzone" style="padding: 20px; border-width: 1.5px; cursor: pointer;">
+            <input type="file" id="camp-pdf-file-input" accept=".pdf" aria-label="Upload PDF">
+            <div style="display: flex; align-items: center; justify-content: center; gap: 12px;">
+              <span style="font-size: 1.6rem;">📄</span>
+              <div style="text-align: left;">
+                <div style="font-weight: 700; font-size: 0.85rem; color: #0F172A;" id="camp-pdf-status-text">Click to choose or drop PDF file</div>
+                <div style="font-size: 0.72rem; color: #64748B;">Extracts role, technical skills, notice period & generates custom interview plan</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live Extracted JD Criteria Preview & Correction Area -->
+          <div class="extracted-jd-preview-box" id="camp-extracted-preview" style="display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+              <span style="font-size: 0.75rem; font-weight: 700; color: #031740; text-transform: uppercase;">Extracted Job Requirements (Editable)</span>
+              <span class="badge-pill badge-status-completed" style="font-size: 0.65rem;">PDF PARSED</span>
+            </div>
+            <div class="editable-field-row">
+              <span class="editable-field-label">Target Role Title:</span>
+              <input type="text" id="edit-jd-role" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;">
+            </div>
+            <div class="editable-field-row">
+              <span class="editable-field-label">Required Skills:</span>
+              <input type="text" id="edit-jd-skills" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. SAP FICO, S/4HANA, GL, AP">
+            </div>
+            <div class="editable-field-row">
+              <span class="editable-field-label">Min Experience (Yrs):</span>
+              <input type="text" id="edit-jd-exp" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. 5">
+            </div>
+            <div class="editable-field-row">
+              <span class="editable-field-label">Notice Period:</span>
+              <input type="text" id="edit-jd-notice" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. 30 days">
+            </div>
+            <div class="editable-field-row">
+              <span class="editable-field-label">Work Location:</span>
+              <input type="text" id="edit-jd-location" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Hyderabad / Hybrid">
+            </div>
+
+            <div style="margin-top: 10px;">
+              <span style="font-size: 0.72rem; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Tailored Screening Question Plan:</span>
+              <div class="question-plan-list" id="camp-generated-questions">
+                <!-- Dynamically injected questions -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 5: Excel Contacts Upload -->
+        <div class="form-group-wrap">
+          <label class="form-label-bold">
+            <span class="form-step-badge">5</span>Upload Candidate / Lead Spreadsheet (.xlsx, .xls, .csv)
+          </label>
+          <div class="upload-dropzone" id="camp-excel-dropzone" style="padding: 20px; border-width: 1.5px; cursor: pointer;">
+            <input type="file" id="camp-excel-file-input" accept=".xlsx,.xls,.csv" aria-label="Upload Excel File">
+            <div style="display: flex; align-items: center; justify-content: center; gap: 12px;">
+              <span style="font-size: 1.6rem;">📊</span>
+              <div style="text-align: left;">
+                <div style="font-weight: 700; font-size: 0.85rem; color: #0F172A;" id="camp-excel-status-text">Click to choose or drop Excel / CSV file</div>
+                <div style="font-size: 0.72rem; color: #64748B;">Validates phone numbers, formats columns, and isolates contacts to this campaign</div>
+              </div>
+            </div>
+          </div>
+          <!-- Excel Validation Summary Strip -->
+          <div id="camp-excel-summary-strip" style="display: none; margin-top: 10px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 14px; font-size: 0.75rem; justify-content: space-between; align-items: center;">
+            <span id="camp-excel-filename-badge" style="font-family: monospace; font-weight: 700;">candidates.xlsx</span>
+            <div style="display: flex; gap: 12px;">
+              <span>Total: <strong id="camp-excel-total-cnt">0</strong></span>
+              <span style="color: #16A34A;">Valid: <strong id="camp-excel-valid-cnt">0</strong></span>
+              <span style="color: #DC2626;">Invalid: <strong id="camp-excel-invalid-cnt">0</strong></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Modal Footer Buttons -->
+        <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; border-top: 1px solid #E2E8F0; padding-top: 18px;">
+          <button type="button" class="btn-card-secondary" id="btn-camp-cancel" style="padding: 10px 18px;">Cancel</button>
+          <button type="button" class="btn-camp-action btn-camp-secondary" id="btn-camp-save-draft" style="padding: 10px 20px; font-size: 0.825rem;">Save as Draft</button>
+          <button type="button" class="btn-camp-action btn-camp-primary" id="btn-camp-start-now" style="padding: 10px 24px; font-size: 0.825rem;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            <span>Start Campaign</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ======================================================================
+       9. CAMPAIGN EDIT MODAL
+       ====================================================================== -->
+  <div class="modal-backdrop-layer" id="modal-campaign-edit">
+    <div class="modal-dialog-card" style="max-width: 680px; width: 95%; max-height: 85vh; overflow-y: auto;">
+      <button type="button" class="modal-close-x" id="modal-camp-edit-close" aria-label="Close modal">×</button>
+      <h3 class="modal-title-text" style="font-size: 1.2rem; margin-bottom: 4px;">Edit Campaign Details</h3>
+      <p class="modal-subtitle-text" id="edit-camp-subtitle">Update campaign parameters, requirements, or instructions.</p>
+
+      <form id="form-edit-campaign" style="margin-top: 16px;">
+        <input type="hidden" id="edit-camp-id">
+        <div class="form-group-wrap">
+          <label class="form-label-bold">Campaign Name</label>
+          <input type="text" id="edit-camp-name" class="form-input-styled" required>
+        </div>
+        <div class="form-group-wrap">
+          <label class="form-label-bold">Description</label>
+          <textarea id="edit-camp-desc" class="form-input-styled" rows="2"></textarea>
+        </div>
+        <div class="form-group-wrap" id="edit-camp-recruitment-fields">
+          <label class="form-label-bold">Target Job Role</label>
+          <input type="text" id="edit-camp-role" class="form-input-styled" style="margin-bottom: 8px;">
+          <label class="form-label-bold">Required Skills (Comma-separated)</label>
+          <input type="text" id="edit-camp-skills" class="form-input-styled" style="margin-bottom: 8px;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div>
+              <label class="form-label-bold">Min Experience (Years)</label>
+              <input type="text" id="edit-camp-min-exp" class="form-input-styled">
+            </div>
+            <div>
+              <label class="form-label-bold">Notice Period Max</label>
+              <input type="text" id="edit-camp-notice" class="form-input-styled">
+            </div>
+          </div>
+        </div>
+        <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+          <button type="button" class="btn-card-secondary" id="btn-edit-camp-cancel">Cancel</button>
+          <button type="submit" class="btn-camp-action btn-camp-primary" style="padding: 8px 20px;">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ======================================================================
+       10. CAMPAIGN CONVERSATIONS MODAL
+       ====================================================================== -->
+  <div class="modal-backdrop-layer" id="modal-campaign-conversations">
+    <div class="modal-dialog-card" style="max-width: 820px; width: 95%; max-height: 85vh; overflow-y: auto;">
+      <button type="button" class="modal-close-x" id="modal-camp-convs-close" aria-label="Close modal">×</button>
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px;">
+        <div>
+          <h3 class="modal-title-text" id="camp-convs-title" style="font-size: 1.2rem; margin-bottom: 2px;">Campaign Conversations</h3>
+          <p class="modal-subtitle-text" id="camp-convs-subtitle">Review transcripts and screening decisions for this campaign.</p>
+        </div>
+        <a href="#" id="camp-convs-dl-btn" class="btn-camp-action btn-camp-excel" style="flex: none; padding: 6px 14px;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span>Download Excel</span>
+        </a>
+      </div>
+
+      <div class="table-responsive" style="max-height: 480px; overflow-y: auto;">
+        <table class="data-table" style="font-size: 0.775rem;">
+          <thead>
+            <tr>
+              <th>Contact</th>
+              <th>Phone</th>
+              <th>Duration</th>
+              <th>AI Outcome</th>
+              <th>Summary</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="camp-convs-tbody">
+            <!-- Dynamically populated -->
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -2125,10 +2099,16 @@
       }
 
       // ======================================================================
-      // 9. VOICE CAMPAIGNS CONTROLLER (/api/admin/{service}/upload & start)
+      // 9. MULTI-CAMPAIGN MANAGEMENT & STAGING CONTROLLER
       // ======================================================================
       let selectedCampaignService = 'recruitment';
       let stagedFileId = 'candidates_2026_batch_01';
+      let activeCampaignFilter = 'all';
+      let stagedCreatePdfFile = null;
+      let stagedCreateExcelFile = null;
+      let stagedExtractedData = null;
+      let stagedQuestionPlan = null;
+      let cachedCampaignsList = [];
 
       const serviceDefaults = {
         recruitment: { label: 'Recruitment', defaultFile: 'candidates.xlsx', records: '120 candidates' },
@@ -2138,6 +2118,7 @@
 
       function setupCampaignView() {
         updateCampaignPreview();
+        loadCampaigns(activeCampaignFilter);
       }
 
       function updateCampaignPreview() {
@@ -2289,6 +2270,909 @@
             startCampaignBtn.innerHTML = `<span>Retry Starting Calls</span>`;
           }
         });
+      }
+
+      // ----------------------------------------------------------------------
+      // Campaign Management Modal & Operations
+      // ----------------------------------------------------------------------
+      function setupCampaignManagement() {
+        // Open Create Modal from service card "+ Create Campaign" buttons
+        document.querySelectorAll('.btn-create-campaign-card').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const service = btn.getAttribute('data-service') || 'recruitment';
+            openCampaignCreateModal(service);
+          });
+        });
+
+        // Hero button "+ Create Campaign"
+        const heroNewBtn = document.getElementById('btn-hero-new-campaign');
+        if (heroNewBtn) {
+          heroNewBtn.addEventListener('click', () => openCampaignCreateModal('recruitment'));
+        }
+
+        // Refresh campaigns button
+        const refreshBtn = document.getElementById('btn-refresh-campaigns-list');
+        if (refreshBtn) {
+          refreshBtn.addEventListener('click', () => loadCampaigns(activeCampaignFilter));
+        }
+
+        // Filter pills: All, Recruitment, Sales, Support
+        document.querySelectorAll('.camp-filter-pill').forEach(pill => {
+          pill.addEventListener('click', () => {
+            document.querySelectorAll('.camp-filter-pill').forEach(p => p.classList.remove('active'));
+            pill.classList.add('active');
+            activeCampaignFilter = pill.getAttribute('data-filter') || 'all';
+            renderSavedCampaignCards(cachedCampaignsList, activeCampaignFilter);
+          });
+        });
+
+        // Close Create Modal
+        const closeCreateBtn = document.getElementById('modal-camp-create-close');
+        const cancelCreateBtn = document.getElementById('btn-camp-cancel');
+        if (closeCreateBtn) closeCreateBtn.addEventListener('click', closeCampaignCreateModal);
+        if (cancelCreateBtn) cancelCreateBtn.addEventListener('click', closeCampaignCreateModal);
+
+        // Service selector buttons in Create Modal
+        document.querySelectorAll('#form-create-campaign .service-choice-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            document.querySelectorAll('#form-create-campaign .service-choice-btn').forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+            const choice = btn.getAttribute('data-service-choice') || 'recruitment';
+            const hidden = document.getElementById('camp-input-service');
+            if (hidden) hidden.value = choice;
+            updateCreateModalLabels(choice);
+          });
+        });
+
+        // PDF Dropzone & File Input
+        setupCreatePdfDropzone();
+
+        // Excel Dropzone & File Input
+        setupCreateExcelDropzone();
+
+        // Save as Draft
+        const saveDraftBtn = document.getElementById('btn-camp-save-draft');
+        if (saveDraftBtn) {
+          saveDraftBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            await submitCreateCampaignForm(false);
+          });
+        }
+
+        // Start Campaign Now
+        const startNowBtn = document.getElementById('btn-camp-start-now');
+        if (startNowBtn) {
+          startNowBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            await submitCreateCampaignForm(true);
+          });
+        }
+
+        // Edit Modal Handlers
+        const closeEditBtn = document.getElementById('modal-camp-edit-close');
+        const cancelEditBtn = document.getElementById('btn-edit-camp-cancel');
+        const editForm = document.getElementById('form-edit-campaign');
+        if (closeEditBtn) closeEditBtn.addEventListener('click', closeCampaignEditModal);
+        if (cancelEditBtn) cancelEditBtn.addEventListener('click', closeCampaignEditModal);
+        if (editForm) {
+          editForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await submitEditCampaignForm();
+          });
+        }
+
+        // Conversations Modal Close
+        const closeConvsBtn = document.getElementById('modal-camp-convs-close');
+        if (closeConvsBtn) {
+          closeConvsBtn.addEventListener('click', () => {
+            const m = document.getElementById('modal-campaign-conversations');
+            if (m) m.classList.remove('open');
+          });
+        }
+
+        // Initial Load
+        loadCampaigns('all');
+      }
+
+      function updateCreateModalLabels(service) {
+        const pdfLabel = document.getElementById('label-camp-pdf-upload');
+        if (pdfLabel) {
+          if (service === 'recruitment') {
+            pdfLabel.innerHTML = '<span class="form-step-badge">4</span>Upload Job Description PDF (Required for Recruitment)';
+          } else if (service === 'sales') {
+            pdfLabel.innerHTML = '<span class="form-step-badge">4</span>Upload Product Guide & Sales Script PDF (Optional)';
+          } else {
+            pdfLabel.innerHTML = '<span class="form-step-badge">4</span>Upload Support Manual & FAQs PDF (Optional)';
+          }
+        }
+      }
+
+      function openCampaignCreateModal(service = 'recruitment') {
+        const modal = document.getElementById('modal-campaign-create');
+        if (!modal) return;
+
+        // Reset form inputs
+        const nameInput = document.getElementById('camp-input-name');
+        const descInput = document.getElementById('camp-input-desc');
+        const serviceInput = document.getElementById('camp-input-service');
+        if (nameInput) nameInput.value = '';
+        if (descInput) descInput.value = '';
+        if (serviceInput) serviceInput.value = service;
+
+        // Select correct service choice pill
+        document.querySelectorAll('#form-create-campaign .service-choice-btn').forEach(b => {
+          if (b.getAttribute('data-service-choice') === service) b.classList.add('selected');
+          else b.classList.remove('selected');
+        });
+        updateCreateModalLabels(service);
+
+        // Reset PDF preview
+        const pdfInput = document.getElementById('camp-pdf-file-input');
+        const pdfStatus = document.getElementById('camp-pdf-status-text');
+        const extractedPreview = document.getElementById('camp-extracted-preview');
+        const questionsList = document.getElementById('camp-generated-questions');
+        if (pdfInput) pdfInput.value = '';
+        if (pdfStatus) pdfStatus.textContent = 'Click to choose or drop PDF file';
+        if (extractedPreview) extractedPreview.style.display = 'none';
+        if (questionsList) questionsList.innerHTML = '';
+        stagedCreatePdfFile = null;
+        stagedExtractedData = null;
+        stagedQuestionPlan = null;
+
+        // Reset Excel preview
+        const excelInput = document.getElementById('camp-excel-file-input');
+        const excelStatus = document.getElementById('camp-excel-status-text');
+        const excelStrip = document.getElementById('camp-excel-summary-strip');
+        if (excelInput) excelInput.value = '';
+        if (excelStatus) excelStatus.textContent = 'Click to choose or drop Excel / CSV file';
+        if (excelStrip) excelStrip.style.display = 'none';
+        stagedCreateExcelFile = null;
+
+        // Hide alert
+        const alertBox = document.getElementById('camp-modal-alert');
+        if (alertBox) alertBox.style.display = 'none';
+
+        modal.classList.add('open');
+      }
+      window.openCampaignCreateModal = openCampaignCreateModal;
+
+      function closeCampaignCreateModal() {
+        const modal = document.getElementById('modal-campaign-create');
+        if (modal) modal.classList.remove('open');
+      }
+
+      function setupCreatePdfDropzone() {
+        const dropzone = document.getElementById('camp-pdf-dropzone');
+        const fileInput = document.getElementById('camp-pdf-file-input');
+        if (!dropzone || !fileInput) return;
+
+        dropzone.addEventListener('click', (e) => {
+          if (e.target !== fileInput) fileInput.click();
+        });
+
+        ['dragenter', 'dragover'].forEach(name => {
+          dropzone.addEventListener(name, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.style.borderColor = '#2563EB';
+          });
+        });
+
+        ['dragleave', 'drop'].forEach(name => {
+          dropzone.addEventListener(name, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.style.borderColor = '';
+          });
+        });
+
+        dropzone.addEventListener('drop', async (e) => {
+          const files = e.dataTransfer.files;
+          if (files && files.length > 0) {
+            await handlePdfSelection(files[0]);
+          }
+        });
+
+        fileInput.addEventListener('change', async () => {
+          if (fileInput.files && fileInput.files.length > 0) {
+            await handlePdfSelection(fileInput.files[0]);
+          }
+        });
+      }
+
+      async function handlePdfSelection(file) {
+        if (!file.name.toLowerCase().endsWith('.pdf')) {
+          alert('Please select a valid PDF file (.pdf)');
+          return;
+        }
+
+        const pdfStatus = document.getElementById('camp-pdf-status-text');
+        const alertBox = document.getElementById('camp-modal-alert');
+        const extractedPreview = document.getElementById('camp-extracted-preview');
+        const questionsList = document.getElementById('camp-generated-questions');
+        const service = document.getElementById('camp-input-service')?.value || 'recruitment';
+
+        if (pdfStatus) {
+          pdfStatus.innerHTML = `<span class="auth-spinner" style="width:12px;height:12px;margin-right:6px;"></span> Extracting criteria & interview questions from PDF...`;
+        }
+
+        try {
+          const res = await AdminClient.previewCampaignPdf(file, service);
+          stagedCreatePdfFile = file;
+          stagedExtractedData = res.extractedData || {};
+          stagedQuestionPlan = res.questionPlan || [];
+
+          if (pdfStatus) {
+            pdfStatus.innerHTML = `<span style="color:#16A34A;font-weight:700;">✓ ${file.name}</span> (Extracted successfully)`;
+          }
+
+          // Populate editable preview inputs
+          const editRole = document.getElementById('edit-jd-role');
+          const editSkills = document.getElementById('edit-jd-skills');
+          const editExp = document.getElementById('edit-jd-exp');
+          const editNotice = document.getElementById('edit-jd-notice');
+          const editLoc = document.getElementById('edit-jd-location');
+
+          if (editRole) editRole.value = stagedExtractedData.job_title || '';
+          if (editSkills) editSkills.value = (stagedExtractedData.required_skills || []).join(', ');
+          if (editExp) editExp.value = stagedExtractedData.min_experience_years || '';
+          if (editNotice) editNotice.value = stagedExtractedData.max_notice_period_days ? `${stagedExtractedData.max_notice_period_days} days` : '30 days';
+          if (editLoc) editLoc.value = stagedExtractedData.work_arrangement || '';
+
+          // Render tailored question plan
+          if (questionsList) {
+            const plan = stagedQuestionPlan;
+            if (plan.length === 0) {
+              questionsList.innerHTML = `<div style="color:#94A3B8; font-size:0.75rem;">No questions generated.</div>`;
+            } else {
+              questionsList.innerHTML = plan.map((q, idx) => `
+                <div class="question-plan-item" style="padding:6px 10px; background:#FFFFFF; border:1px solid #E2E8F0; border-radius:6px; margin-bottom:6px; font-size:0.75rem; display:flex; gap:8px; align-items:flex-start;">
+                  <span class="badge-pill" style="font-size:0.65rem; background:#EFF6FF; color:#2563EB; font-weight:700; flex:none;">${q.stage || 'Q' + (idx + 1)}</span>
+                  <span style="color:#0F172A; flex:1;">${q.text}</span>
+                </div>
+              `).join('');
+            }
+          }
+
+          if (extractedPreview) extractedPreview.style.display = 'block';
+          if (alertBox) alertBox.style.display = 'none';
+        } catch (err) {
+          if (pdfStatus) pdfStatus.textContent = 'Click to choose or drop PDF file';
+          if (alertBox) {
+            alertBox.className = 'admin-alert-banner error';
+            alertBox.textContent = `PDF Analysis Error: ${err.message}`;
+            alertBox.style.display = 'flex';
+          }
+        }
+      }
+
+      function setupCreateExcelDropzone() {
+        const dropzone = document.getElementById('camp-excel-dropzone');
+        const fileInput = document.getElementById('camp-excel-file-input');
+        if (!dropzone || !fileInput) return;
+
+        dropzone.addEventListener('click', (e) => {
+          if (e.target !== fileInput) fileInput.click();
+        });
+
+        ['dragenter', 'dragover'].forEach(name => {
+          dropzone.addEventListener(name, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.style.borderColor = '#2563EB';
+          });
+        });
+
+        ['dragleave', 'drop'].forEach(name => {
+          dropzone.addEventListener(name, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.style.borderColor = '';
+          });
+        });
+
+        dropzone.addEventListener('drop', async (e) => {
+          const files = e.dataTransfer.files;
+          if (files && files.length > 0) {
+            await handleExcelSelection(files[0]);
+          }
+        });
+
+        fileInput.addEventListener('change', async () => {
+          if (fileInput.files && fileInput.files.length > 0) {
+            await handleExcelSelection(fileInput.files[0]);
+          }
+        });
+      }
+
+      async function handleExcelSelection(file) {
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (!['xlsx', 'xls', 'csv'].includes(ext)) {
+          alert('Please upload an Excel (.xlsx, .xls) or CSV (.csv) file');
+          return;
+        }
+
+        const excelStatus = document.getElementById('camp-excel-status-text');
+        const excelStrip = document.getElementById('camp-excel-summary-strip');
+        const fnBadge = document.getElementById('camp-excel-filename-badge');
+        const totCnt = document.getElementById('camp-excel-total-cnt');
+        const valCnt = document.getElementById('camp-excel-valid-cnt');
+        const invCnt = document.getElementById('camp-excel-invalid-cnt');
+        const service = document.getElementById('camp-input-service')?.value || 'recruitment';
+
+        stagedCreateExcelFile = file;
+
+        if (excelStatus) {
+          excelStatus.innerHTML = `<span class="auth-spinner" style="width:12px;height:12px;margin-right:6px;"></span> Validating spreadsheet rows...`;
+        }
+
+        try {
+          const res = await AdminClient.uploadExcel(service, file);
+          const valid = res.validRows ?? res.records ?? 0;
+          const invalid = res.invalidRows ?? 0;
+          const total = res.records ?? (valid + invalid);
+
+          if (excelStatus) {
+            excelStatus.innerHTML = `<span style="color:#16A34A;font-weight:700;">✓ ${file.name}</span> (${valid} valid contacts ready)`;
+          }
+
+          if (fnBadge) fnBadge.textContent = file.name;
+          if (totCnt) totCnt.textContent = total;
+          if (valCnt) valCnt.textContent = valid;
+          if (invCnt) invCnt.textContent = invalid;
+          if (excelStrip) excelStrip.style.display = 'flex';
+        } catch (err) {
+          if (excelStatus) {
+            excelStatus.innerHTML = `<span style="color:#2563EB;font-weight:700;">✓ ${file.name}</span> (Attached for processing)`;
+          }
+          if (fnBadge) fnBadge.textContent = file.name;
+          if (excelStrip) excelStrip.style.display = 'flex';
+        }
+      }
+
+      async function submitCreateCampaignForm(startNow = false) {
+        const alertBox = document.getElementById('camp-modal-alert');
+        const nameInput = document.getElementById('camp-input-name');
+        const descInput = document.getElementById('camp-input-desc');
+        const serviceInput = document.getElementById('camp-input-service');
+        const modelInput = document.getElementById('camp-input-model');
+        const voiceInput = document.getElementById('camp-input-voice');
+
+        const name = (nameInput?.value || '').trim();
+        const description = (descInput?.value || '').trim();
+        const service = serviceInput?.value || 'recruitment';
+        const primaryModel = modelInput?.value || 'claude-haiku-5-5';
+        const voiceRouting = voiceInput?.value || 'auto';
+
+        if (!name) {
+          if (alertBox) {
+            alertBox.className = 'admin-alert-banner error';
+            alertBox.textContent = 'Please enter a campaign name.';
+            alertBox.style.display = 'flex';
+          }
+          nameInput?.focus();
+          return;
+        }
+
+        if (service === 'recruitment' && !stagedCreatePdfFile) {
+          if (alertBox) {
+            alertBox.className = 'admin-alert-banner error';
+            alertBox.textContent = 'A Job Description PDF is required for recruitment screening campaigns.';
+            alertBox.style.display = 'flex';
+          }
+          return;
+        }
+
+        if (startNow && !stagedCreateExcelFile) {
+          if (alertBox) {
+            alertBox.className = 'admin-alert-banner error';
+            alertBox.textContent = 'Please upload a candidate or lead spreadsheet before starting the campaign.';
+            alertBox.style.display = 'flex';
+          }
+          return;
+        }
+
+        const activeBtn = startNow
+          ? document.getElementById('btn-camp-start-now')
+          : document.getElementById('btn-camp-save-draft');
+        const origBtnHtml = activeBtn ? activeBtn.innerHTML : '';
+        if (activeBtn) {
+          activeBtn.disabled = true;
+          activeBtn.innerHTML = `<span class="auth-spinner"></span> <span>${startNow ? 'Starting Campaign...' : 'Saving Draft...'}</span>`;
+        }
+
+        try {
+          // 1. Sync manual edits made to JD criteria
+          if (stagedExtractedData) {
+            const roleVal = document.getElementById('edit-jd-role')?.value.trim();
+            if (roleVal) stagedExtractedData.job_title = roleVal;
+
+            const skillsVal = document.getElementById('edit-jd-skills')?.value.trim();
+            if (skillsVal) {
+              stagedExtractedData.required_skills = skillsVal.split(',').map(s => s.trim()).filter(Boolean);
+            }
+
+            const expVal = parseInt(document.getElementById('edit-jd-exp')?.value.trim(), 10);
+            if (!isNaN(expVal)) stagedExtractedData.min_experience_years = expVal;
+
+            const locVal = document.getElementById('edit-jd-location')?.value.trim();
+            if (locVal) stagedExtractedData.work_arrangement = locVal;
+
+            const noticeVal = document.getElementById('edit-jd-notice')?.value.trim();
+            if (noticeVal) stagedExtractedData.notice_period_description = noticeVal;
+          }
+
+          // 2. Create Campaign record
+          const campRes = await AdminClient.createCampaign({
+            name,
+            service,
+            description,
+            config: {
+              primaryModel,
+              voiceRouting
+            }
+          });
+          const campaign = campRes.campaign;
+
+          // 3. Attach PDF if provided
+          if (stagedCreatePdfFile) {
+            await AdminClient.uploadCampaignPdf(campaign.id, stagedCreatePdfFile);
+            if (stagedExtractedData) {
+              await AdminClient.updateCampaign(campaign.id, {
+                extracted_data: stagedExtractedData
+              });
+            }
+          }
+
+          // 4. Attach Excel if provided
+          if (stagedCreateExcelFile) {
+            await AdminClient.uploadCampaignExcel(campaign.id, stagedCreateExcelFile);
+          }
+
+          // 5. Start Campaign if requested
+          if (startNow) {
+            await AdminClient.startCampaign(campaign.id);
+            showAdminAlert(`✓ Campaign "${campaign.name}" launched successfully! Sequential outbound AI telephony active.`, 'success');
+          } else {
+            showAdminAlert(`✓ Campaign "${campaign.name}" saved as draft. You can launch or edit it anytime.`, 'success');
+          }
+
+          closeCampaignCreateModal();
+          await loadCampaigns(activeCampaignFilter);
+          await loadDashboardStats();
+        } catch (err) {
+          if (alertBox) {
+            alertBox.className = 'admin-alert-banner error';
+            alertBox.textContent = `Campaign creation failed: ${err.message}`;
+            alertBox.style.display = 'flex';
+          }
+        } finally {
+          if (activeBtn) {
+            activeBtn.disabled = false;
+            activeBtn.innerHTML = origBtnHtml;
+          }
+        }
+      }
+
+      // ----------------------------------------------------------------------
+      // Campaign Listing & Cards Rendering
+      // ----------------------------------------------------------------------
+      async function loadCampaigns(filter = 'all') {
+        const container = document.getElementById('saved-campaigns-container');
+        if (!container) return;
+
+        try {
+          const res = await AdminClient.getCampaigns();
+          cachedCampaignsList = res.campaigns || [];
+
+          // Update filter counts
+          const setTxt = (id, val) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = val;
+          };
+          setTxt('cnt-filter-all', cachedCampaignsList.length);
+          setTxt('cnt-filter-rec', cachedCampaignsList.filter(c => c.service === 'recruitment').length);
+          setTxt('cnt-filter-sales', cachedCampaignsList.filter(c => c.service === 'sales').length);
+          setTxt('cnt-filter-support', cachedCampaignsList.filter(c => c.service === 'support').length);
+
+          renderSavedCampaignCards(cachedCampaignsList, filter);
+        } catch (err) {
+          container.innerHTML = `
+            <div style="text-align: center; padding: 28px; color: #DC2626; background: #FFFFFF; border: 1px solid #FECACA; border-radius: 12px;">
+              Failed to load saved campaigns: ${err.message}
+            </div>
+          `;
+        }
+      }
+
+      function renderSavedCampaignCards(campaigns, filter = 'all') {
+        const container = document.getElementById('saved-campaigns-container');
+        if (!container) return;
+
+        const filtered = filter === 'all'
+          ? campaigns
+          : campaigns.filter(c => c.service === filter);
+
+        if (filtered.length === 0) {
+          container.innerHTML = `
+            <div class="campaigns-empty-state">
+              <div class="empty-state-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="1.8">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                  <polyline points="14 2 14 8 20 8"/>
+                  <line x1="16" y1="13" x2="8" y2="13"/>
+                  <line x1="16" y1="17" x2="8" y2="17"/>
+                  <polyline points="10 9 9 9 8 9"/>
+                </svg>
+              </div>
+              <h4 class="empty-state-title">No saved campaigns yet</h4>
+              <p class="empty-state-desc">
+                Use the <strong>+ Create Campaign</strong> button in the section header above to configure an automated voice campaign with job description screening, lead qualification, or support workflows.
+              </p>
+            </div>
+          `;
+          return;
+        }
+
+        container.innerHTML = filtered.map(c => {
+          const sBadge = c.service === 'recruitment' ? 'badge-recruitment' : c.service === 'sales' ? 'badge-sales' : 'badge-support';
+          const sLabel = c.service.charAt(0).toUpperCase() + c.service.slice(1);
+          const statusLower = (c.status || 'DRAFT').toLowerCase();
+          const isRecruitment = c.service === 'recruitment';
+
+          let dateDisplay = 'Recently created';
+          if (c.created_at) {
+            try {
+              dateDisplay = new Date(c.created_at).toLocaleDateString('en-US', {
+                month: 'short', day: 'numeric', year: 'numeric'
+              });
+            } catch(e) {}
+          }
+
+          const pdfFileTag = c.pdf_filename
+            ? `<span class="camp-file-tag" title="${c.pdf_filename}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> ${c.pdf_filename}</span>`
+            : `<span class="camp-file-tag tag-muted"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> No JD PDF</span>`;
+
+          const excelFileTag = c.excel_filename
+            ? `<span class="camp-file-tag tag-excel" title="${c.excel_filename}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${c.excel_filename}</span>`
+            : `<span class="camp-file-tag tag-muted"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> No contacts sheet</span>`;
+
+          // Action buttons depending on state
+          const startPauseBtn = (c.status === 'ACTIVE')
+            ? `<button type="button" class="btn-toolbar btn-toolbar-pause btn-camp-pause" data-camp-id="${c.id}" title="Pause Campaign Calling">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                <span>Pause</span>
+              </button>`
+            : `<button type="button" class="btn-toolbar btn-toolbar-primary btn-camp-resume" data-camp-id="${c.id}" title="Start or Resume Campaign Calling">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                <span>${c.status === 'DRAFT' ? 'Start' : 'Resume'}</span>
+              </button>`;
+
+          return `
+            <div class="campaign-card-item" data-camp-id="${c.id}">
+              <!-- Header -->
+              <div class="camp-card-header">
+                <div style="flex: 1; min-width: 0;">
+                  <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">
+                    <span class="badge-pill ${sBadge}">${sLabel}</span>
+                    <span class="badge-camp-status badge-camp-${c.status || 'DRAFT'}">${c.status || 'DRAFT'}</span>
+                  </div>
+                  <h4 class="camp-card-title" title="${c.name}">${c.name}</h4>
+                  <div class="camp-card-meta">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <span>${dateDisplay}</span>
+                    <span>•</span>
+                    <span style="font-family:monospace;">${c.id.slice(0, 14)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Description -->
+              <div class="camp-card-desc" style="color:#475569; font-size:0.8rem; line-height:1.45;">
+                ${c.description || (c.extracted_data?.role_summary || 'Automated voice campaign with natural AI dialogue.')}
+              </div>
+
+              <!-- Attached Files Strip -->
+              <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+                ${pdfFileTag}
+                ${excelFileTag}
+              </div>
+
+              <!-- Telephony Stats Strip -->
+              <div class="camp-metrics-strip">
+                <div>
+                  <span class="camp-metric-num" style="color:#0F172A;">${c.valid_contacts || 0}</span>
+                  <div class="camp-metric-lbl">Contacts</div>
+                </div>
+                <div>
+                  <span class="camp-metric-num" style="color:#16A34A;">${c.completed_calls || 0}</span>
+                  <div class="camp-metric-lbl">Completed</div>
+                </div>
+                <div>
+                  <span class="camp-metric-num" style="color:#2563EB;">${c.inprogress_calls || 0}</span>
+                  <div class="camp-metric-lbl">In-Progress</div>
+                </div>
+                <div>
+                  <span class="camp-metric-num" style="color:#DC2626;">${c.failed_calls || 0}</span>
+                  <div class="camp-metric-lbl">Failed</div>
+                </div>
+              </div>
+
+              <!-- Recruitment Outcomes Strip -->
+              ${isRecruitment ? `
+                <div class="camp-recruitment-outcomes">
+                  <span class="outcome-pill outcome-selected"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Selected: ${c.selected_count || 0}</span>
+                  <span class="outcome-pill outcome-onhold"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 14 14"/></svg> On Hold: ${c.on_hold_count || 0}</span>
+                  <span class="outcome-pill outcome-rejected"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Rejected: ${c.rejected_count || 0}</span>
+                </div>
+              ` : ''}
+
+              <!-- Actions Strip (Redesigned Professional Toolbar) -->
+              <div class="camp-card-actions-toolbar">
+                ${startPauseBtn}
+                <button type="button" class="btn-toolbar btn-toolbar-neutral btn-camp-edit" data-camp-id="${c.id}" title="Edit Campaign Parameters">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  <span>Edit</span>
+                </button>
+                <button type="button" class="btn-toolbar btn-toolbar-neutral btn-camp-duplicate" data-camp-id="${c.id}" title="Duplicate Campaign Configuration">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  <span>Duplicate</span>
+                </button>
+                <button type="button" class="btn-toolbar btn-toolbar-secondary btn-camp-convs" data-camp-id="${c.id}" title="View Transcripts & Screening Decisions">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  <span>Conversations</span>
+                </button>
+                <a href="${AdminClient.getCampaignDownloadUrl(c.id)}" class="btn-toolbar btn-toolbar-export btn-camp-dl" target="_blank" download title="Download Updated Excel Sheet">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  <span>Download Excel</span>
+                </a>
+                <button type="button" class="btn-toolbar btn-toolbar-danger btn-camp-archive" data-camp-id="${c.id}" title="Delete or Archive Campaign">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  <span>Delete</span>
+                </button>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        // Bind Action Clicks
+        container.querySelectorAll('.btn-camp-resume').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const id = btn.getAttribute('data-camp-id');
+            btn.disabled = true;
+            btn.textContent = 'Starting...';
+            try {
+              await AdminClient.startCampaign(id);
+              showAdminAlert('✓ Campaign calls initiated sequentially!', 'success');
+              await loadCampaigns(filter);
+              await loadDashboardStats();
+            } catch (err) {
+              showAdminAlert(`Failed to start campaign: ${err.message}`, 'error');
+              btn.disabled = false;
+              btn.textContent = '▶ Start';
+            }
+          });
+        });
+
+        container.querySelectorAll('.btn-camp-pause').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const id = btn.getAttribute('data-camp-id');
+            btn.disabled = true;
+            btn.textContent = 'Pausing...';
+            try {
+              await AdminClient.pauseCampaign(id);
+              showAdminAlert('Campaign paused.', 'info');
+              await loadCampaigns(filter);
+              await loadDashboardStats();
+            } catch (err) {
+              showAdminAlert(`Failed to pause: ${err.message}`, 'error');
+              btn.disabled = false;
+              btn.textContent = '⏸ Pause';
+            }
+          });
+        });
+
+        container.querySelectorAll('.btn-camp-duplicate').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const id = btn.getAttribute('data-camp-id');
+            btn.disabled = true;
+            try {
+              const res = await AdminClient.duplicateCampaign(id);
+              showAdminAlert(`✓ Campaign duplicated as "${res.campaign.name}"!`, 'success');
+              await loadCampaigns(filter);
+            } catch (err) {
+              showAdminAlert(`Failed to duplicate: ${err.message}`, 'error');
+              btn.disabled = false;
+            }
+          });
+        });
+
+        container.querySelectorAll('.btn-camp-archive').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const id = btn.getAttribute('data-camp-id');
+            if (!confirm('Are you sure you want to archive this campaign?')) return;
+            try {
+              await AdminClient.archiveCampaign(id);
+              showAdminAlert('Campaign archived.', 'info');
+              await loadCampaigns(filter);
+            } catch (err) {
+              showAdminAlert(`Failed to archive: ${err.message}`, 'error');
+            }
+          });
+        });
+
+        container.querySelectorAll('.btn-camp-edit').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const id = btn.getAttribute('data-camp-id');
+            openCampaignEditModal(id);
+          });
+        });
+
+        container.querySelectorAll('.btn-camp-convs').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const id = btn.getAttribute('data-camp-id');
+            openCampaignConversationsModal(id);
+          });
+        });
+      }
+
+      // ----------------------------------------------------------------------
+      // Campaign Edit Modal Controller
+      // ----------------------------------------------------------------------
+      async function openCampaignEditModal(campaignId) {
+        const modal = document.getElementById('modal-campaign-edit');
+        if (!modal) return;
+
+        try {
+          const res = await AdminClient.getCampaign(campaignId);
+          const c = res.campaign;
+
+          document.getElementById('edit-camp-id').value = c.id;
+          document.getElementById('edit-camp-name').value = c.name;
+          document.getElementById('edit-camp-desc').value = c.description || '';
+
+          const recFields = document.getElementById('edit-camp-recruitment-fields');
+          if (c.service === 'recruitment') {
+            if (recFields) recFields.style.display = 'block';
+            document.getElementById('edit-camp-role').value = c.extracted_data?.job_title || '';
+            document.getElementById('edit-camp-skills').value = (c.extracted_data?.required_skills || []).join(', ');
+            document.getElementById('edit-camp-min-exp').value = c.extracted_data?.min_experience_years || '';
+            document.getElementById('edit-camp-notice').value = c.extracted_data?.max_notice_period_days ? `${c.extracted_data.max_notice_period_days} days` : '';
+          } else {
+            if (recFields) recFields.style.display = 'none';
+          }
+
+          modal.classList.add('open');
+        } catch (err) {
+          showAdminAlert(`Failed to load campaign details: ${err.message}`, 'error');
+        }
+      }
+
+      function closeCampaignEditModal() {
+        const modal = document.getElementById('modal-campaign-edit');
+        if (modal) modal.classList.remove('open');
+      }
+
+      async function submitEditCampaignForm() {
+        const id = document.getElementById('edit-camp-id')?.value;
+        const name = document.getElementById('edit-camp-name')?.value.trim();
+        const description = document.getElementById('edit-camp-desc')?.value.trim();
+
+        if (!id || !name) {
+          alert('Campaign name is required.');
+          return;
+        }
+
+        try {
+          const updateData = { name, description };
+
+          // If recruitment fields are visible, update extracted_data
+          const recFields = document.getElementById('edit-camp-recruitment-fields');
+          if (recFields && recFields.style.display !== 'none') {
+            const current = (await AdminClient.getCampaign(id))?.campaign;
+            const extracted = current?.extracted_data || {};
+            extracted.job_title = document.getElementById('edit-camp-role')?.value.trim() || extracted.job_title;
+            const skillsStr = document.getElementById('edit-camp-skills')?.value.trim();
+            if (skillsStr) {
+              extracted.required_skills = skillsStr.split(',').map(s => s.trim()).filter(Boolean);
+            }
+            const expVal = parseInt(document.getElementById('edit-camp-min-exp')?.value.trim(), 10);
+            if (!isNaN(expVal)) extracted.min_experience_years = expVal;
+            const noticeVal = document.getElementById('edit-camp-notice')?.value.trim();
+            if (noticeVal) extracted.notice_period_description = noticeVal;
+
+            updateData.extracted_data = extracted;
+          }
+
+          await AdminClient.updateCampaign(id, updateData);
+          closeCampaignEditModal();
+          showAdminAlert(`✓ Campaign "${name}" updated successfully!`, 'success');
+          await loadCampaigns(activeCampaignFilter);
+        } catch (err) {
+          alert(`Failed to update campaign: ${err.message}`);
+        }
+      }
+
+      // ----------------------------------------------------------------------
+      // Campaign Conversations Modal Controller
+      // ----------------------------------------------------------------------
+      async function openCampaignConversationsModal(campaignId) {
+        const modal = document.getElementById('modal-campaign-conversations');
+        if (!modal) return;
+
+        const titleEl = document.getElementById('camp-convs-title');
+        const subtitleEl = document.getElementById('camp-convs-subtitle');
+        const dlBtn = document.getElementById('camp-convs-dl-btn');
+        const tbody = document.getElementById('camp-convs-tbody');
+
+        if (titleEl) titleEl.textContent = 'Loading Campaign Conversations...';
+        if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:24px; color:#94A3B8;"><span class="auth-spinner"></span> Loading conversations...</td></tr>`;
+
+        modal.classList.add('open');
+
+        try {
+          const [campRes, convsRes] = await Promise.all([
+            AdminClient.getCampaign(campaignId),
+            AdminClient.getCampaignConversations(campaignId)
+          ]);
+          const campaign = campRes.campaign;
+          const conversations = convsRes.conversations || [];
+
+          if (titleEl) titleEl.textContent = `${campaign.name} — Conversations`;
+          if (subtitleEl) subtitleEl.textContent = `${conversations.length} calls recorded for this ${campaign.service} campaign.`;
+          if (dlBtn) dlBtn.href = AdminClient.getCampaignDownloadUrl(campaignId);
+
+          if (conversations.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:32px; color:#94A3B8;">No conversations have taken place for this campaign yet. Launch calls to see live screening outcomes.</td></tr>`;
+            return;
+          }
+
+          tbody.innerHTML = conversations.map(c => {
+            const outcome = c.screening_outcome || c.contact_classification || c.status || 'On Hold';
+            let outcomeClass = 'outcome-onhold';
+            if (outcome.toLowerCase().includes('select') || outcome.toLowerCase().includes('shortlist')) outcomeClass = 'outcome-selected';
+            else if (outcome.toLowerCase().includes('reject')) outcomeClass = 'outcome-rejected';
+
+            const contactName = c.contact_display_name || c.contact_name || c.contact || 'Candidate';
+            const contactPhone = c.contact_phone || c.phone || '—';
+            const dur = c.duration_seconds ? `${Math.floor(c.duration_seconds / 60)}m ${c.duration_seconds % 60}s` : '0m';
+
+            return `
+              <tr style="border-bottom: 1px solid #F1F5F9;">
+                <td style="font-weight:600; color:#0F172A;">${contactName}</td>
+                <td style="font-family:monospace; color:#475569;">${contactPhone}</td>
+                <td style="font-family:monospace;">${dur}</td>
+                <td><span class="badge-rec-outcome ${outcomeClass}">${outcome}</span></td>
+                <td style="color:#475569; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                  ${c.screening_reason || c.summary || 'Call completed.'}
+                </td>
+                <td>
+                  <button type="button" class="btn-table-action btn-view-camp-conv-detail" data-conv-id="${c.id}">
+                    <span>Transcript</span>
+                  </button>
+                </td>
+              </tr>
+            `;
+          }).join('');
+
+          tbody.querySelectorAll('.btn-view-camp-conv-detail').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+              e.preventDefault();
+              const convId = btn.getAttribute('data-conv-id');
+              if (convId) openConversationModal(convId);
+            });
+          });
+        } catch (err) {
+          if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:24px; color:#DC2626;">Error: ${err.message}</td></tr>`;
+        }
       }
 
       // ======================================================================
@@ -2456,29 +3340,73 @@
             `).join('');
           }
 
-          // Transcript turns
-          if (streamContainer && c.transcript) {
-            streamContainer.innerHTML = c.transcript.map(t => {
-              const isAgent = t.speaker === 'agent' || t.speaker.toLowerCase().includes('agent') || t.speaker.toLowerCase().includes('remo');
-              const avatarLabel = isAgent ? 'AH' : (c.contact ? c.contact.slice(0, 2).toUpperCase() : 'U');
-              const speakerTitle = isAgent ? 'TakeRemo AI' : c.contact;
+          // Update turns count
+          const turnsCountEl = document.getElementById('conv-turns-count');
+          const transcriptList = Array.isArray(c.transcript) ? c.transcript : [];
+          if (turnsCountEl) turnsCountEl.textContent = transcriptList.length;
 
-              return `
-                <div class="transcript-bubble-wrap ${isAgent ? 'agent' : 'contact'}">
-                  <div class="transcript-avatar ${isAgent ? 'agent' : 'contact'}">${avatarLabel}</div>
-                  <div class="transcript-bubble-content">
-                    <div class="transcript-speaker-tag">${speakerTitle}</div>
-                    <div>${t.text}</div>
-                    <span class="transcript-time-tag">${t.time || ''}</span>
-                  </div>
+          // Reset tabs to "all" on open
+          document.querySelectorAll('.conv-tab-btn').forEach(b => b.classList.remove('active'));
+          document.getElementById('conv-tab-all')?.classList.add('active');
+          const convSecSummary = document.getElementById('conv-section-summary');
+          const convSecTranscript = document.getElementById('conv-section-transcript');
+          if (convSecSummary) convSecSummary.style.display = 'block';
+          if (convSecTranscript) convSecTranscript.style.display = 'block';
+
+          // Transcript turns
+          if (streamContainer) {
+            if (transcriptList.length === 0) {
+              streamContainer.innerHTML = `
+                <div style="text-align:center; padding:32px 16px; color:#94A3B8; font-size:0.85rem;">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="margin:0 auto 8px; display:block;"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  No dialogue turns were recorded for this call session.
                 </div>
               `;
-            }).join('');
+            } else {
+              streamContainer.innerHTML = transcriptList.map(t => {
+                const isAgent = t.speaker === 'agent' || t.speaker.toLowerCase().includes('agent') || t.speaker.toLowerCase().includes('remo');
+                const avatarLabel = isAgent ? 'AH' : (c.contact ? c.contact.slice(0, 2).toUpperCase() : 'U');
+                const speakerTitle = isAgent ? 'TakeRemo AI (Remo)' : (c.contact || 'Candidate');
+                const isNoise = /^\s*\[(.*?)\]\s*$/.test(t.text);
+
+                return `
+                  <div class="transcript-bubble-wrap ${isAgent ? 'agent' : 'contact'}">
+                    <div class="transcript-avatar ${isAgent ? 'agent' : 'contact'}">${avatarLabel}</div>
+                    <div class="transcript-bubble-content ${isNoise ? 'bubble-noise' : ''}">
+                      <div class="transcript-speaker-tag">${speakerTitle}</div>
+                      <div class="transcript-text-body">${isNoise ? `<span class="noise-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg> ${t.text}</span>` : t.text}</div>
+                      <span class="transcript-time-tag">${t.time || ''}</span>
+                    </div>
+                  </div>
+                `;
+              }).join('');
+            }
           }
         } catch (err) {
           if (summaryTextEl) summaryTextEl.textContent = `Error loading transcript: ${err.message}`;
         }
       }
+
+      // Tab switcher for Conversation Detail Modal
+      document.querySelectorAll('.conv-tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.conv-tab-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          const tab = btn.getAttribute('data-conv-tab');
+          const secSummary = document.getElementById('conv-section-summary');
+          const secTranscript = document.getElementById('conv-section-transcript');
+          if (tab === 'all') {
+            if (secSummary) secSummary.style.display = 'block';
+            if (secTranscript) secTranscript.style.display = 'block';
+          } else if (tab === 'transcript') {
+            if (secSummary) secSummary.style.display = 'none';
+            if (secTranscript) secTranscript.style.display = 'block';
+          } else if (tab === 'summary') {
+            if (secSummary) secSummary.style.display = 'block';
+            if (secTranscript) secTranscript.style.display = 'none';
+          }
+        });
+      });
 
       if (convModalClose) {
         convModalClose.addEventListener('click', () => {
@@ -2586,6 +3514,7 @@
       loadDashboardStats();
       loadRecentCalls();
       setupServiceCards();
+      setupCampaignManagement();
 
       // Auto-poll dashboard stats and sequential queue status every 3.5 seconds
       setInterval(() => {

@@ -42,7 +42,7 @@ export default class ConversationService {
                 FROM conversations c
                 LEFT JOIN contacts ct ON c.contact_id = ct.id
                 LEFT JOIN batches b ON b.id = ct.batch_id
-                ${ownerId ? 'WHERE (c.owner_user_id = ? OR b.owner_user_id = ? OR c.owner_user_id IS NULL OR c.owner_user_id = "")' : ''}
+                ${ownerId ? "WHERE (c.owner_user_id = ? OR b.owner_user_id = ? OR c.owner_user_id IS NULL OR c.owner_user_id = '')" : ''}
                 ORDER BY c.created_at DESC
             `, ownerId ? [ownerId, ownerId] : []);
 
@@ -144,7 +144,7 @@ export default class ConversationService {
                 FROM conversations c
                 LEFT JOIN contacts ct ON c.contact_id = ct.id
                 LEFT JOIN batches b ON b.id = ct.batch_id
-                WHERE c.id = ? ${ownerId ? 'AND (c.owner_user_id = ? OR b.owner_user_id = ? OR c.owner_user_id IS NULL OR c.owner_user_id = "")' : ''}
+                WHERE c.id = ? ${ownerId ? "AND (c.owner_user_id = ? OR b.owner_user_id = ? OR c.owner_user_id IS NULL OR c.owner_user_id = '')" : ''}
             `, ownerId ? [normId, ownerId, ownerId] : [normId]);
 
             if (r) {

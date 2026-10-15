@@ -57,6 +57,8 @@ export class CallQueueWorker {
         try {
             await db.run("UPDATE call_queue SET status = 'FAILED', updated_at = ? WHERE status = 'IN_PROGRESS'", [now]);
             await db.run("UPDATE contacts SET call_status = 'FAILED', error_details = 'Call interrupted by server restart', updated_at = ? WHERE call_status IN ('CALLING', 'in-progress')", [now]);
+            await db.run("UPDATE call_queue SET status = 'CANCELLED', updated_at = ? WHERE status = 'QUEUED'", [now]);
+            await db.run("UPDATE batches SET status = 'CANCELLED', updated_at = ? WHERE status = 'IN_PROGRESS'", [now]);
         } catch (e) {
             console.error('[CallQueueWorker] recoverStaleJobs error:', e);
         }

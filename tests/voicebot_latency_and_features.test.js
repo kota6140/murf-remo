@@ -265,6 +265,45 @@ async function main() {
         assert.ok(!teSalesFallback.includes('జాబ్ అప్లికేషన్'), 'Sales fallback must never reference recruitment jobs');
     });
 
+    runTest('Sales opening greeting formats prospect name and never asks recruitment questions', () => {
+        const greetingWithName = GeminiService.getOpeningGreeting('sales', { name: 'pooja', company: 'Acme Corp' });
+        assert.ok(greetingWithName.includes('pooja'), 'Should personalize with prospect name');
+        assert.ok(greetingWithName.includes('Scorelabs Inc.'), 'Must represent Scorelabs Inc.');
+        assert.ok(greetingWithName.includes('custom software development'), 'Must offer IT solutions');
+        assert.ok(!greetingWithName.includes('open position'), 'Must NOT mention open position');
+        assert.ok(!greetingWithName.includes('application'), 'Must NOT mention job application');
+
+        const greetingWithoutName = GeminiService.getOpeningGreeting('sales', { name: 'Contact (Row 2)' });
+        assert.ok(!greetingWithoutName.includes('Contact (Row 2)'), 'Must not speak raw spreadsheet row label as a name');
+        assert.ok(greetingWithoutName.includes('Scorelabs Inc.'));
+    });
+
+    runTest('Support opening greeting addresses ticket/query and never asks recruitment questions', () => {
+        const greeting = GeminiService.getOpeningGreeting('support', { name: 'pooja' });
+        assert.ok(greeting.includes('pooja'));
+        assert.ok(greeting.includes('Scorelabs Inc. customer support'));
+        assert.ok(greeting.includes('ticket') || greeting.includes('inquiry'));
+        assert.ok(!greeting.includes('open position'));
+        assert.ok(!greeting.includes('application for'));
+    });
+
+    runTest('CallSession correctly propagates sales service to greeting and history', async () => {
+        const fakeWs = { send: () => {}, readyState: 1 };
+        const session = new CallSession(fakeWs, {
+            service: 'sales',
+            callerName: 'pooja',
+            company: 'TechCorp'
+        });
+        assert.strictEqual(session.service, 'sales');
+        assert.strictEqual(session.contact.service, 'sales');
+        assert.strictEqual(session.contact.name, 'pooja');
+
+        await session.deliverOpeningGreeting();
+        assert.ok(session.currentQuestion.includes('Scorelabs Inc.'));
+        assert.ok(!session.currentQuestion.includes('application'));
+        assert.ok(!session.currentQuestion.includes('open position'));
+    });
+
     // -------------------------------------------------------------
     // 6. Invalid Gemini Model Configuration & Bounded Fallback
     // -------------------------------------------------------------

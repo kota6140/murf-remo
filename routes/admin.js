@@ -19,6 +19,9 @@ import ExcelService from '../services/excel_service.js';
 import RecruitmentService from '../services/recruitment_service.js';
 import SalesService from '../services/sales_service.js';
 import SupportService from '../services/support_service.js';
+import CampaignService from '../services/campaign_service.js';
+import { PDFService } from '../services/pdf_service.js';
+import { QuestionPlanner } from '../services/question_planner.js';
 import { CallQueueWorker } from '../services/call_queue_worker.js';
 import PlivoService from '../services/plivo_service.js';
 import ElevenLabsService from '../services/elevenlabs_service.js';
@@ -36,6 +39,16 @@ const upload = multer({
         const ext = path.extname(file.originalname).toLowerCase();
         if (['.xlsx', '.xls', '.csv'].includes(ext)) return cb(null, true);
         cb(new Error(`Unsupported file type ${ext}. Only Excel/CSV allowed.`));
+    }
+});
+
+const uploadPdf = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB
+    fileFilter: (req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+        if (ext === '.pdf') return cb(null, true);
+        cb(new Error(`Unsupported file type ${ext}. Only PDF documents allowed.`));
     }
 });
 
@@ -153,11 +166,11 @@ router.post('/:service/start', serviceFor, wrap(async (req, res) => {
     fileId = typeof fileId === 'string' ? fileId.trim() : '';
     let batch = null;
     if (fileId) {
-        batch = await db.get('SELECT id FROM batches WHERE id = ? AND owner_user_id = ?', [fileId, req.user.id]);
+        batch = await db.get('SELECT id FROM batches WHERE id = ? AND (owner_user_id = ? OR owner_user_id IS NULL)', [fileId, req.user.id]);
         if (!batch) return fail(res, 404, 'That contact sheet was not found in your account.');
     } else {
         batch = await db.get(
-            "SELECT id FROM batches WHERE service = ? AND owner_user_id = ? AND status IN ('READY', 'IN_PROGRESS') ORDER BY created_at DESC LIMIT 1",
+            "SELECT id FROM batches WHERE service = ? AND (owner_user_id = ? OR owner_user_id IS NULL) AND status IN ('READY', 'IN_PROGRESS') ORDER BY created_at DESC LIMIT 1",
             [req.serviceName, req.user.id]);
         if (!batch) return fail(res, 400, 'Upload a contact sheet first.');
     }
@@ -327,26 +340,251 @@ router.post('/test-call', async (req, res) => {
 });
 
 // ============================================================================
+// CAMPAIGN MANAGEMENT API (/api/admin/campaigns/*)
+// ============================================================================
+
+// List campaigns
+router.get('/campaigns', wrap(async (req, res) => {
+    const { service, status } = req.query;
+    const campaigns = await CampaignService.listCampaigns(req.user.id, { service, status });
+    res.json({ success: true, campaigns });
+}));
+
+// Preview and extract PDF requirements without saving immediately
+router.post('/campaigns/preview-pdf', uploadPdf.single('file'), wrap(async (req, res) => {
+    if (!req.file) return fail(res, 400, 'Please select a PDF file to preview.');
+    const service = (req.body.service || 'recruitment').toLowerCase();
+    let extracted = null;
+    let questionPlan = [];
+    if (service === 'recruitment') {
+        extracted = await PDFService.parseRecruitmentJD(req.file.buffer, req.file.originalname);
+        questionPlan = await QuestionPlanner.generateRecruitmentPlan(extracted);
+    } else if (service === 'sales') {
+        extracted = await PDFService.parseSalesKnowledge(req.file.buffer, req.file.originalname);
+        questionPlan = QuestionPlanner.generateSalesPlan(extracted);
+    } else {
+        extracted = await PDFService.parseSupportKnowledge(req.file.buffer, req.file.originalname);
+        questionPlan = QuestionPlanner.generateSupportPlan(extracted);
+    }
+    res.json({
+        success: true,
+        filename: req.file.originalname,
+        extractedData: extracted,
+        questionPlan
+    });
+}));
+
+// Get single campaign
+router.get('/campaigns/:id', wrap(async (req, res) => {
+    const campaign = await CampaignService.getCampaign(req.params.id, req.user.id);
+    if (!campaign) return fail(res, 404, 'Campaign not found.');
+    res.json({ success: true, campaign });
+}));
+
+// Create campaign
+router.post('/campaigns', wrap(async (req, res) => {
+    const { name, service, description, config } = req.body;
+    if (!name || !name.trim()) return fail(res, 400, 'Campaign name is required.');
+    const campaign = await CampaignService.createCampaign({
+        name,
+        service: service || 'recruitment',
+        description,
+        config: config || {},
+        ownerUserId: req.user.id
+    });
+    res.status(201).json({ success: true, campaign });
+}));
+
+// Update campaign
+router.put('/campaigns/:id', wrap(async (req, res) => {
+    const updated = await CampaignService.updateCampaign(req.params.id, req.body, req.user.id);
+    res.json({ success: true, campaign: updated });
+}));
+
+// Upload PDF (Job Description or Sales/Support Guide)
+router.post('/campaigns/:id/upload-pdf', uploadPdf.single('file'), wrap(async (req, res) => {
+    if (!req.file) return fail(res, 400, 'Please select a PDF file to upload.');
+    const result = await CampaignService.attachPdf(req.params.id, req.file.buffer, req.file.originalname, req.user.id);
+    res.json({ success: true, ...result });
+}));
+
+// Upload Excel / CSV
+router.post('/campaigns/:id/upload-excel', upload.single('file'), wrap(async (req, res) => {
+    if (!req.file) return fail(res, 400, 'Please select an Excel or CSV file to upload.');
+    const result = await CampaignService.attachExcel(req.params.id, req.file, req.file.originalname, req.user.id);
+    res.json({ success: true, ...result });
+}));
+
+// Start / Dispatch Campaign
+router.post('/campaigns/:id/start', wrap(async (req, res) => {
+    const result = await CampaignService.startCampaign(req.params.id, req.user.id);
+    res.json({ success: true, ...result });
+}));
+
+// Pause Campaign
+router.post('/campaigns/:id/pause', wrap(async (req, res) => {
+    const result = await CampaignService.pauseCampaign(req.params.id, req.user.id);
+    res.json({ success: true, ...result });
+}));
+
+// Resume Campaign
+router.post('/campaigns/:id/resume', wrap(async (req, res) => {
+    const result = await CampaignService.resumeCampaign(req.params.id, req.user.id);
+    res.json({ success: true, ...result });
+}));
+
+// Duplicate Campaign
+router.post('/campaigns/:id/duplicate', wrap(async (req, res) => {
+    const result = await CampaignService.duplicateCampaign(req.params.id, req.user.id);
+    res.status(201).json({ success: true, campaign: result });
+}));
+
+// Archive Campaign
+router.post('/campaigns/:id/archive', wrap(async (req, res) => {
+    const result = await CampaignService.archiveCampaign(req.params.id, req.user.id);
+    res.json({ success: true, ...result });
+}));
+
+// Download Updated Excel with AI Screening Status & Match Scores
+router.get('/campaigns/:id/download', wrap(async (req, res) => {
+    const campaign = await CampaignService.getCampaign(req.params.id, req.user.id);
+    if (!campaign) return fail(res, 404, 'Campaign not found.');
+    const buffer = await ExcelService.generateUpdatedWorkbook({ campaignId: req.params.id });
+    const safeName = (campaign.name || 'campaign').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filename = `${safeName}_Screening_Results_${Date.now()}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
+}));
+
+// View Conversations for Campaign
+router.get('/campaigns/:id/conversations', wrap(async (req, res) => {
+    const campaign = await CampaignService.getCampaign(req.params.id, req.user.id);
+    if (!campaign) return fail(res, 404, 'Campaign not found.');
+    const rows = await db.all(`
+        SELECT c.*, ct.phone as contact_phone, ct.name as contact_display_name, ct.classification as contact_classification
+        FROM conversations c
+        LEFT JOIN contacts ct ON c.contact_id = ct.id
+        WHERE c.campaign_id = ? OR (c.batch_id = ? AND c.batch_id IS NOT NULL AND c.batch_id != '')
+        ORDER BY c.started_at DESC LIMIT 100
+    `, [req.params.id, campaign.batch_id || '']);
+    res.json({ success: true, conversations: rows });
+}));
+
+// ============================================================================
 // Plivo Webhook Handlers (Answer XML, Call Status, Call Hangup)
 // ============================================================================
 export async function handlePlivoAnswer(req, res) {
     const query = { ...(req.query || {}), ...(req.body || {}) };
     const callUuid = query.CallUUID || query.call_uuid || query.CallId || '';
-    const contactId = query.contactId || '';
-    const service = query.service || 'recruitment';
-    const ownerId = query.ownerId || '';
-    const phone = query.phone || query.To || '';
-    const name = query.name || '';
-    const role = query.role || query.job_role || '';
-    const company = query.company || '';
+    let contactId = query.contactId || '';
+    let service = (query.service || '').toLowerCase().trim();
+    let ownerId = query.ownerId || '';
+    let phone = query.phone || query.To || query.From || '';
+    let name = query.name || '';
+    let role = query.role || query.job_role || '';
+    let company = query.company || '';
+    let campaignId = query.campaignId || query.campaign_id || '';
 
-    console.log(`[Plivo Answer] Received answer for CallUUID: ${callUuid}, Contact: ${contactId}, Service: ${service}`);
+    // 1. If contactId was passed, verify and enrich directly from contacts table
+    if (contactId) {
+        try {
+            const contact = await db.get('SELECT * FROM contacts WHERE id = ?', [contactId]);
+            if (contact) {
+                if (contact.service) service = contact.service.toLowerCase();
+                if (contact.name && !name) name = contact.name;
+                if (contact.phone && !phone) phone = contact.phone;
+                if (contact.owner_user_id && !ownerId) ownerId = contact.owner_user_id;
+                if (contact.campaign_id && !campaignId) campaignId = contact.campaign_id;
+                let parsed = {};
+                try { parsed = JSON.parse(contact.raw_data || contact.extra_data || '{}'); } catch {}
+                if (!role && (parsed.role || parsed.job_role || parsed.jobRole || parsed.title)) {
+                    role = parsed.role || parsed.job_role || parsed.jobRole || parsed.title;
+                }
+                if (!company && (parsed.company || parsed.companyName || parsed.company_name)) {
+                    company = parsed.company || parsed.companyName || parsed.company_name;
+                }
+            }
+        } catch (dbErr) {
+            console.warn('[Plivo Answer] DB lookup by contactId warning:', dbErr.message);
+        }
+    }
+
+    // 2. If service is missing, look up active call queue job or provider_call_id
+    if (!service) {
+        try {
+            let activeItem = null;
+            if (callUuid) {
+                activeItem = await db.get(`
+                    SELECT c.id as contact_id, c.service, c.name, c.phone, c.extra_data, c.raw_data, c.owner_user_id, c.campaign_id
+                    FROM contacts c WHERE c.provider_call_id = ?
+                    LIMIT 1
+                `, [callUuid]);
+            }
+            if (!activeItem && phone) {
+                activeItem = await db.get(`
+                    SELECT cq.service, cq.contact_id, cq.campaign_id, c.name, c.phone, c.extra_data, c.raw_data, c.owner_user_id
+                    FROM call_queue cq
+                    JOIN contacts c ON cq.contact_id = c.id
+                    WHERE cq.status IN ('IN_PROGRESS', 'QUEUED') AND (c.phone LIKE ? OR c.phone LIKE ?)
+                    ORDER BY cq.updated_at DESC LIMIT 1
+                `, [`%${phone.slice(-10)}%`, `%${phone}%`]);
+            }
+            if (!activeItem) {
+                activeItem = await db.get(`
+                    SELECT cq.service, cq.contact_id, cq.campaign_id, c.name, c.phone, c.extra_data, c.raw_data, c.owner_user_id
+                    FROM call_queue cq
+                    JOIN contacts c ON cq.contact_id = c.id
+                    WHERE cq.status = 'IN_PROGRESS'
+                    ORDER BY cq.updated_at DESC LIMIT 1
+                `);
+            }
+            if (activeItem) {
+                if (activeItem.service) service = activeItem.service.toLowerCase();
+                if (!contactId && activeItem.contact_id) contactId = activeItem.contact_id;
+                if (!name && activeItem.name) name = activeItem.name;
+                if (!phone && activeItem.phone) phone = activeItem.phone;
+                if (!ownerId && activeItem.owner_user_id) ownerId = activeItem.owner_user_id;
+                if (!campaignId && activeItem.campaign_id) campaignId = activeItem.campaign_id;
+
+                let parsed = {};
+                try { parsed = JSON.parse(activeItem.raw_data || activeItem.extra_data || '{}'); } catch {}
+                if (!role && (parsed.role || parsed.job_role || parsed.jobRole || parsed.title)) {
+                    role = parsed.role || parsed.job_role || parsed.jobRole || parsed.title;
+                }
+                if (!company && (parsed.company || parsed.companyName || parsed.company_name)) {
+                    company = parsed.company || parsed.companyName || parsed.company_name;
+                }
+            }
+        } catch (qErr) {
+            console.warn('[Plivo Answer] Queue resolution warning:', qErr.message);
+        }
+    }
+
+    if (!service) {
+        service = 'recruitment';
+    }
+
+    console.log(`[Plivo Answer] Active CallUUID: ${callUuid}, Contact: ${name || phone} (${contactId || 'unknown'}), Service: ${service.toUpperCase()}, Campaign: ${campaignId || 'none'}`);
 
     const cfg = PlivoService.getConfig();
     const serverUrl = cfg.serverUrl || 'https://takeremo.com';
     const wsBaseUrl = serverUrl.replace(/^http:\/\//i, 'ws://').replace(/^https:\/\//i, 'wss://');
-    const streamWsUrl = `${wsBaseUrl}/voicebot`;
-    const extraHeaders = `callId=${callUuid},contactId=${contactId},service=${service},ownerId=${ownerId},phone=${phone},name=${encodeURIComponent(name)},role=${encodeURIComponent(role)},company=${encodeURIComponent(company)}`;
+    
+    // Embed parameters directly in the WebSocket URL so the stream connection has complete context immediately
+    const wsParams = new URLSearchParams({
+        callId: String(callUuid || ''),
+        contactId: String(contactId || ''),
+        service: String(service || 'recruitment'),
+        ownerId: String(ownerId || ''),
+        phone: String(phone || ''),
+        name: String(name || ''),
+        role: String(role || ''),
+        company: String(company || ''),
+        campaignId: String(campaignId || '')
+    });
+    const streamWsUrl = `${wsBaseUrl}/voicebot?${wsParams.toString()}`;
+    const extraHeaders = `callId=${callUuid},contactId=${contactId},service=${service},ownerId=${ownerId},phone=${phone},name=${encodeURIComponent(name)},role=${encodeURIComponent(role)},company=${encodeURIComponent(company)},campaignId=${campaignId}`;
 
     const xml = PlivoService.generateAnswerXml(streamWsUrl, extraHeaders);
     res.set('Content-Type', 'text/xml');

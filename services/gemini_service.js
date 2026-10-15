@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import LLMService from './llm_service.js';
 
 const EXACT_GREETING = "Hey, it's Remo, representing Score Labs.";
 
@@ -16,20 +17,26 @@ export default class GeminiService {
         const s = String(service || 'recruitment').toLowerCase();
 
         if (s === 'sales') {
-            const name = (contactInfo.name && !contactInfo.name.startsWith('Caller')) ? contactInfo.name.trim() : '';
-            if (name) {
-                return `Hello, am I speaking with ${name}? Hi ${name}, this is Remo calling on behalf of Scorelabs Inc. We help businesses with IT solutions such as custom software development, website and mobile app development, ERP and CRM solutions, software testing, and technical support. I wanted to check whether your company is planning any new software projects or looking for an IT partner. Is now a convenient time for a quick conversation?`;
+            const rawName = (contactInfo.name || '').trim();
+            const isValidName = rawName && !rawName.startsWith('Caller') && !rawName.startsWith('Candidate') && !rawName.startsWith('Contact');
+            if (isValidName) {
+                return `Hello, am I speaking with ${rawName}? Hi ${rawName}, this is Remo calling on behalf of Scorelabs Inc. We help businesses with IT solutions such as custom software development, website and mobile app development, ERP and CRM solutions, software testing, and technical support. I wanted to check whether your company is planning any new software projects or looking for an IT partner. Is now a convenient time for a quick conversation?`;
             }
             return `Hello, this is Remo calling on behalf of Scorelabs Inc. We help businesses with IT solutions such as custom software development, website and mobile app development, ERP and CRM solutions, software testing, and technical support. I wanted to check whether your company is planning any new software projects or looking for an IT partner. Is now a convenient time for a quick conversation?`;
         }
 
-        if (s === 'recruitment') {
-            const role = contactInfo.job_role || contactInfo.role || 'the open position';
-            return `${EXACT_GREETING} I'm calling regarding your application for ${role}. Do you have a couple of minutes to talk?`;
+        if (s === 'support') {
+            const rawName = (contactInfo.name || '').trim();
+            const isValidName = rawName && !rawName.startsWith('Caller') && !rawName.startsWith('Candidate') && !rawName.startsWith('Contact');
+            if (isValidName) {
+                return `Hello, am I speaking with ${rawName}? Hi ${rawName}, this is Remo calling from Scorelabs Inc. customer support. I'm following up regarding your recent support inquiry or service ticket. Is now a convenient time to speak?`;
+            }
+            return `Hello, this is Remo calling from Scorelabs Inc. customer support. I'm following up regarding your recent support inquiry or service ticket. Is now a convenient time to speak?`;
         }
 
-        // Customer Support
-        return `${EXACT_GREETING} I'm following up regarding your recent query with customer support. Is now a good time to speak?`;
+        // Recruitment
+        const role = contactInfo.job_role || contactInfo.role || 'the open position';
+        return `${EXACT_GREETING} I'm calling regarding your application for ${role}. Do you have a couple of minutes to talk?`;
     }
 
     static getUniversalFallback(lang = 'en', service = 'recruitment') {
@@ -94,23 +101,28 @@ export default class GeminiService {
                     }
                 }
             }
+
             return {
-                spoken_response: parsed.spoken_response || this.getUniversalFallback(lang, service),
-                detected_language: parsed.detected_language || lang,
+                spoken_response: parsed.spoken_response ? String(parsed.spoken_response).trim() : this.getUniversalFallback(lang, service),
+                detected_language: ['en', 'hi', 'te'].includes(parsed.detected_language) ? parsed.detected_language : lang,
                 should_end_call: Boolean(parsed.should_end_call),
                 extracted_fields: cleanedExtracted,
                 classification: parsed.classification || (service === 'sales' ? 'Interested' : 'On Hold'),
-                call_summary: parsed.call_summary || 'Dialogue completed.'
+                call_summary: parsed.call_summary || 'Dialogue processed successfully.'
             };
         } catch (e) {
-            const match = rawText.match(/"spoken_response"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/);
-            const spoken = match ? match[1].replace(/\\"/g, '"') : this.getUniversalFallback(lang, service);
+            // Resilient regex recovery for broken JSON
+            const spokenMatch = rawText.match(/"spoken_response"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/i);
+            const langMatch = rawText.match(/"detected_language"\s*:\s*"([^"]+)"/i);
+            const endMatch = rawText.match(/"should_end_call"\s*:\s*(true|false)/i);
+            const classMatch = rawText.match(/"classification"\s*:\s*"([^"]+)"/i);
+
             return {
-                spoken_response: spoken,
-                detected_language: lang,
-                should_end_call: false,
+                spoken_response: spokenMatch ? spokenMatch[1].replace(/\\"/g, '"').trim() : this.getUniversalFallback(lang, service),
+                detected_language: langMatch && ['en', 'hi', 'te'].includes(langMatch[1]) ? langMatch[1] : lang,
+                should_end_call: endMatch ? endMatch[1].toLowerCase() === 'true' : false,
                 extracted_fields: {},
-                classification: service === 'sales' ? 'Interested' : 'On Hold',
+                classification: classMatch ? classMatch[1] : (service === 'sales' ? 'Interested' : 'On Hold'),
                 call_summary: 'Recovered from malformed JSON model response.'
             };
         }
@@ -118,12 +130,17 @@ export default class GeminiService {
 
     /**
      * Generates real-time conversational response with bounded latency and strict timeout.
+     * Uses Claude Haiku as Primary model, and Gemini Flash as automatic failover.
      */
-    static async generateReply(service = 'recruitment', contactInfo = {}, conversationHistory = [], callerMessage = null, collectedData = {}) {
-        const apiKey = (process.env.GEMINI_API_KEY || '').trim();
-        const primaryModelInfo = this.selectBestModel();
-        const primaryModel = primaryModelInfo.name;
-        const lang = contactInfo.preferred_language || 'en';
+    static async generateReply(
+        service = 'recruitment',
+        contactInfo = {},
+        conversationHistory = [],
+        callerMessage = null,
+        collectedData = {},
+        options = {}
+    ) {
+        const lang = options.detectedLanguage || contactInfo.preferred_language || 'en';
 
         // Fast-path: First turn without message returns deterministic greeting instantly
         if ((!conversationHistory || conversationHistory.length === 0) && !callerMessage) {
@@ -138,18 +155,13 @@ export default class GeminiService {
             };
         }
 
-        if (!apiKey) {
-            console.warn('[GeminiService] GEMINI_API_KEY not configured. Using fallback dialogue.');
-            return {
-                spoken_response: this.getUniversalFallback(lang, service),
-                detected_language: lang,
-                should_end_call: false,
-                extracted_fields: {},
-                classification: service === 'sales' ? 'Interested' : 'On Hold',
-                call_summary: 'Fallback dialogue delivered (no API key).',
-                model_used: 'fallback_no_key'
-            };
-        }
+        // Build campaign and role-specific context
+        const jdCriteria = options.campaignContext || contactInfo.campaignContext || contactInfo.jdCriteria || {};
+        const role = jdCriteria.job_title || contactInfo.job_role || contactInfo.role || 'the open position';
+        const requiredSkills = jdCriteria.required_skills ? (Array.isArray(jdCriteria.required_skills) ? jdCriteria.required_skills.join(', ') : jdCriteria.required_skills) : '';
+        const minExp = jdCriteria.min_experience_years || jdCriteria.min_experience || '';
+        const questionPlan = options.questionPlan || null;
+        const memoryState = options.memoryState || null;
 
         // Service-specific guidance
         let serviceInstructions = "";
@@ -162,6 +174,7 @@ export default class GeminiService {
 1. PURPOSE:
    - Start professional conversations with businesses, understand their IT needs, identify qualified opportunities, and arrange a 15-minute meeting or callback with the Scorelabs Inc. team.
    - Do NOT pressure customers or prolong call unnecessarily.
+   - NEVER ask recruitment screening or candidate interview questions.
 
 2. SERVICES SCORELABS INC. CAN INTRODUCE:
    - Custom Software Development: Tailored to workflows and business requirements.
@@ -172,173 +185,140 @@ export default class GeminiService {
    - Technical Support: Technical assistance and maintenance for business systems.
 
 3. CONVERSATIONAL PROGRESSION:
-   - If Customer is Interested:
-     "Thank you. To understand whether we may be able to help, could I ask what type of IT project or service your company is currently considering?"
-   - Qualification Questions (Ask ONE question at a time. Never dump multiple questions):
-     1. Support with a new project or an existing system?
-     2. Which service are you most interested in (Software, Web/Mobile, ERP/CRM, QA, or Technical Support)?
-     3. Expected timeline for starting the project?
-     4. Are you the right person to discuss this requirement, or should we connect with someone from your technology or procurement team?
-     5. Would you prefer a short meeting, a callback, or an email with our company information?
-
-4. SERVICE-SPECIFIC PROMPTS:
-   - Software: "We help businesses develop software based on their workflows and requirements. Are you planning a new application or looking to improve an existing system?"
-   - Web/Mobile: "We provide website and mobile application development. Are you looking for a new platform or updates to an existing website or app?"
-   - ERP/CRM: "We help businesses explore ERP and CRM solutions for their operations and customer management. Are you currently using a system, or considering a new one?"
-   - QA: "We provide software testing support. Does your team currently handle testing internally, or do you work with an external partner?"
-   - Support: "We also offer technical support for relevant business systems. Is there a particular system or support requirement you are evaluating?"
-
-5. HANDLING COMMON OBJECTIONS:
-   - "We already have an IT vendor." -> "Understood. We would be glad to be considered for future projects or additional support if a need comes up. Would it be okay to share our company profile for your reference?"
-   - "We don't have any requirements right now." -> "No problem. Would you be comfortable receiving our company information so you have our details if a requirement comes up later?"
-   - "Send me an email." -> "Certainly. May I confirm your business email address and which service would be most relevant to you?" (classification: "Email Requested")
-   - "What is your pricing?" -> "Pricing depends on the project scope, technical requirements, and timeline. Our team can review your requirement and provide a suitable quotation."
-   - "I'm not interested." -> "I understand. Thank you for your time. Have a great day." (set should_end_call: true, classification: "Not Interested")
-   - "I'm busy." -> "Of course. Would you prefer a callback at a more convenient time, or would you rather not receive another call?" (classification: "Callback Requested")
-   - "Where did you get my number?" -> "I’m calling using business contact information available to our team. If you prefer not to receive further calls, I can record that request."
-
-6. CLOSING & BOOKING A MEETING:
-   - "Thank you for sharing that. Based on what you've told me, our team may be able to discuss suitable options. Would you be available for a short 15-minute conversation with our business development team? If you prefer, we can share our company information by email first. What would work best for you, and when would be a convenient time?"
-   - Mark "Meeting Requested" ONLY when the customer confirms interest in speaking with the team or specifies a time.
-
-7. AGENT BEHAVIOUR RULES:
-   - Introduce clearly as Remo calling on behalf of Scorelabs Inc. Never pretend to be human if asked directly.
-   - Speak politely, naturally, and concisely. Keep answers strictly under 30 words per turn.
-   - Never invent pricing, client names, certifications, guarantees, or case studies.
-   - Respect "Do Not Call" requests immediately: set should_end_call: true and classification: "Do Not Call".`;
+   - If Customer is Interested: Acknowledge and ask what type of IT project or software initiative their company is considering.
+   - Ask ONE question at a time.
+   - Objection Handling:
+     * "Already have vendor" -> Acknowledge, ask if okay to send company profile for future projects.
+     * "No requirements" -> Acknowledge politely, ask if can send details for future reference.
+     * "Send email" -> Confirm business email address (classification: "Email Requested").
+     * "Pricing" -> Clarify pricing depends on scope and technical stack, team can provide estimate.
+     * "Not interested" -> Be polite, wish a great day, set should_end_call: true (classification: "Not Interested").
+   - Closing: Ask if available for a 15-minute conversation with business development team.`;
         } else if (service === 'recruitment') {
-            classificationOptions = `"Accepted / Shortlisted" | "Rejected" | "On Hold"`;
+            classificationOptions = `"Selected" | "Rejected" | "On Hold"`;
             serviceInstructions = `
 ### RECRUITMENT INTERVIEW WORKFLOW:
-1. Conduct an intelligent, natural screening interview for the role: "${contactInfo.job_role || contactInfo.role || 'open position'}".
-2. Progression:
-   - Availability check -> Role alignment -> Years of experience -> Core technical skills & frameworks -> Notable project -> Notice period / joining availability -> Current location.
-3. Ask exactly ONE question at a time.
-4. Active listening: briefly acknowledge candidate's answer before asking next question.
-5. Do NOT re-ask questions that are already answered in COLLECTED CANDIDATE DATA.
-6. When all key criteria are gathered or candidate declines, summarize warmly and set "should_end_call": true.
-7. Classification criteria:
-   - "Accepted / Shortlisted": candidate has required skills, relevant experience, reasonable notice period.
-   - "Rejected": only if candidate explicitly declines interest, refuses role, or lacks mandatory prerequisites.
-   - "On Hold": information incomplete or follow-up interview needed. Never classify based on a simple "yes" or "no".`;
+1. Conduct an intelligent, natural screening interview for the role: "${role}".
+${requiredSkills ? `2. Required Technical Skills from Job Description: ${requiredSkills}.` : ''}
+${minExp ? `3. Required Experience: ${minExp}+ years.` : ''}
+4. Conversational Progression:
+   - Availability check -> Relevant experience in ${role} -> Hands-on work with ${requiredSkills || 'core technologies'} -> Notice period -> Location preference.
+   - Wrap-up: Before closing, ALWAYS ask: "Before we wrap up, do you have any questions for me about the role or Scorelabs?"
+5. Ask exactly ONE question at a time. Never ask multiple questions in a single turn.
+6. Anti-Repetition Rule: Check ALREADY COLLECTED DATA below. DO NOT re-ask questions that have already been answered.
+7. Candidate answers like "yeah", "yes", "30 days", "5 years" are valid answers. Acknowledge and advance to the next screening point.
+8. Classification criteria:
+   - "Selected": Candidate demonstrates required skills and experience meeting JD.
+   - "Rejected": Only if candidate explicitly declines interest, refuses role, or lacks mandatory prerequisites.
+   - "On Hold": Information incomplete or follow-up needed. Never reject for short answers or pauses.`;
         } else {
-            classificationOptions = `"RESOLVED" | "ESCALATED" | "PENDING_INFO"`;
+            classificationOptions = `"RESOLVED" | "ESCALATED" | "PENDING_INFO" | "Wrong Contact"`;
             serviceInstructions = `
-### CUSTOMER SUPPORT WORKFLOW:
-1. Identify customer issue empathetically and systematically.
-2. Ask clear diagnostic questions to isolate root cause.
-3. Confirm resolution or escalate complex disputes to human engineering team.
-4. Set classification to "RESOLVED", "ESCALATED", or "PENDING_INFO".`;
+### CUSTOMER SUPPORT WORKFLOW (Scorelabs Inc.):
+1. PURPOSE:
+   - Provide prompt, courteous assistance for technical queries, support tickets, or service issues.
+   - NEVER ask job interview questions or deliver sales pitches.
+2. PROGRESSION:
+   - Clarify the issue -> Ask one diagnostic question -> Suggest resolution or log escalation ticket.
+   - Closing: "Is there anything else our team can assist you with today?"`;
         }
 
-        const systemPrompt = `You are Remo, an articulate, empathetic, and professional AI Voice Agent representing Scorelabs Inc.
-You are on a LIVE telephone call in ${service.toUpperCase()} mode.
+        const currentStage = options.currentStage || 'AVAILABILITY';
+        const stageDescription = {
+            'AVAILABILITY': 'Initial contact — checking if caller is available to talk',
+            'SERVICE_INTEREST': 'Discovering what IT services the prospect might need',
+            'QUALIFICATION': 'Qualifying the business opportunity',
+            'EMAIL_PERMISSION': 'Asking for permission to send company info',
+            'EMAIL_CAPTURE': 'Capturing prospect email address',
+            'MEETING_REQUEST': 'Proposing a 15-minute follow-up meeting',
+            'MEETING_CONFIRMATION': 'Confirming meeting time and details',
+            'CALLBACK_TIME': 'Scheduling a callback',
+            'EXPERIENCE': 'Assessing candidate work experience',
+            'SKILLS': 'Assessing candidate technical skills',
+            'NOTICE_PERIOD': 'Asking about candidate notice period',
+            'LOCATION': 'Asking about candidate location preference',
+            'CLOSING': 'Wrapping up the conversation',
+            'GENERAL': 'General conversation'
+        };
 
-### CORE VOICE CONSTRAINTS:
-1. Speak in concise, natural telephone dialogue (1-2 sentences, strictly under 30 words per turn).
-2. Ask ONE question at a time. Never ask compound or multi-part questions.
-3. Active listening: acknowledge what the caller said before transitioning.
-4. If caller speaks Hindi, seamlessly reply in natural Hindi. If caller speaks Telugu, reply in natural Telugu. Default to English.
-5. If caller asks something you don't know, use exact fallback:
+        const systemPrompt = `You are Remo, a warm, professional, human-like AI Voice Agent representing Scorelabs Inc.
+You are on a LIVE phone call strictly in ${service.toUpperCase()} mode.
+Current conversation stage: ${currentStage} — ${stageDescription[currentStage] || 'Ongoing conversation'}.
+
+### STRICT SERVICE BOUNDARIES:
+- Current Mode: ${service.toUpperCase()}.
+- If service is "sales": Focus on Scorelabs IT solutions. NEVER mention job applications or recruitment.
+- If service is "support": Focus on resolving customer queries. NEVER pitch or recruit.
+- If service is "recruitment": Screen candidate for ${role}.
+
+### HUMAN-LIKE CONVERSATIONAL RULES:
+1. Speak in concise, natural telephone dialogue (1-2 short sentences, strictly under 30 words per turn).
+2. Ask ONE question at a time.
+3. Natural acknowledgments: Use varied phrases like "Got it", "That makes sense", "Understood", "Thanks for clarifying". Do NOT repeat the same acknowledgment every turn.
+4. If caller speaks Telugu, seamlessly reply in natural conversational Telugu. If caller speaks Hindi, reply in Hindi. Default to English.
+5. If caller says "hmm, let me think" or pauses, respond patiently: "Sure, take your time."
+6. NEVER repeat a question that was already asked or answered.
+7. NEVER repeat the opening sales pitch — if greeting was already delivered, continue from current stage.
+8. Read the full conversation history before responding — your response MUST be contextually appropriate to the LAST thing the caller said.
+9. If caller asks something you don't know, use exact fallback:
    - English: "${FALLBACK_TEXT['en']}"
-   - Hindi: "${FALLBACK_TEXT['hi']}"
    - Telugu: "${FALLBACK_TEXT['te']}"
-6. Never invent promises, salaries, pricing, client names, dates, or product capabilities.
-7. If caller wants to end the call or is not interested, be polite and set "should_end_call": true.
+   - Hindi: "${FALLBACK_TEXT['hi']}"
 
 ### CONTACT CONTEXT:
-Name: ${contactInfo.name || 'Customer'}
-Company: ${contactInfo.company || 'Their Organization'}
-Phone: ${contactInfo.phone || ''}
-Service: ${service}
-Role/Target: ${contactInfo.job_role || contactInfo.company || 'General'}
+Name: ${contactInfo.name || (service === 'recruitment' ? 'Candidate' : 'Customer')}
+Company: ${contactInfo.company || 'Scorelabs Inc.'}
+Role/Target: ${role}
 
-### ALREADY COLLECTED DATA (DO NOT RE-ASK THESE):
+### ALREADY COLLECTED DATA (DO NOT RE-ASK):
 ${JSON.stringify(collectedData || {}, null, 2)}
+${memoryState ? `\n### STRUCTURED CONVERSATION STATE:\n${JSON.stringify(memoryState, null, 2)}` : ''}
+${questionPlan && Array.isArray(questionPlan) ? `\n### ROLE QUESTION PLAN DERIVED FROM JD (Ask sequentially, skip if already answered):\n${questionPlan.map((q, idx) => `${idx + 1}. [${q.target_field || q.category}]: "${q.question}"`).join('\n')}` : ''}
 ${serviceInstructions}
 
 ### JSON OUTPUT SCHEMA ONLY:
-You MUST respond with a valid JSON object only (no markdown, no backticks, no trailing text):
+You MUST respond with valid JSON only:
 {
   "spoken_response": "The exact words Remo will speak out loud",
   "detected_language": "en" | "hi" | "te",
   "should_end_call": false | true,
-  "extracted_fields": {
-    "customer_name": "string or null",
-    "company_name": "string or null",
-    "decision_maker_role": "string or null",
-    "relevant_it_service": "string or null",
-    "project_type": "string or null",
-    "expected_timeline": "string or null",
-    "preferred_next_step": "string or null",
-    "business_email": "string or null",
-    "call_outcome": "string or null",
-    "years_of_experience": "string or null",
-    "skills": "string or null",
-    "notice_period": "string or null",
-    "current_location": "string or null"
-  },
+  "extracted_fields": {},
   "classification": ${classificationOptions},
   "call_summary": "1-2 sentence factual summary"
 }`;
 
-        const recentHistory = (conversationHistory || []).slice(-6);
+        const recentHistory = (conversationHistory || []).slice(-14);
         const historyLines = recentHistory.map(m => `${m.speaker || 'Unknown'}: ${m.text || ''}`);
-        if (callerMessage) {
+        if (callerMessage && (!recentHistory.length || recentHistory[recentHistory.length - 1].text !== callerMessage)) {
             historyLines.push(`Caller: ${callerMessage}`);
         }
 
         const userPrompt = `Conversation History:\n${historyLines.join('\n')}\n\nGenerate Remo's next spoken response as pure JSON.`;
 
-        const fallbackModel = 'gemini-3.6-flash';
-        const candidateModels = primaryModel === fallbackModel ? [primaryModel] : [primaryModel, fallbackModel];
-        const REQUEST_TIMEOUT_MS = parseInt(process.env.GEMINI_TIMEOUT_MS || '5000', 10);
+        // Execute via LLMService (Claude Haiku primary with Gemini Flash fallback)
+        // FIX-4: Timeout raised to 6500ms — 4000ms was causing spurious "operation aborted"
+        // errors on every turn where Claude took >4s under load, wasting the fallback slot.
+        try {
+            const llmRes = await LLMService.generate({
+                systemPrompt,
+                messages: [{ role: 'user', content: userPrompt }],
+                maxTokens: 300,
+                jsonMode: true,
+                timeoutMs: 6500
+            });
 
-        for (const m of candidateModels) {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${apiKey}`;
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
-            try {
-                const res = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [
-                            { role: 'user', parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }
-                        ],
-                        generationConfig: {
-                            temperature: 0.1,
-                            responseMimeType: 'application/json'
-                        }
-                    }),
-                    signal: controller.signal
-                });
-
-                clearTimeout(timer);
-
-                if (res.ok) {
-                    const data = await res.json();
-                    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-                    const parsed = this.parseModelResponse(rawText, lang, service);
-                    return {
-                        ...parsed,
-                        model_used: m
-                    };
-                } else {
-                    const errText = await res.text().catch(() => '');
-                    console.warn(`[GeminiService] Model ${m} returned HTTP ${res.status}: ${errText.slice(0, 120)}`);
-                }
-            } catch (fetchErr) {
-                clearTimeout(timer);
-                if (fetchErr.name === 'AbortError') {
-                    console.warn(`[GeminiService] Model ${m} request timed out after ${REQUEST_TIMEOUT_MS}ms.`);
-                } else {
-                    console.warn(`[GeminiService] Model ${m} failed:`, fetchErr.message);
-                }
+            if (llmRes && llmRes.text) {
+                const parsed = this.parseModelResponse(llmRes.text, lang, service);
+                return {
+                    ...parsed,
+                    model_used: `${llmRes.provider}_${llmRes.model}`
+                };
             }
+        } catch (llmErr) {
+            console.warn('[GeminiService] LLMService invocation exception:', llmErr.message);
         }
 
+        // Safe graceful fallback if all networks fail
         return {
             spoken_response: this.getUniversalFallback(lang, service),
             detected_language: lang,

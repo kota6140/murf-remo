@@ -242,6 +242,111 @@ const AdminClient = {
       method: 'POST',
       body: JSON.stringify({ phone, name, service })
     });
+  },
+
+  /**
+   * 9. CAMPAIGN MANAGEMENT CLIENT API
+   */
+  async getCampaigns({ service = '', status = '' } = {}) {
+    const params = new URLSearchParams();
+    if (service) params.append('service', service);
+    if (status) params.append('status', status);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return this.request(`/api/admin/campaigns${qs}`);
+  },
+
+  async getCampaign(id) {
+    if (!id) throw new Error('Campaign ID is required');
+    return this.request(`/api/admin/campaigns/${encodeURIComponent(id)}`);
+  },
+
+  async createCampaign(data) {
+    return this.request('/api/admin/campaigns', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  },
+
+  async updateCampaign(id, data) {
+    if (!id) throw new Error('Campaign ID is required');
+    return this.request(`/api/admin/campaigns/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    });
+  },
+
+  async previewCampaignPdf(file, service = 'recruitment') {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('service', service);
+    return this.request('/api/admin/campaigns/preview-pdf', {
+      method: 'POST',
+      body: formData
+    });
+  },
+
+  async uploadCampaignPdf(id, file) {
+    if (!id) throw new Error('Campaign ID is required');
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.request(`/api/admin/campaigns/${encodeURIComponent(id)}/upload-pdf`, {
+      method: 'POST',
+      body: formData
+    });
+  },
+
+  async uploadCampaignExcel(id, file) {
+    if (!id) throw new Error('Campaign ID is required');
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.request(`/api/admin/campaigns/${encodeURIComponent(id)}/upload-excel`, {
+      method: 'POST',
+      body: formData
+    });
+  },
+
+  async startCampaign(id) {
+    if (!id) throw new Error('Campaign ID is required');
+    return this.request(`/api/admin/campaigns/${encodeURIComponent(id)}/start`, {
+      method: 'POST'
+    });
+  },
+
+  async pauseCampaign(id) {
+    if (!id) throw new Error('Campaign ID is required');
+    return this.request(`/api/admin/campaigns/${encodeURIComponent(id)}/pause`, {
+      method: 'POST'
+    });
+  },
+
+  async resumeCampaign(id) {
+    if (!id) throw new Error('Campaign ID is required');
+    return this.request(`/api/admin/campaigns/${encodeURIComponent(id)}/resume`, {
+      method: 'POST'
+    });
+  },
+
+  async duplicateCampaign(id) {
+    if (!id) throw new Error('Campaign ID is required');
+    return this.request(`/api/admin/campaigns/${encodeURIComponent(id)}/duplicate`, {
+      method: 'POST'
+    });
+  },
+
+  async archiveCampaign(id) {
+    if (!id) throw new Error('Campaign ID is required');
+    return this.request(`/api/admin/campaigns/${encodeURIComponent(id)}/archive`, {
+      method: 'POST'
+    });
+  },
+
+  async getCampaignConversations(id) {
+    if (!id) throw new Error('Campaign ID is required');
+    return this.request(`/api/admin/campaigns/${encodeURIComponent(id)}/conversations`);
+  },
+
+  getCampaignDownloadUrl(id) {
+    return `/api/admin/campaigns/${encodeURIComponent(id)}/download`;
   }
 };
 

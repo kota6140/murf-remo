@@ -25,8 +25,19 @@ export default class ElevenLabsService {
         return key;
     }
 
-    static getVoiceId() {
-        return (process.env.ELEVENLABS_VOICE_ID || '06llJPvI62CjqSWOX9Gp').trim();
+    static getVoiceId(lang = null) {
+        if (lang) {
+            return this.getVoiceIdForLanguage(lang);
+        }
+        return (process.env.ELEVENLABS_VOICE_ID || process.env.ELEVENLABS_VOICE_ID_PARI || '06llJPvI62CjqSWOX9Gp').trim();
+    }
+
+    static getVoiceIdForLanguage(lang = 'en') {
+        const l = (lang || '').toLowerCase().trim();
+        if (l === 'te' || l === 'tel' || l === 'telugu') {
+            return (process.env.ELEVENLABS_VOICE_ID_CHAITRA || 'oyjIr5XAhIyRjfNq6spl').trim();
+        }
+        return (process.env.ELEVENLABS_VOICE_ID_PARI || process.env.ELEVENLABS_VOICE_ID || '06llJPvI62CjqSWOX9Gp').trim();
     }
 
     static getModelId() {
@@ -108,7 +119,7 @@ export default class ElevenLabsService {
             }
         };
 
-        const timeoutMs = options.timeoutMs || 4500;
+        const timeoutMs = options.timeoutMs || 8000;
         const controller = new AbortController();
         const timeoutTimer = setTimeout(() => controller.abort(), timeoutMs);
 

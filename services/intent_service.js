@@ -283,7 +283,15 @@ export default class IntentService {
         // 6. AUDIBILITY / LINE CHECK ("Can you hear me?", "Hello?")
         // -------------------------------------------------------------
         if (words.length <= 6 && (clean.includes('hear me') || clean.includes('audible') || clean.includes('awaz') || clean.includes('vinipistunda') || clean === 'hello' || clean === 'hello hello')) {
-            const resumeQuestion = lastQuestion || (service === 'sales' ? "Is now a convenient time for a quick conversation?" : "Are you available for a brief chat?");
+            let resumeQuestion = String(lastQuestion || '')
+                .replace(/^Yes,\s*I can hear you clearly!\s*Let's continue[—\-\s]*/gi, '')
+                .replace(/^हाँ,\s*मुझे आपकी आवाज़ बिल्कुल साफ़ सुनाई दे रही है!\s*चलिए जारी रखते हैं[—\-\s]*/gi, '')
+                .replace(/^అవును,\s*మీ మాట నాకు స్పష్టంగా వినిపిస్తోంది!\s*కొనసాగిద్దాం[—\-\s]*/gi, '')
+                .replace(/^క్షమించండి,\s*కాల్ కట్ అయినట్లుంది[—\-\s]*/gi, '')
+                .trim();
+            if (!resumeQuestion) {
+                resumeQuestion = (service === 'sales' ? "Is now a convenient time for a quick conversation?" : "Are you available for a brief chat?");
+            }
             return {
                 matched: true,
                 spoken_response: this.localize(

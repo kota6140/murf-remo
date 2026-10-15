@@ -113,6 +113,38 @@ const MYSQL_SCHEMA = [
         event_type VARCHAR(64) NOT NULL,
         details TEXT,
         created_at VARCHAR(64) NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`,
+
+    `CREATE TABLE IF NOT EXISTS campaigns (
+        id VARCHAR(64) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        service VARCHAR(32) NOT NULL,
+        description TEXT,
+        status VARCHAR(32) NOT NULL DEFAULT 'DRAFT',
+        pdf_filename VARCHAR(255),
+        pdf_path TEXT,
+        excel_filename VARCHAR(255),
+        excel_path TEXT,
+        extracted_data LONGTEXT,
+        question_plan LONGTEXT,
+        config LONGTEXT,
+        batch_id VARCHAR(64),
+        total_contacts INT NOT NULL DEFAULT 0,
+        valid_contacts INT NOT NULL DEFAULT 0,
+        invalid_contacts INT NOT NULL DEFAULT 0,
+        pending_calls INT NOT NULL DEFAULT 0,
+        inprogress_calls INT NOT NULL DEFAULT 0,
+        completed_calls INT NOT NULL DEFAULT 0,
+        failed_calls INT NOT NULL DEFAULT 0,
+        selected_count INT NOT NULL DEFAULT 0,
+        rejected_count INT NOT NULL DEFAULT 0,
+        on_hold_count INT NOT NULL DEFAULT 0,
+        owner_user_id VARCHAR(64) NULL,
+        created_at VARCHAR(64) NOT NULL,
+        updated_at VARCHAR(64) NOT NULL,
+        INDEX idx_camp_service (service),
+        INDEX idx_camp_owner (owner_user_id),
+        INDEX idx_camp_status (status)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`
 ];
 
@@ -203,7 +235,38 @@ const SQLITE_SCHEMA = [
     `CREATE INDEX IF NOT EXISTS idx_contacts_phone ON contacts(phone);`,
     `CREATE INDEX IF NOT EXISTS idx_contacts_service ON contacts(service);`,
     `CREATE INDEX IF NOT EXISTS idx_queue_status ON call_queue(status);`,
-    `CREATE INDEX IF NOT EXISTS idx_conv_service ON conversations(service);`
+    `CREATE INDEX IF NOT EXISTS idx_conv_service ON conversations(service);`,
+    `CREATE TABLE IF NOT EXISTS campaigns (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        service TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL DEFAULT 'DRAFT',
+        pdf_filename TEXT,
+        pdf_path TEXT,
+        excel_filename TEXT,
+        excel_path TEXT,
+        extracted_data TEXT,
+        question_plan TEXT,
+        config TEXT,
+        batch_id TEXT,
+        total_contacts INTEGER NOT NULL DEFAULT 0,
+        valid_contacts INTEGER NOT NULL DEFAULT 0,
+        invalid_contacts INTEGER NOT NULL DEFAULT 0,
+        pending_calls INTEGER NOT NULL DEFAULT 0,
+        inprogress_calls INTEGER NOT NULL DEFAULT 0,
+        completed_calls INTEGER NOT NULL DEFAULT 0,
+        failed_calls INTEGER NOT NULL DEFAULT 0,
+        selected_count INTEGER NOT NULL DEFAULT 0,
+        rejected_count INTEGER NOT NULL DEFAULT 0,
+        on_hold_count INTEGER NOT NULL DEFAULT 0,
+        owner_user_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_camp_service ON campaigns(service);`,
+    `CREATE INDEX IF NOT EXISTS idx_camp_owner ON campaigns(owner_user_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_camp_status ON campaigns(status);`
 ];
 
 async function initSqlite() {
@@ -229,6 +292,12 @@ export async function initDb() {
     if (initPromise) return initPromise;
 
     initPromise = (async () => {
+        if ((process.env.DB_ENGINE || '').toLowerCase() === 'sqlite' || process.env.USE_LOCAL_DB === 'true') {
+            console.log('[DB] Using local SQLite storage engine as configured in environment.');
+            await initSqlite();
+            return;
+        }
+
         const rawPw = process.env.DB_PASSWORD || '';
         const password = rawPw.startsWith("'") && rawPw.endsWith("'") ? rawPw.slice(1, -1) : rawPw;
         const host = process.env.DB_HOST || 'localhost';
@@ -402,6 +471,46 @@ export function ensureOwnerColumns() {
     return ownerColumnsReady;
 }
 
+let campaignSchemaReady = null;
+export function ensureCampaignSchema() {
+    if (!campaignSchemaReady) {
+        campaignSchemaReady = (async () => {
+            await initDb();
+            await ensureOwnerColumns();
+            if (activeEngine === 'mysql') {
+                for (const statement of MYSQL_SCHEMA) {
+                    if (statement.includes('CREATE TABLE IF NOT EXISTS campaigns')) {
+                        await mysqlPool.query(statement).catch(() => {});
+                    }
+                }
+                for (const table of ['batches', 'conversations', 'contacts', 'call_queue']) {
+                    try {
+                        await mysqlPool.query(`SELECT campaign_id FROM ${table} LIMIT 1`);
+                    } catch {
+                        await mysqlPool.query(`ALTER TABLE ${table} ADD COLUMN campaign_id VARCHAR(64) NULL`).catch(() => {});
+                    }
+                }
+            } else {
+                for (const statement of SQLITE_SCHEMA) {
+                    if (statement.includes('campaigns')) {
+                        try { sqliteDb.exec(statement); } catch {}
+                    }
+                }
+                for (const table of ['batches', 'conversations', 'contacts', 'call_queue']) {
+                    try {
+                        sqliteDb.prepare(`SELECT campaign_id FROM ${table} LIMIT 1`).get();
+                    } catch {
+                        try {
+                            sqliteDb.prepare(`ALTER TABLE ${table} ADD COLUMN campaign_id TEXT NULL`).run();
+                        } catch {}
+                    }
+                }
+            }
+        })().catch((e) => { campaignSchemaReady = null; throw e; });
+    }
+    return campaignSchemaReady;
+}
+
 export const db = {
     get,
     all,
@@ -417,6 +526,9 @@ export function getDbConnection() {
 }
 
 // Kick off initialization asynchronously
-initDb().then(() => ensureOwnerColumns().catch(() => {})).catch(e => console.error('[DB] Initialization error:', e));
+initDb()
+    .then(() => ensureOwnerColumns().catch(() => {}))
+    .then(() => ensureCampaignSchema().catch(() => {}))
+    .catch(e => console.error('[DB] Initialization error:', e));
 
 export default db;

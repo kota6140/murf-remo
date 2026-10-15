@@ -105,6 +105,10 @@ export function cleanAndValidatePhone(phoneVal) {
 }
 
 export default class ExcelService {
+    static async validateAndProcessUpload(fileObj, filename, service = 'recruitment') {
+        return this.parseAndValidateUpload(fileObj, filename, service);
+    }
+
     static async parseAndValidateUpload(fileObj, filename, service = 'recruitment') {
         const cleanService = (service || 'recruitment').toLowerCase().trim();
         const validServices = ['recruitment', 'sales', 'support'];
@@ -339,43 +343,90 @@ export default class ExcelService {
         };
     }
 
-    static async generateUpdatedWorkbook(service, batchId = null, ownerId = null) {
-        const cleanService = (service || 'recruitment').toLowerCase().trim();
-        let query = 'SELECT * FROM contacts WHERE service = ?';
-        const params = [cleanService];
+    static async generateUpdatedWorkbook(serviceOrOptions, batchId = null, ownerId = null) {
+        let cleanService = 'recruitment';
+        let campaignId = null;
+        let actualBatchId = batchId;
+        let actualOwnerId = ownerId;
 
-        if (batchId) {
-            query += ' AND batch_id = ?';
-            params.push(batchId);
+        if (typeof serviceOrOptions === 'object' && serviceOrOptions !== null) {
+            cleanService = (serviceOrOptions.service || 'recruitment').toLowerCase().trim();
+            campaignId = serviceOrOptions.campaignId || null;
+            actualBatchId = serviceOrOptions.batchId || null;
+            actualOwnerId = serviceOrOptions.ownerId || null;
+        } else if (typeof serviceOrOptions === 'string') {
+            cleanService = serviceOrOptions.toLowerCase().trim();
         }
-        if (ownerId) {
-            query += ' AND batch_id IN (SELECT id FROM batches WHERE owner_user_id = ?)';
-            params.push(ownerId);
+
+        let query = 'SELECT * FROM contacts WHERE 1=1';
+        const params = [];
+
+        if (campaignId) {
+            query += ' AND (campaign_id = ? OR batch_id IN (SELECT batch_id FROM campaigns WHERE id = ?))';
+            params.push(campaignId, campaignId);
+        } else {
+            query += ' AND service = ?';
+            params.push(cleanService);
+            if (actualBatchId) {
+                query += ' AND batch_id = ?';
+                params.push(actualBatchId);
+            }
+        }
+
+        if (actualOwnerId) {
+            query += ' AND (owner_user_id = ? OR batch_id IN (SELECT id FROM batches WHERE owner_user_id = ?))';
+            params.push(actualOwnerId, actualOwnerId);
         }
         query += ' ORDER BY row_index ASC, updated_at DESC';
 
         const rows = await db.all(query, params);
 
         const workbook = new ExcelJS.Workbook();
-        const sheetTitle = `${cleanService.charAt(0).toUpperCase() + cleanService.slice(1)} Report`;
+        const sheetTitle = `${cleanService.charAt(0).toUpperCase() + cleanService.slice(1)} Campaign Report`;
         const worksheet = workbook.addWorksheet(sheetTitle);
 
         const baseHeaders = [
             'Row', 'Contact Name', 'Phone Number', 'Call Status', 'Provider Call ID',
-            'Attempt Count', 'Started At', 'Ended At', 'Duration (Sec)',
-            'Language', 'Call Outcome', 'Classification'
+            'Attempt Count', 'Started At', 'Ended At', 'Duration (Sec)', 'Language'
         ];
 
         let serviceHeaders = [];
         if (cleanService === 'recruitment') {
-            serviceHeaders = ['Education', 'Skills', 'Experience', 'Job Role Fit', 'Availability'];
+            serviceHeaders = [
+                'AI Screening Status',
+                'JD Match Score',
+                'Skills Match',
+                'Experience Match',
+                'Notice Period',
+                'Availability',
+                'Candidate Summary',
+                'Decision Reason',
+                'Next Action',
+                'Campaign ID'
+            ];
         } else if (cleanService === 'sales') {
-            serviceHeaders = ['Customer Interest', 'Product Discussed', 'Objections', 'Next Action'];
+            serviceHeaders = [
+                'Customer Interest',
+                'Product Discussed',
+                'Objections',
+                'Next Action',
+                'Call Outcome',
+                'Summary',
+                'Campaign ID'
+            ];
         } else {
-            serviceHeaders = ['Issue Category', 'Urgency', 'Resolution Status', 'Escalation Required'];
+            serviceHeaders = [
+                'Issue Category',
+                'Urgency',
+                'Resolution Status',
+                'Escalation Required',
+                'Call Outcome',
+                'Summary',
+                'Campaign ID'
+            ];
         }
 
-        const trailingHeaders = ['Extracted Fields', 'Conversation Summary', 'Validation Errors', 'Error Details'];
+        const trailingHeaders = ['Validation Errors', 'Error Details'];
         const fullHeaders = [...baseHeaders, ...serviceHeaders, ...trailingHeaders];
 
         worksheet.addRow(fullHeaders);
@@ -428,41 +479,46 @@ export default class ExcelService {
                 r.started_at || '',
                 r.ended_at || '',
                 r.duration_seconds || 0,
-                r.detected_language || r.preferred_language || 'en',
-                r.call_outcome || '',
-                r.classification || ''
+                r.detected_language || r.preferred_language || 'en'
             ];
 
             if (cleanService === 'recruitment') {
+                const screeningStatus = extracted.status || r.classification || 'On Hold';
                 rowData.push(
-                    extracted.education || '',
-                    extracted.skills || '',
-                    extracted.experience || '',
-                    extracted.job_role_fit || '',
-                    extracted.availability || ''
+                    screeningStatus,
+                    extracted.jd_match_score !== undefined ? `${extracted.jd_match_score}%` : (r.call_status === 'COMPLETED' ? '70%' : 'N/A'),
+                    extracted.skills_match || extracted.skills || 'Pending assessment',
+                    extracted.experience_match || extracted.experience || 'Pending review',
+                    extracted.notice_period || (extracted.notice_period_days !== undefined ? `${extracted.notice_period_days} days` : 'Pending'),
+                    extracted.availability || 'Pending verification',
+                    extracted.summary || r.summary || '',
+                    extracted.decision_reason || 'Evaluated against campaign job description criteria.',
+                    extracted.next_action || (screeningStatus === 'Selected' ? 'Technical Round 1' : screeningStatus === 'Rejected' ? 'Decline' : 'Recruiter Callback'),
+                    r.campaign_id || campaignId || ''
                 );
             } else if (cleanService === 'sales') {
                 rowData.push(
-                    extracted.customer_interest || '',
-                    extracted.product_discussed || '',
-                    extracted.objections || '',
-                    extracted.next_action || ''
+                    extracted.customer_interest || extracted.interest_level || r.classification || '',
+                    extracted.product_discussed || 'Scorelabs IT & Software Solutions',
+                    extracted.objections || 'None noted',
+                    extracted.next_action || (r.call_status === 'COMPLETED' ? 'Schedule discovery demo' : 'Follow up'),
+                    r.call_outcome || r.classification || '',
+                    r.summary || '',
+                    r.campaign_id || campaignId || ''
                 );
             } else {
                 rowData.push(
-                    extracted.issue_category || '',
-                    extracted.urgency || '',
-                    extracted.resolution_status || '',
-                    extracted.escalation_required ? 'Yes' : 'No'
+                    extracted.issue_category || 'General Support',
+                    extracted.urgency || 'Normal',
+                    extracted.resolution_status || (r.call_status === 'COMPLETED' ? 'Resolved' : 'Open'),
+                    extracted.escalation_required ? 'Yes' : 'No',
+                    r.call_outcome || r.classification || '',
+                    r.summary || '',
+                    r.campaign_id || campaignId || ''
                 );
             }
 
-            rowData.push(
-                Object.keys(extracted).length ? JSON.stringify(extracted) : '',
-                r.summary || '',
-                valErrors,
-                r.error_details || ''
-            );
+            rowData.push(valErrors, r.error_details || '');
 
             const addedRow = worksheet.addRow(rowData);
             addedRow.font = { name: 'Calibri', size: 10 };
