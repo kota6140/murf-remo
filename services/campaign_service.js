@@ -36,7 +36,7 @@ export class CampaignService {
         await ensureCampaignSchema();
         const id = `camp_${crypto.randomBytes(8).toString('hex')}`;
         const now = utcNow();
-        const validService = ['recruitment', 'sales', 'support'].includes(service.toLowerCase())
+        const validService = ['recruitment', 'sales', 'support', 'appointment', 'receptionist'].includes(service.toLowerCase())
             ? service.toLowerCase()
             : 'recruitment';
 
@@ -207,13 +207,7 @@ export class CampaignService {
         console.log(`[CampaignService] Parsing ${campaign.service.toUpperCase()} document (${ext}) for campaign: ${campaign.name}...`);
         extracted = await DocumentService.parseCampaignDocument(fileBuffer, originalName, campaign.service);
 
-        if (campaign.service === 'recruitment') {
-            questionPlan = await QuestionPlanner.generateRecruitmentPlan(extracted);
-        } else if (campaign.service === 'sales') {
-            questionPlan = QuestionPlanner.generateSalesPlan(extracted);
-        } else {
-            questionPlan = QuestionPlanner.generateSupportPlan(extracted);
-        }
+        questionPlan = await QuestionPlanner.generatePlanFor(campaign.service, extracted);
 
         const now = utcNow();
         await db.run(`

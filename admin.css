@@ -118,6 +118,10 @@ td.actions { white-space: nowrap; text-align: right; }
 .cs-tab:focus-visible { outline: 2px solid var(--orange); outline-offset: -2px; }
 td select.owner-pick { width: auto; min-width: 150px; padding: 5px 8px; font-size: .82rem; }
 .owner-none { color: var(--muted); font-style: italic; }
+.agent-pick { margin: 14px 0 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; }
+.agent-pick legend { padding: 0 6px; font-weight: 600; font-size: .85rem; }
+.agent-pick-list { display: grid; gap: 8px; margin-bottom: 8px; max-height: 190px; overflow-y: auto; }
+#agentModal .modal-card { max-height: 92vh; overflow-y: auto; }
 @media (max-width: 800px) {
     .app { grid-template-columns: 1fr; }
     .sidebar { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 12px; gap: 10px; }

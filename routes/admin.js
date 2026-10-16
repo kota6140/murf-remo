@@ -19,6 +19,8 @@ import ExcelService from '../services/excel_service.js';
 import RecruitmentService from '../services/recruitment_service.js';
 import SalesService from '../services/sales_service.js';
 import SupportService from '../services/support_service.js';
+import AppointmentService from '../services/appointment_service.js';
+import ReceptionistService from '../services/receptionist_service.js';
 import CampaignService from '../services/campaign_service.js';
 import { PDFService } from '../services/pdf_service.js';
 import { DocumentService } from '../services/document_service.js';
@@ -26,11 +28,14 @@ import { QuestionPlanner } from '../services/question_planner.js';
 import { CallQueueWorker } from '../services/call_queue_worker.js';
 import PlivoService from '../services/plivo_service.js';
 import ElevenLabsService from '../services/elevenlabs_service.js';
+import AgentService from '../services/agent_service.js';
 
 const SERVICES = {
     recruitment: RecruitmentService,
     sales: SalesService,
-    support: SupportService
+    support: SupportService,
+    appointment: AppointmentService,
+    receptionist: ReceptionistService
 };
 
 const upload = multer({
@@ -139,6 +144,20 @@ router.get('/users', (req, res) => {
 });
 
 // ============================================================================
+// GET /api/admin/agents  -  only the agents the owner assigned to this admin
+// ============================================================================
+router.get('/agents', wrap(async (req, res) => {
+    const agents = await AgentService.list({ userId: req.user.id });
+    res.json({ success: true, agents: agents.map(AgentService.publicView) });
+}));
+
+// Picks the agent a start request should use. null means "no agents assigned: use the shared number".
+async function pickAgent(req, service) {
+    const agentId = typeof (req.body || {}).agentId === 'string' ? req.body.agentId.trim() : '';
+    return AgentService.resolveForOutbound(req.user.id, { service, agentId });
+}
+
+// ============================================================================
 // POST /api/admin/:service/upload   (multipart field "file")
 // POST /api/admin/:service/start    { fileId }
 // GET  /api/admin/:service/download ?batchId=
@@ -176,8 +195,11 @@ router.post('/:service/start', serviceFor, wrap(async (req, res) => {
             [req.serviceName, req.user.id]);
         if (!batch) return fail(res, 400, 'Upload a contact sheet first.');
     }
+    // Remember which agent (number + behaviour) this sheet's calls use before the queue starts dialling.
+    const agent = await pickAgent(req, req.serviceName);
+    await AgentService.stampBatch(batch.id, agent);
     const result = await SERVICES[req.serviceName].startCallingCampaign(batch.id);
-    res.json({ success: true, ...result });
+    res.json({ success: true, ...result, agent: agent ? { id: agent.id, name: agent.name, phoneNumber: agent.phone_number } : null });
 }));
 
 router.get('/:service/download', serviceFor, wrap(async (req, res) => {
@@ -313,7 +335,9 @@ router.post('/test-call', async (req, res) => {
                 console.warn('[AdminRoutes] Note: pre-insert test contact:', insErr.message);
             }
 
-            const callResult = await PlivoService.initiateOutboundCall(testContact, service || 'recruitment');
+            const agent = await pickAgent(req, service || 'recruitment');
+            if (agent) await db.run('UPDATE contacts SET agent_id = ? WHERE id = ?', [agent.id, testContact.id]).catch(() => {});
+            const callResult = await PlivoService.initiateOutboundCall(testContact, service || 'recruitment', { agent });
             if (callResult.success) {
                 if (callResult.callUuid) {
                     await db.run('UPDATE contacts SET provider_call_id = ? WHERE id = ?', [callResult.callUuid, testContact.id]).catch(() => {});
@@ -356,18 +380,9 @@ router.get('/campaigns', wrap(async (req, res) => {
 const previewDocHandler = wrap(async (req, res) => {
     if (!req.file) return fail(res, 400, 'Please select a PDF or Word document (.docx, .doc) to preview.');
     const service = (req.body.service || 'recruitment').toLowerCase();
-    let extracted = null;
-    let questionPlan = [];
-    if (service === 'recruitment') {
-        extracted = await DocumentService.parseRecruitmentJD(req.file.buffer, req.file.originalname);
-        questionPlan = await QuestionPlanner.generateRecruitmentPlan(extracted);
-    } else if (service === 'sales') {
-        extracted = await DocumentService.parseSalesKnowledge(req.file.buffer, req.file.originalname);
-        questionPlan = QuestionPlanner.generateSalesPlan(extracted);
-    } else {
-        extracted = await DocumentService.parseSupportKnowledge(req.file.buffer, req.file.originalname);
-        questionPlan = QuestionPlanner.generateSupportPlan(extracted);
-    }
+    if (!SERVICES[service]) return fail(res, 400, 'Invalid service.');
+    const extracted = await DocumentService.parseCampaignDocument(req.file.buffer, req.file.originalname, service);
+    const questionPlan = await QuestionPlanner.generatePlanFor(service, extracted);
     res.json({
         success: true,
         filename: req.file.originalname,
@@ -430,8 +445,12 @@ router.post('/campaigns/:id/upload-excel', upload.single('file'), wrap(async (re
 
 // Start / Dispatch Campaign
 router.post('/campaigns/:id/start', wrap(async (req, res) => {
+    const campaign = await CampaignService.getCampaign(req.params.id, req.user.id);
+    if (!campaign) return fail(res, 404, 'Campaign not found.');
+    const agent = await pickAgent(req, campaign.service);
+    if (campaign.batch_id) await AgentService.stampBatch(campaign.batch_id, agent);
     const result = await CampaignService.startCampaign(req.params.id, req.user.id);
-    res.json({ success: true, ...result });
+    res.json({ success: true, ...result, agent: agent ? { id: agent.id, name: agent.name, phoneNumber: agent.phone_number } : null });
 }));
 
 // Pause Campaign
@@ -498,6 +517,30 @@ export async function handlePlivoAnswer(req, res) {
     let role = query.role || query.job_role || '';
     let company = query.company || '';
     let campaignId = query.campaignId || query.campaign_id || '';
+    let agentId = query.agentId || '';
+    const direction = String(query.Direction || query.direction || '').toLowerCase() === 'inbound' && !contactId ? 'inbound' : 'outbound';
+    let agent = null;
+
+    // Incoming call: whoever dialled one of our agent numbers is routed to that agent and its admin.
+    // (For an incoming call Plivo's "To" is our number and "From" is the person calling.)
+    if (direction === 'inbound') {
+        try {
+            agent = await AgentService.findByNumber(query.To || query.to || '');
+        } catch (agentErr) {
+            console.warn('[Plivo Answer] Agent lookup by number failed:', agentErr.message);
+        }
+        if (agent) {
+            agentId = agent.id;
+            service = agent.service;
+            ownerId = agent.assigned_user_id || '';
+            phone = query.From || query.from || '';
+            name = '';
+        } else {
+            console.warn(`[Plivo Answer] Incoming call to ${query.To || 'unknown number'} but no active agent owns that number.`);
+        }
+    } else if (agentId) {
+        try { agent = await AgentService.get(agentId); } catch { /* keep going without the agent */ }
+    }
 
     // 1. If contactId was passed, verify and enrich directly from contacts table
     if (contactId) {
@@ -578,6 +621,19 @@ export async function handlePlivoAnswer(req, res) {
         service = 'recruitment';
     }
 
+    // Appointment-setting and receptionist agents decide how their calls are handled, whatever the contact sheet says.
+    if (AgentService.decidesService(agent, direction)) service = agent.service;
+
+    // When dialling, Plivo gives back a request ID, which is what the queue saved. The live call has its own CallUUID,
+    // and Plivo's status and hangup webhooks use that one. Save it now so those webhooks can find this contact.
+    if (contactId && callUuid) {
+        try {
+            await db.run('UPDATE contacts SET provider_call_id = ? WHERE id = ?', [callUuid, contactId]);
+        } catch (idErr) {
+            console.warn('[Plivo Answer] Could not save the live call ID:', idErr.message);
+        }
+    }
+
     console.log(`[Plivo Answer] Active CallUUID: ${callUuid}, Contact: ${name || phone} (${contactId || 'unknown'}), Service: ${service.toUpperCase()}, Campaign: ${campaignId || 'none'}`);
 
     const cfg = PlivoService.getConfig();
@@ -594,10 +650,12 @@ export async function handlePlivoAnswer(req, res) {
         name: String(name || ''),
         role: String(role || ''),
         company: String(company || ''),
-        campaignId: String(campaignId || '')
+        campaignId: String(campaignId || ''),
+        agentId: String(agentId || ''),
+        direction
     });
     const streamWsUrl = `${wsBaseUrl}/voicebot?${wsParams.toString()}`;
-    const extraHeaders = `callId=${callUuid},contactId=${contactId},service=${service},ownerId=${ownerId},phone=${phone},name=${encodeURIComponent(name)},role=${encodeURIComponent(role)},company=${encodeURIComponent(company)},campaignId=${campaignId}`;
+    const extraHeaders = `callId=${callUuid},contactId=${contactId},service=${service},ownerId=${ownerId},phone=${phone},name=${encodeURIComponent(name)},role=${encodeURIComponent(role)},company=${encodeURIComponent(company)},campaignId=${campaignId},agentId=${agentId},direction=${direction}`;
 
     const xml = PlivoService.generateAnswerXml(streamWsUrl, extraHeaders);
     res.set('Content-Type', 'text/xml');
@@ -606,30 +664,44 @@ export async function handlePlivoAnswer(req, res) {
 
 export async function handlePlivoStatus(req, res) {
     const body = { ...(req.query || {}), ...(req.body || {}) };
-    const callUuid = body.CallUUID || body.call_uuid || '';
+    const callUuid = body.CallUUID || body.call_uuid || body.RequestUUID || body.request_uuid || '';
     const status = String(body.CallStatus || body.Status || body.status || '').toLowerCase();
 
     console.log(`[Plivo Status] CallUUID: ${callUuid}, Status: ${status}`);
+    if (!callUuid) console.log('[Plivo Status] No call ID in this webhook. Fields received:', Object.keys(body).join(', ') || '(none)');
 
     if (callUuid) {
         try {
             const now = utcNow();
-            let dbStatus = 'CALLING';
+            // Only statuses we understand change anything. A status we do not know (empty, "ringing", "cancel"...)
+            // must never move a call backwards.
+            let dbStatus = null;
             if (['in-progress', 'answered'].includes(status)) dbStatus = 'in-progress';
             else if (['completed'].includes(status)) dbStatus = 'COMPLETED';
             else if (['busy', 'no-answer', 'timeout'].includes(status)) dbStatus = 'UNANSWERED';
             else if (['failed', 'rejected'].includes(status)) dbStatus = 'FAILED';
 
-            await db.run(
-                `UPDATE contacts SET call_status = ?, updated_at = ? WHERE provider_call_id = ?`,
-                [dbStatus, now, callUuid]
-            );
+            if (!dbStatus) {
+                if (status) console.log(`[Plivo Status] Status "${status}" needs no change.`);
+            } else {
+                // Why it ended, so the call history can explain a failed or unanswered call.
+                const cause = String(body.HangupCauseName || body.HangupCause || '').trim();
+                const reason = ['FAILED', 'UNANSWERED'].includes(dbStatus)
+                    ? `Plivo reported "${status}"${cause ? ` (${cause})` : ''}` : '';
 
-            if (['COMPLETED', 'FAILED', 'UNANSWERED'].includes(dbStatus)) {
-                await db.run(
-                    `UPDATE call_queue SET status = ?, updated_at = ? WHERE contact_id IN (SELECT id FROM contacts WHERE provider_call_id = ?)`,
-                    [dbStatus, now, callUuid]
+                // A call that has already finished (completed, failed, unanswered, cancelled) keeps its result.
+                const res1 = await db.run(
+                    `UPDATE contacts SET call_status = ?, error_details = CASE WHEN ? <> '' THEN ? ELSE error_details END, updated_at = ?
+                     WHERE provider_call_id = ? AND call_status IN ('PENDING', 'CALLING', 'in-progress')`,
+                    [dbStatus, reason, reason, now, callUuid]
                 );
+
+                if (res1 && res1.changes > 0 && ['COMPLETED', 'FAILED', 'UNANSWERED'].includes(dbStatus)) {
+                    await db.run(
+                        `UPDATE call_queue SET status = ?, updated_at = ? WHERE contact_id IN (SELECT id FROM contacts WHERE provider_call_id = ?)`,
+                        [dbStatus, now, callUuid]
+                    );
+                }
             }
         } catch (e) {
             console.error('[Plivo Status] DB update error:', e.message);
@@ -641,26 +713,47 @@ export async function handlePlivoStatus(req, res) {
 
 export async function handlePlivoHangup(req, res) {
     const body = { ...(req.query || {}), ...(req.body || {}) };
-    const callUuid = body.CallUUID || body.call_uuid || '';
-    const duration = parseInt(body.Duration || body.duration || body.CallDuration || '0', 10) || 0;
+    const callUuid = body.CallUUID || body.call_uuid || body.RequestUUID || body.request_uuid || '';
+    // Seconds the call was actually connected (BillDuration), falling back to the total length.
+    const talked = parseInt(body.BillDuration || body.billduration || '', 10);
+    const duration = Number.isFinite(talked) ? talked : (parseInt(body.Duration || body.duration || body.CallDuration || '0', 10) || 0);
+    const cause = String(body.HangupCauseName || body.HangupCause || '').trim();
 
-    console.log(`[Plivo Hangup] CallUUID: ${callUuid}, Duration: ${duration}s`);
+    console.log(`[Plivo Hangup] CallUUID: ${callUuid}, Duration: ${duration}s${cause ? `, Cause: ${cause}` : ''}`);
+    if (!callUuid) console.log('[Plivo Hangup] No call ID in this webhook. Fields received:', Object.keys(body).join(', ') || '(none)');
 
     if (callUuid) {
         try {
             const now = utcNow();
-            await db.run(
-                `UPDATE contacts SET call_status = 'COMPLETED', ended_at = ?, duration_seconds = CASE WHEN ? > 0 THEN ? ELSE duration_seconds END, updated_at = ? WHERE provider_call_id = ?`,
-                [now, duration, duration, now, callUuid]
-            );
-            await db.run(
-                `UPDATE conversations SET duration_seconds = CASE WHEN ? > 0 THEN ? ELSE duration_seconds END, ended_at = ? WHERE contact_id IN (SELECT id FROM contacts WHERE provider_call_id = ?)`,
-                [duration, duration, now, callUuid]
-            );
-            await db.run(
-                `UPDATE call_queue SET status = 'COMPLETED', updated_at = ? WHERE contact_id IN (SELECT id FROM contacts WHERE provider_call_id = ?)`,
-                [now, callUuid]
-            );
+            const row = await db.get('SELECT id, call_status FROM contacts WHERE provider_call_id = ?', [callUuid]);
+            if (row) {
+                const open = ['PENDING', 'CALLING', 'in-progress'].includes(row.call_status);
+                if (duration > 0) {
+                    // The call connected. Finish it, unless it already has a result (failed, unanswered...).
+                    await db.run(
+                        `UPDATE contacts SET call_status = CASE WHEN call_status IN ('PENDING', 'CALLING', 'in-progress') THEN 'COMPLETED' ELSE call_status END,
+                         ended_at = ?, duration_seconds = ?, updated_at = ? WHERE id = ?`,
+                        [now, duration, now, row.id]
+                    );
+                    await db.run(
+                        `UPDATE conversations SET duration_seconds = ?, ended_at = ? WHERE contact_id = ?`,
+                        [duration, now, row.id]
+                    );
+                    if (open) {
+                        await db.run(`UPDATE call_queue SET status = 'COMPLETED', updated_at = ? WHERE contact_id = ?`, [now, row.id]);
+                    }
+                } else if (open) {
+                    // It ended without ever connecting: nobody picked up, or the call was dropped. Say so.
+                    const note = `The call ended before it was answered${cause ? ` (${cause})` : ''}`;
+                    await db.run(
+                        `UPDATE contacts SET call_status = 'UNANSWERED', error_details = ?, ended_at = ?, updated_at = ? WHERE id = ?`,
+                        [note, now, now, row.id]
+                    );
+                    await db.run(`UPDATE call_queue SET status = 'UNANSWERED', updated_at = ? WHERE contact_id = ?`, [now, row.id]);
+                } else {
+                    await db.run(`UPDATE contacts SET ended_at = COALESCE(ended_at, ?), updated_at = ? WHERE id = ?`, [now, now, row.id]);
+                }
+            }
         } catch (e) {
             console.error('[Plivo Hangup] DB update error:', e.message);
         }

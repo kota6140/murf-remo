@@ -73,7 +73,9 @@ export default class PlivoService {
     static async initiateOutboundCall(contact, service = 'recruitment', options = {}) {
         const cfg = this.getConfig();
         const targetPhone = this.normalizePhoneNumber(contact.phone || contact.callerNumber);
-        let callerId = this.normalizePhoneNumber(cfg.virtualNumber);
+        // An agent's own number is the caller ID; without an agent the shared number is used.
+        const agent = options.agent || null;
+        let callerId = this.normalizePhoneNumber(agent && agent.phone_number ? agent.phone_number : cfg.virtualNumber);
 
         if (!targetPhone) {
             return { success: false, error: 'Destination phone number is missing or invalid.' };
@@ -93,7 +95,9 @@ export default class PlivoService {
             phone: String(targetPhone),
             ownerId: String(ownerId),
             role: String(contact.job_role || contact.role || ''),
-            company: String(contact.company || '')
+            company: String(contact.company || ''),
+            agentId: String(agent ? agent.id : ''),
+            direction: 'outbound'
         }).toString();
 
         const answerUrl = options.answerUrl || `${cfg.serverUrl}/api/plivo/answer?${queryParams}`;
@@ -116,7 +120,7 @@ export default class PlivoService {
         };
 
         try {
-            console.log(`[PlivoService] Initiating outbound call to ${targetPhone} (from ${callerId}, service: ${service})...`);
+            console.log(`[PlivoService] Initiating outbound call to ${targetPhone} (from ${callerId}, service: ${service}${agent ? `, agent: ${agent.name}` : ''})...`);
             const res = await fetch(url, {
                 method: 'POST',
                 headers: {

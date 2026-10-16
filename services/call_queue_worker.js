@@ -1,6 +1,7 @@
 import db, { utcNow } from './db.js';
 import PlivoService from './plivo_service.js';
 import ExotelService from './exotel_service.js';
+import AgentService from './agent_service.js';
 
 export class CallQueueWorker {
     static isPaused = false;
@@ -55,6 +56,10 @@ export class CallQueueWorker {
     static async recoverStaleJobs() {
         const now = utcNow();
         try {
+            // A call whose conversation was already saved had finished before the restart. Keep it completed;
+            // only calls that were genuinely mid-call are interrupted.
+            await db.run("UPDATE call_queue SET status = 'COMPLETED', updated_at = ? WHERE status = 'IN_PROGRESS' AND contact_id IN (SELECT contact_id FROM conversations)", [now]);
+            await db.run("UPDATE contacts SET call_status = 'COMPLETED', updated_at = ? WHERE call_status IN ('CALLING', 'in-progress') AND id IN (SELECT contact_id FROM conversations)", [now]);
             await db.run("UPDATE call_queue SET status = 'FAILED', updated_at = ? WHERE status = 'IN_PROGRESS'", [now]);
             await db.run("UPDATE contacts SET call_status = 'FAILED', error_details = 'Call interrupted by server restart', updated_at = ? WHERE call_status IN ('CALLING', 'in-progress')", [now]);
             await db.run("UPDATE call_queue SET status = 'CANCELLED', updated_at = ? WHERE status = 'QUEUED'", [now]);
@@ -171,7 +176,15 @@ export class CallQueueWorker {
             console.log(`[QUEUE] Initiating outbound Plivo call to ${nextJob.phone} for service ${nextJob.service}...`);
             try {
                 const contactRecord = await db.get("SELECT * FROM contacts WHERE id = ?", [nextJob.contact_id]) || nextJob;
-                result = await PlivoService.initiateOutboundCall(contactRecord, nextJob.service);
+                // The admin's own agent decides the number the call comes from (no agent = shared number).
+                const agent = await AgentService.resolveForContact(contactRecord).catch((agentErr) => {
+                    console.warn('[QUEUE] Agent lookup failed, using the shared number:', agentErr.message);
+                    return null;
+                });
+                if (agent && !contactRecord.agent_id) {
+                    await db.run('UPDATE contacts SET agent_id = ? WHERE id = ?', [agent.id, nextJob.contact_id]).catch(() => {});
+                }
+                result = await PlivoService.initiateOutboundCall(contactRecord, nextJob.service, { agent });
             } catch (plivoErr) {
                 console.error('[QUEUE] Plivo dispatch error:', plivoErr);
                 result = { success: false, error: plivoErr.message };

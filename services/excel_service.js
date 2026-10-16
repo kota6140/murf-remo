@@ -35,8 +35,37 @@ export const COLUMN_SYNONYMS = {
     lead_source: ['lead source', 'source', 'channel', 'campaign source'],
     // Support specific
     customer_id: ['customer id', 'customerid', 'client id', 'account id', 'cust id', 'ticket id'],
-    issue_or_query: ['issue or query', 'issue', 'query', 'problem', 'concern', 'complaint', 'subject']
+    issue_or_query: ['issue or query', 'issue', 'query', 'problem', 'concern', 'complaint', 'subject'],
+    // Appointment setting / receptionist specific
+    appointment_date: ['appointment date', 'preferred date', 'booking date', 'visit date', 'requested date'],
+    appointment_time: ['appointment time', 'preferred time', 'booking time', 'visit time', 'time slot', 'slot'],
+    appointment_purpose: ['appointment for', 'appointment type', 'purpose', 'reason for visit', 'visit reason', 'treatment', 'consultation type']
 };
+
+/**
+ * Turns a spreadsheet cell into the text the caller bot sees. Date cells become "2026-11-03" (plus " 16:00"
+ * when they hold a time) and time-only cells become "16:00", instead of a raw Excel serial like 46329.229.
+ */
+export function cellToText(value) {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        const pad = (n) => String(n).padStart(2, '0');
+        // A time with no date (Excel stores these on 30 Dec 1899): read the clock time, rounded to the minute.
+        if (value.getFullYear() < 1901) {
+            const mins = Math.round((value.getHours() * 3600 + value.getMinutes() * 60 + value.getSeconds()) / 60);
+            return `${pad(Math.floor(mins / 60) % 24)}:${pad(mins % 60)}`;
+        }
+        // A date typed as "2026-11-03" in a CSV is read as midnight UTC, which is not midnight on this server.
+        const utcMidnight = value.getUTCHours() === 0 && value.getUTCMinutes() === 0 && value.getUTCSeconds() === 0 && value.getUTCMilliseconds() === 0;
+        const localMidnight = value.getHours() === 0 && value.getMinutes() === 0 && value.getSeconds() === 0;
+        if (utcMidnight && !localMidnight) return `${value.getUTCFullYear()}-${pad(value.getUTCMonth() + 1)}-${pad(value.getUTCDate())}`;
+        // Excel dates come back a few seconds off (23:59:50 the day before), so round to the nearest minute.
+        const d = new Date(Math.round(value.getTime() / 60000) * 60000);
+        const day = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+        const mins = d.getHours() * 60 + d.getMinutes();
+        return mins === 0 ? day : `${day} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+    return String(value).trim();
+}
 
 export function normalizeColumnName(header) {
     if (!header || typeof header !== 'string') return null;
@@ -111,7 +140,7 @@ export default class ExcelService {
 
     static async parseAndValidateUpload(fileObj, filename, service = 'recruitment') {
         const cleanService = (service || 'recruitment').toLowerCase().trim();
-        const validServices = ['recruitment', 'sales', 'support'];
+        const validServices = ['recruitment', 'sales', 'support', 'appointment', 'receptionist'];
         const targetService = validServices.includes(cleanService) ? cleanService : 'recruitment';
 
         const ext = path.extname(filename || '').toLowerCase();
@@ -143,7 +172,7 @@ export default class ExcelService {
         // Parse workbook using SheetJS
         let workbook;
         try {
-            workbook = xlsx.read(fileBuffer, { type: 'buffer' });
+            workbook = xlsx.read(fileBuffer, { type: 'buffer', cellDates: true });
         } catch (e) {
             throw new Error(`Unable to read spreadsheet: ${e.message}`);
         }
@@ -214,7 +243,7 @@ export default class ExcelService {
             for (let cIdx = 0; cIdx < headerRow.length; cIdx++) {
                 const headerName = headerRow[cIdx];
                 if (headerName) {
-                    rawDict[headerName] = rowArr[cIdx] !== undefined ? String(rowArr[cIdx]).trim() : '';
+                    rawDict[headerName] = rowArr[cIdx] !== undefined ? cellToText(rowArr[cIdx]) : '';
                 }
             }
 
@@ -414,6 +443,26 @@ export default class ExcelService {
                 'Summary',
                 'Campaign ID'
             ];
+        } else if (cleanService === 'appointment') {
+            serviceHeaders = [
+                'Appointment Outcome',
+                'Appointment Purpose',
+                'Preferred Date',
+                'Preferred Time',
+                'Next Action',
+                'Summary',
+                'Campaign ID'
+            ];
+        } else if (cleanService === 'receptionist') {
+            serviceHeaders = [
+                'Call Outcome',
+                'Reason For Call',
+                'Message Taken',
+                'Callback Number',
+                'Next Action',
+                'Summary',
+                'Campaign ID'
+            ];
         } else {
             serviceHeaders = [
                 'Issue Category',
@@ -503,6 +552,28 @@ export default class ExcelService {
                     extracted.objections || 'None noted',
                     extracted.next_action || (r.call_status === 'COMPLETED' ? 'Schedule discovery demo' : 'Follow up'),
                     r.call_outcome || r.classification || '',
+                    r.summary || '',
+                    r.campaign_id || campaignId || ''
+                );
+            } else if (cleanService === 'appointment') {
+                let sheet = {};
+                try { sheet = JSON.parse(r.extra_data || '{}'); } catch (e) {}
+                rowData.push(
+                    r.classification || r.call_outcome || '',
+                    extracted.appointment_purpose || sheet.appointment_purpose || '',
+                    extracted.preferred_date || sheet.appointment_date || '',
+                    extracted.preferred_time || sheet.appointment_time || '',
+                    extracted.next_action || (r.classification === 'Appointment Booked' ? 'Send confirmation' : (r.classification === 'Callback Requested' ? 'Call back' : 'Follow up')),
+                    r.summary || '',
+                    r.campaign_id || campaignId || ''
+                );
+            } else if (cleanService === 'receptionist') {
+                rowData.push(
+                    r.classification || r.call_outcome || '',
+                    extracted.reason_for_call || '',
+                    r.classification === 'Message Taken' ? 'Yes' : 'No',
+                    extracted.callback_number || '',
+                    extracted.next_action || (r.classification === 'Message Taken' ? 'Return the message' : 'None'),
                     r.summary || '',
                     r.campaign_id || campaignId || ''
                 );

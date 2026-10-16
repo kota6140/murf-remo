@@ -36,6 +36,7 @@
             <button class="nav-btn" data-tab="submissions">Form submissions <span class="badge" id="navSubCount">0</span></button>
             <button class="nav-btn" data-tab="demos">60-sec demo requests <span class="badge" id="navDemoCount">0</span></button>
             <button class="nav-btn" data-tab="users">Users <span class="badge" id="navUserCount">0</span></button>
+            <button class="nav-btn" data-tab="agents">Agents <span class="badge" id="navAgentCount">0</span></button>
             <button class="nav-btn" data-tab="calls">Calls &amp; data</button>
         </nav>
         <div class="sidebar-foot">
@@ -105,6 +106,27 @@
             <div class="table-wrap"><table id="userTable"></table></div>
         </section>
 
+        <section id="tab-agents" class="tab" hidden>
+            <header class="page-head"><h2>Agents</h2>
+                <div><button class="btn ghost" data-refresh>Refresh</button> <button class="btn primary" id="addAgentBtn">+ Add agent</button></div>
+            </header>
+            <p class="muted" style="margin:-8px 0 14px">Each agent has its own phone number, work type, greeting and instructions. Give agents to admins: one admin can have as many agents as you like. Outgoing calls use the admin's agent number, and calls to an agent's number go to that agent and its admin. There is no limit on how many agents you add.</p>
+            <div class="toolbar">
+                <input type="search" id="agentSearch" placeholder="Search agent, number, admin…">
+                <select id="agentFilter" aria-label="Filter agents">
+                    <option value="">All agents</option>
+                    <option value="unassigned">Not given to an admin</option>
+                    <option value="recruitment">Recruitment</option>
+                    <option value="sales">Sales</option>
+                    <option value="support">Support</option>
+                    <option value="appointment">Appointment setting</option>
+                    <option value="receptionist">Receptionist</option>
+                    <option value="disabled">Switched off</option>
+                </select>
+            </div>
+            <div class="table-wrap"><table id="agentTable"></table></div>
+        </section>
+
         <section id="tab-calls" class="tab" hidden>
             <header class="page-head"><h2>Calls &amp; data</h2><button class="btn ghost" id="callsRefresh">Refresh</button></header>
             <p class="muted" style="margin:-8px 0 14px">Everything across all admins: conversations, call history, queued calls and uploaded contact sheets, with the admin each one belongs to.</p>
@@ -160,9 +182,54 @@
             </label>
             <label id="pwLabel">Password *<input name="password" type="text" autocomplete="new-password" minlength="6"></label>
         </div>
+        <fieldset id="userAgentsBox" class="agent-pick" hidden>
+            <legend>Agents for this admin</legend>
+            <div id="userAgentsList" class="agent-pick-list"></div>
+            <div class="muted small">Tick every agent this admin may use. Add agents on the Agents tab first.</div>
+        </fieldset>
         <div class="modal-actions">
             <button type="button" class="btn ghost" data-close>Cancel</button>
             <button type="submit" class="btn primary" id="userSaveBtn">Save</button>
+        </div>
+    </form>
+</div>
+
+<!-- Agent modal -->
+<div id="agentModal" class="modal" hidden>
+    <div class="modal-bg" data-close></div>
+    <form class="modal-card" id="agentForm" novalidate role="dialog" aria-modal="true" aria-labelledby="agentModalTitle">
+        <h3 id="agentModalTitle">Add agent</h3>
+        <div id="agentFormError" class="alert" hidden role="alert"></div>
+        <div class="form-grid">
+            <label>Agent name *<input name="name" required placeholder="e.g. Priya (hiring)"></label>
+            <label>Phone number *<input name="phoneNumber" required placeholder="+91 80 1234 5678"></label>
+            <label>Work type
+                <select name="service">
+                    <option value="recruitment">Recruitment</option>
+                    <option value="sales">Sales</option>
+                    <option value="support">Support</option>
+                    <option value="appointment">Appointment setting</option>
+                    <option value="receptionist">Receptionist</option>
+                </select>
+            </label>
+            <label>Given to admin
+                <select name="assignedUserId" id="agentAdminSelect"></select>
+            </label>
+            <label>ElevenLabs voice ID (optional)<input name="voiceId" placeholder="Leave blank for the default voice"></label>
+            <label>Status
+                <select name="status"><option value="active">On</option><option value="disabled">Switched off</option></select>
+            </label>
+        </div>
+        <label style="margin-top:12px">Greeting (optional)
+            <textarea name="greeting" rows="2" maxlength="1000" placeholder="Hello {name}, this is {agent} from {company}. Do you have a minute?"></textarea>
+        </label>
+        <div class="muted small" style="margin:4px 0 10px">You can use {name}, {role}, {company} and {agent}. Leave blank to use the standard greeting for the work type.</div>
+        <label>Instructions (optional)
+            <textarea name="instructions" rows="5" maxlength="6000" placeholder="How this agent should speak and behave, what to ask, what to avoid…"></textarea>
+        </label>
+        <div class="modal-actions">
+            <button type="button" class="btn ghost" data-close>Cancel</button>
+            <button type="submit" class="btn primary" id="agentSaveBtn">Save</button>
         </div>
     </form>
 </div>

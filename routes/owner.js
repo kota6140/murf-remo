@@ -25,6 +25,8 @@ import {
 import { readProposals, writeProposals, UPLOADS_DIR } from '../proposals_store.js';
 import { readDemoRequests, writeDemoRequests } from '../demo_store.js';
 import ownerCalls from './owner_calls.js';
+import ownerAgents from './owner_agents.js';
+import AgentService from '../services/agent_service.js';
 
 const router = express.Router();
 const STATUSES = ['pending', 'in_review', 'approved', 'rejected'];
@@ -67,6 +69,7 @@ router.get('/me', requireOwner, (req, res) => res.json({ success: true, email: r
 
 router.use(requireOwner);
 router.use(ownerCalls);
+router.use(ownerAgents);
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 function userRow(u, proposals) {
@@ -150,6 +153,8 @@ router.put('/users/:id', async (req, res) => {
             hash = await bcrypt.hash(body.password, 12);
         }
         const user = adminUpdateUser(req.params.id, fields, hash);
+        // An account that is no longer an admin cannot keep agents or their phone numbers.
+        if (fields.role === 'user') await AgentService.releaseUser(req.params.id).catch(() => {});
         res.json({ success: true, user: userRow(user, readProposals()) });
     } catch (e) { handle(res, e); }
 });
@@ -160,9 +165,10 @@ function removeFiles(proposal) {
     }
 }
 
-router.delete('/users/:id', (req, res) => {
+router.delete('/users/:id', async (req, res) => {
     try {
         deleteUser(req.params.id);
+        await AgentService.releaseUser(req.params.id).catch(() => {});
         let removed = 0;
         if (req.query.deleteSubmissions === '1') {
             const all = readProposals();

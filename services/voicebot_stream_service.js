@@ -5,6 +5,7 @@ import IntentService from './intent_service.js';
 import LatencyTracker from './latency_tracker.js';
 import ConversationMemory from './conversation_memory.js';
 import ScreeningEvaluator from './screening_evaluator.js';
+import AgentService, { ensureAgentSchema } from './agent_service.js';
 
 /**
  * services/voicebot_stream_service.js
@@ -152,6 +153,31 @@ export function isNoiseTranscript(transcript) {
 }
 
 /**
+ * Languages Remo speaks. Speech-to-text sometimes labels a short English phrase as Lithuanian or a name as Urdu;
+ * anything outside this set is treated as a wrong guess.
+ */
+const SUPPORTED_CALL_LANGS = new Set(['en', 'eng', 'hi', 'hin', 'te', 'tel']);
+
+export function isSupportedCallLanguage(code) {
+    return SUPPORTED_CALL_LANGS.has(String(code || '').toLowerCase());
+}
+
+/** The language to re-run speech-to-text in after a wrong guess: whatever the call has been in so far. */
+export function retryLanguageFor(sessionLanguage) {
+    const l = String(sessionLanguage || 'en').toLowerCase();
+    if (l === 'te' || l === 'tel') return 'tel';
+    if (l === 'hi' || l === 'hin') return 'hin';
+    return 'eng';
+}
+
+// Safety nets so a call can never stay deaf: how long past its audio the "speaking" state may last,
+// and the longest one caller turn may keep the bot busy (speech-to-text + AI + voice).
+const SPEECH_GRACE_MS = 2000;
+const MAX_TURN_MS = 20000;
+const HEALTH_CHECK_MS = 5000;
+const QUIET_WARN_MS = 5000;
+
+/**
  * Manages a live call session over the Plivo WebSocket stream.
  */
 export class CallSession {
@@ -167,6 +193,10 @@ export class CallSession {
         this.jobRole = params.role || '';
         this.companyName = params.company || '';
         this.campaignId = params.campaignId || null;
+        // Multi-agent: the agent (number, greeting, instructions, voice) this call belongs to.
+        this.agentId = params.agentId || '';
+        this.direction = params.direction === 'inbound' ? 'inbound' : 'outbound';
+        this.agent = null;
         this.campaign = null;
         this.campaignContext = null;
         this.questionPlan = null;
@@ -194,6 +224,14 @@ export class CallSession {
         this.currentQuestion = '';
         this.interruptedWithAnswer = false;
         this.activeSpeechTimer = null;
+        this.speechSeq = 0;               // bumps every time new speech is scheduled, so an old timer can never end newer speech
+
+        // Call health (see checkHealth)
+        this.lastInboundAudioAt = Date.now();
+        this.inboundFrames = 0;
+        this.processingSince = 0;
+        this.lastQuietLogAt = 0;
+        this.healthTimer = null;
 
         // Caller audio accumulation
         this.callerMulawChunks = [];
@@ -232,7 +270,11 @@ export class CallSession {
             name: defaultName,
             phone: this.phone || '',
             service: this.service,
-            job_role: this.jobRole || (this.service === 'sales' ? 'IT Solutions' : (this.service === 'support' ? 'Technical Support' : 'the open position')),
+            direction: this.direction,
+            job_role: this.jobRole || (this.service === 'sales' ? 'IT Solutions'
+                : (this.service === 'support' ? 'Technical Support'
+                    : (this.service === 'appointment' ? 'your appointment'
+                        : (this.service === 'receptionist' ? 'your enquiry' : 'the open position')))),
             company: this.companyName || (this.service === 'sales' ? 'Scorelabs Inc.' : 'Score Labs'),
             preferred_language: 'en'
         };
@@ -244,6 +286,7 @@ export class CallSession {
      */
     async init() {
         this.latencyTracker.markSessionReady();
+        this.startHealthMonitor();
 
         // Enforce fast DB enrichment before greeting (with 150ms timeout guard so it never blocks audio)
         await Promise.race([
@@ -269,14 +312,28 @@ export class CallSession {
      */
     async enrichContactFromDbAsync() {
         try {
+            // The agent decides greeting, instructions and voice. Cached after the Plivo answer step, so this is instant.
+            if (this.agentId && !this.agent) {
+                try { this.agent = await AgentService.get(this.agentId); } catch (e) { console.warn('[CallSession] Agent lookup note:', e.message); }
+                if (this.agent && this.agent.assigned_user_id && !this.ownerUserId) this.ownerUserId = this.agent.assigned_user_id;
+            }
+            const inbound = this.direction === 'inbound';
+
             let row = null;
             if (this.contactId) {
                 row = await db.get('SELECT * FROM contacts WHERE id = ?', [this.contactId]);
             }
-            if (!row && this.callId) {
+            if (!row && this.callId && !inbound) {
                 row = await db.get('SELECT * FROM contacts WHERE provider_call_id = ?', [this.callId]);
             }
-            if (!row && this.phone) {
+            if (!row && inbound && this.phone) {
+                // Incoming call: recognise the caller only among this admin's own contacts.
+                row = await db.get(
+                    'SELECT * FROM contacts WHERE phone LIKE ? AND owner_user_id = ? ORDER BY updated_at DESC LIMIT 1',
+                    [`%${this.phone.slice(-10)}%`, this.ownerUserId || '']
+                );
+            }
+            if (!row && this.phone && !inbound) {
                 // If service is already known (e.g. sales or support), strictly match within that service first!
                 if (this.service && this.service !== 'recruitment') {
                     row = await db.get(
@@ -291,7 +348,7 @@ export class CallSession {
                     );
                 }
             }
-            if (!row) {
+            if (!row && !inbound) {
                 const qRow = await db.get(`
                     SELECT cq.service as queue_service, c.*
                     FROM call_queue cq JOIN contacts c ON cq.contact_id = c.id
@@ -338,6 +395,11 @@ export class CallSession {
                 console.log(`[CallSession] Contact enriched from DB for ${this.contact.name} (${this.phone || 'N/A'}) — Service: ${this.service.toUpperCase()}`);
             }
 
+            // An outgoing call placed from a stamped contact keeps its agent even when it was only found in the DB.
+            if (!this.agent && row && row.agent_id) {
+                try { this.agent = await AgentService.get(row.agent_id); this.agentId = row.agent_id; } catch { /* default behaviour */ }
+            }
+
             // Load Campaign Configuration & Question Plan if linked to a Campaign
             if (this.campaignId) {
                 try {
@@ -372,9 +434,30 @@ export class CallSession {
                     console.warn('[CallSession] Campaign lookup note:', campErr.message);
                 }
             }
+
+            // Incoming calls, and calls taken by an appointment-setting or receptionist agent, are handled
+            // as the agent's work type. This runs last so a campaign or contact row cannot override it.
+            if (AgentService.decidesService(this.agent, this.direction)) {
+                this.service = this.agent.service;
+                this.contact.service = this.service;
+            }
         } catch (e) {
             console.warn('[CallSession] Contact enrichment note:', e.message);
         }
+    }
+
+    hasRealCallerName() {
+        const n = String((this.contact && this.contact.name) || '').trim();
+        return Boolean(n) && !/^(Caller|Candidate|Contact|Customer|Row)/.test(n);
+    }
+
+    /**
+     * The ElevenLabs voice for this call: the agent's own voice for English/Hindi when it has one,
+     * otherwise the default language-based voice (Telugu always keeps its Telugu voice).
+     */
+    pickVoiceId() {
+        if (this.agent && this.agent.voice_id && this.detectedLanguage !== 'te') return this.agent.voice_id;
+        return ElevenLabsService.getVoiceIdForLanguage(this.detectedLanguage);
     }
 
     /**
@@ -389,7 +472,16 @@ export class CallSession {
         this.greetingInProgress = true;
         this.latencyTracker.markGreetingStart();
 
-        const greeting = GeminiService.getOpeningGreeting(this.service, {
+        // An agent with its own greeting says that; {name}, {role}, {company} and {agent} are filled in.
+        const agentGreeting = this.agent && this.agent.greeting
+            ? AgentService.renderGreeting(this.agent.greeting, {
+                name: this.hasRealCallerName() ? this.contact.name : '',
+                role: this.contact.job_role,
+                company: this.contact.company,
+                agent: this.agent.name
+            })
+            : '';
+        const greeting = agentGreeting || GeminiService.getOpeningGreeting(this.service, {
             ...this.contact,
             campaignContext: this.campaignContext
         });
@@ -414,7 +506,7 @@ export class CallSession {
 
         try {
             // 1. Instant Cache Check (< 1ms delivery)
-            const voiceId = ElevenLabsService.getVoiceIdForLanguage(this.detectedLanguage);
+            const voiceId = this.pickVoiceId();
             const modelId = ElevenLabsService.selectTtsModel({ language: this.detectedLanguage, voiceId });
             const cachedAudio = ElevenLabsService.getCachedAudio(greeting, { voiceId, modelId });
             if (cachedAudio) {
@@ -439,8 +531,71 @@ export class CallSession {
     }
 
     /**
+     * Adds a piece of just-sent audio to the time the bot is expected to be speaking until.
+     * ulaw_8000 is 8000 bytes per second, and Plivo plays the pieces back to back.
+     */
+    noteSpeechChunk(bytes) {
+        this.aiSpeechEndTime = Math.max(this.aiSpeechEndTime, Date.now()) + (bytes / 8000) * 1000;
+    }
+
+    /**
+     * Switches the bot back to "listening" when its audio has finished playing (aiSpeechEndTime).
+     * A newer piece of speech replaces this timer, and the timer never depends on clock comparisons
+     * that could leave the bot stuck in "speaking" (and therefore deaf).
+     */
+    scheduleSpeechEnd() {
+        const seq = ++this.speechSeq;
+        if (this.activeSpeechTimer) clearTimeout(this.activeSpeechTimer);
+        const wait = Math.max(0, this.aiSpeechEndTime - Date.now());
+        this.activeSpeechTimer = setTimeout(() => {
+            this.activeSpeechTimer = null;
+            if (seq !== this.speechSeq || this.isClosed) return; // newer speech was queued; its own timer decides
+            if (this.isAiSpeaking) {
+                this.isAiSpeaking = false;
+                console.log('[CallSession] AI finished speaking turn. Now listening for caller.');
+            }
+        }, wait);
+    }
+
+    /** Starts the periodic health check for this call. */
+    startHealthMonitor() {
+        if (this.healthTimer) return;
+        this.healthTimer = setInterval(() => this.checkHealth(), HEALTH_CHECK_MS);
+        if (typeof this.healthTimer.unref === 'function') this.healthTimer.unref();
+    }
+
+    /**
+     * Last line of defence against a call going silent. Returns what it fixed (for tests and logs).
+     * - A caller turn stuck "busy" for too long is released.
+     * - "Speaking" that outlasted its audio is cleared, so the bot listens again.
+     * - A long stretch with no audio from the phone is logged, so a dropped stream is easy to spot.
+     */
+    checkHealth(now = Date.now()) {
+        if (this.isClosed) return null;
+        if (this.isProcessingTurn && this.processingSince && now - this.processingSince > MAX_TURN_MS) {
+            console.warn(`[CallSession] Watchdog: a turn has been busy for ${Math.round((now - this.processingSince) / 1000)}s. Releasing it so the bot can listen again.`);
+            this.isProcessingTurn = false;
+            this.processingSince = 0;
+            return 'processing-reset';
+        }
+        if (this.isAiSpeaking && now > this.aiSpeechEndTime + SPEECH_GRACE_MS) {
+            console.warn('[CallSession] Watchdog: the bot was still marked as speaking after its audio ended. Switching back to listening.');
+            this.isAiSpeaking = false;
+            if (this.activeSpeechTimer) { clearTimeout(this.activeSpeechTimer); this.activeSpeechTimer = null; }
+            return 'speaking-reset';
+        }
+        const quietMs = now - this.lastInboundAudioAt;
+        if (quietMs > QUIET_WARN_MS && now - this.lastQuietLogAt > 10000) {
+            this.lastQuietLogAt = now;
+            console.warn(`[CallSession] No audio received from the phone for ${Math.round(quietMs / 1000)}s (frames so far: ${this.inboundFrames}; speaking=${this.isAiSpeaking}, busy=${this.isProcessingTurn}). The call may have dropped its audio stream.`);
+            return 'no-audio';
+        }
+        return null;
+    }
+
+    /**
      * Sends raw mu-law audio buffer over WebSocket to Plivo.
-     * 
+     *
      * FIX-7: Duration calculation uses correct ulaw_8000 byte rate.
      * ulaw_8000 = 8000 bytes per second (8-bit samples at 8kHz, mono).
      */
@@ -471,13 +626,7 @@ export class CallSession {
                 console.log(`[CallSession] Sent ${audioBuffer.length} bytes of audio to Plivo (~${durationMs}ms at 8kHz ulaw)`);
             }
 
-            if (this.activeSpeechTimer) clearTimeout(this.activeSpeechTimer);
-            this.activeSpeechTimer = setTimeout(() => {
-                if (Date.now() >= this.aiSpeechEndTime && this.isAiSpeaking) {
-                    this.isAiSpeaking = false;
-                    console.log('[CallSession] AI finished speaking turn. Now listening for caller.');
-                }
-            }, durationMs);
+            this.scheduleSpeechEnd();
 
         } catch (e) {
             console.error('[CallSession] dispatchAudioBuffer error:', e.message);
@@ -496,7 +645,7 @@ export class CallSession {
             this.currentQuestion = text;
             this.latencyTracker.markTtsStart();
 
-            const voiceId = ElevenLabsService.getVoiceIdForLanguage(this.detectedLanguage);
+            const voiceId = this.pickVoiceId();
             const modelId = ElevenLabsService.selectTtsModel({ language: this.detectedLanguage, voiceId });
             const voiceName = (voiceId === (process.env.ELEVENLABS_VOICE_ID_CHAITRA || 'oyjIr5XAhIyRjfNq6spl')) ? 'Chaitra (Telugu)' : 'Pari (English/Hindi)';
             console.log(`[CallSession] Voice selected: ${voiceName} (VoiceID: ${voiceId}, Lang: ${this.detectedLanguage}, Model: ${modelId})`);
@@ -519,6 +668,7 @@ export class CallSession {
                         if (!chunk || this.isClosed || !this.ws || this.ws.readyState !== this.ws.OPEN) return;
                         streamedBytes += chunk.length;
                         this.isAiSpeaking = true;
+                        this.noteSpeechChunk(chunk.length);
 
                         // Mark first audio chunk sent for precise caller-endpoint-to-audible-response metric
                         if (!firstChunkSent) {
@@ -554,29 +704,17 @@ export class CallSession {
                 const simDurationMs = Math.max(wordCount * 320, 1400);
                 this.isAiSpeaking = true;
                 this.aiSpeechEndTime = Date.now() + simDurationMs;
-                if (this.activeSpeechTimer) clearTimeout(this.activeSpeechTimer);
-                this.activeSpeechTimer = setTimeout(() => {
-                    if (this.isAiSpeaking) {
-                        this.isAiSpeaking = false;
-                    }
-                }, simDurationMs);
+                this.scheduleSpeechEnd();
                 return;
             }
 
             // If audio was already streamed chunk-by-chunk, calculate total duration and set completion timer
             if (firstChunkSent) {
                 const totalDurationMs = Math.round((streamedBytes / 8000) * 1000);
-                this.aiSpeechEndTime = Date.now() + totalDurationMs;
+                // aiSpeechEndTime was built up chunk by chunk as the audio was sent
                 console.log(`[CallSession] Incremental stream complete: ${streamedBytes} bytes (~${totalDurationMs}ms at 8kHz ulaw)`);
                 this.latencyTracker.markAudioDispatched();
-
-                if (this.activeSpeechTimer) clearTimeout(this.activeSpeechTimer);
-                this.activeSpeechTimer = setTimeout(() => {
-                    if (Date.now() >= this.aiSpeechEndTime && this.isAiSpeaking) {
-                        this.isAiSpeaking = false;
-                        console.log('[CallSession] AI finished speaking turn. Now listening for caller.');
-                    }
-                }, totalDurationMs);
+                this.scheduleSpeechEnd();
             } else {
                 // If loaded from RAM cache, dispatch complete buffer instantly
                 this.latencyTracker.markFirstAudioChunkSent();
@@ -593,7 +731,17 @@ export class CallSession {
      * Processes inbound audio packets from the caller (Plivo media event).
      */
     async handleInboundAudio(mulawChunk) {
+        this.lastInboundAudioAt = Date.now();
+        this.inboundFrames++;
         if (this.isProcessingTurn || this.isClosed) return;
+
+        // Watchdog: never stay deaf. If the bot is still marked as speaking well after its audio ended
+        // (its end-of-speech timer was lost), go back to listening right now.
+        if (this.isAiSpeaking && this.lastInboundAudioAt > this.aiSpeechEndTime + SPEECH_GRACE_MS) {
+            console.warn('[CallSession] Watchdog: the bot was still marked as speaking after its audio ended. Switching back to listening.');
+            this.isAiSpeaking = false;
+            if (this.activeSpeechTimer) { clearTimeout(this.activeSpeechTimer); this.activeSpeechTimer = null; }
+        }
 
         const pcm16 = decodeMulawToPcm16(mulawChunk);
         const energy = calculateRms(pcm16);
@@ -621,6 +769,8 @@ export class CallSession {
                         clearTimeout(this.activeSpeechTimer);
                         this.activeSpeechTimer = null;
                     }
+                    this.speechSeq++;
+                    this.aiSpeechEndTime = 0; // the cut-off audio no longer counts toward the next reply
 
                     this.isAiSpeaking = false;
                     this.interruptedWithAnswer = true;
@@ -690,6 +840,7 @@ export class CallSession {
     async processCallerTurn() {
         if (this.callerMulawChunks.length === 0 || this.isProcessingTurn) return;
         this.isProcessingTurn = true;
+        this.processingSince = Date.now();
 
         // FIX-6: Unique ID for this turn — used to detect stale completions
         const turnId = ++this.currentTurnId;
@@ -713,7 +864,17 @@ export class CallSession {
         try {
             if (ElevenLabsService.isConfigured()) {
                 this.latencyTracker.markSttStart();
-                const sttResult = await ElevenLabsService.speechToText(wavBuffer, 'caller_turn.wav');
+                let sttResult = await ElevenLabsService.speechToText(wavBuffer, 'caller_turn.wav');
+                // A wrong language guess ("Five PM" as Lithuanian, a name written in Urdu script) gives a useless transcript.
+                // Re-run once in the language the call has been in; this only costs time when the guess was wrong.
+                if (sttResult.transcript && !isSupportedCallLanguage(sttResult.language)) {
+                    const retryLang = retryLanguageFor(this.detectedLanguage);
+                    console.log(`[CallSession] Speech-to-text guessed "${sttResult.language}", which is not English, Hindi or Telugu. Re-running as ${retryLang}.`);
+                    const again = await ElevenLabsService.speechToText(wavBuffer, 'caller_turn.wav', retryLang);
+                    sttResult = again && again.transcript
+                        ? { transcript: again.transcript, language: retryLang }
+                        : { transcript: sttResult.transcript, language: retryLang };
+                }
                 transcript = (sttResult.transcript || '').trim();
                 if (sttResult.language) {
                     detectedLanguage = sttResult.language;
@@ -894,7 +1055,10 @@ export class CallSession {
                     questionPlan: this.questionPlan,
                     memoryState: this.memory ? this.memory.getStateSummary() : null,
                     detectedLanguage: this.detectedLanguage,
-                    currentStage: this.currentStage
+                    currentStage: this.currentStage,
+                    agentName: this.agent ? this.agent.name : '',
+                    agentInstructions: this.agent ? this.agent.instructions : '',
+                    direction: this.direction
                 }
             );
 
@@ -1007,6 +1171,10 @@ export class CallSession {
             clearTimeout(this.activeSpeechTimer);
             this.activeSpeechTimer = null;
         }
+        if (this.healthTimer) {
+            clearInterval(this.healthTimer);
+            this.healthTimer = null;
+        }
 
         try {
             if (this.ws.readyState === this.ws.OPEN) {
@@ -1113,6 +1281,14 @@ export class CallSession {
                 ownerId
             ]);
 
+            // Record which agent took the call and whether it was incoming or outgoing.
+            try {
+                await ensureAgentSchema();
+                await db.run('UPDATE conversations SET agent_id = ?, direction = ? WHERE id = ?', [this.agent ? this.agent.id : null, this.direction, convId]);
+            } catch (agentErr) {
+                console.warn('[CallSession] Could not record the agent on the conversation:', agentErr.message);
+            }
+
             for (const msg of this.conversationHistory) {
                 await db.run(`
                     INSERT INTO transcript_messages (conversation_id, speaker, text, time_str, timestamp, language)
@@ -1187,7 +1363,9 @@ export function handleVoicebotWebsocket(ws, request) {
         callerName: callerName,
         role: role,
         company: company,
-        campaignId: parsedUrl.searchParams.get('campaignId') || parsedUrl.searchParams.get('campaign_id') || ''
+        campaignId: parsedUrl.searchParams.get('campaignId') || parsedUrl.searchParams.get('campaign_id') || '',
+        agentId: parsedUrl.searchParams.get('agentId') || '',
+        direction: parsedUrl.searchParams.get('direction') || ''
     };
 
     const session = new CallSession(ws, params);
@@ -1205,6 +1383,8 @@ export function handleVoicebotWebsocket(ws, request) {
                 if (headers) {
                     if (typeof headers === 'object') {
                         if (headers.campaignId || headers.campaign_id) session.campaignId = headers.campaignId || headers.campaign_id;
+                        if (headers.agentId) session.agentId = headers.agentId;
+                        if (headers.direction) session.direction = headers.direction === 'inbound' ? 'inbound' : 'outbound';
                         if (headers.contactId) session.contactId = headers.contactId;
                         if (headers.service) {
                             session.service = headers.service.toLowerCase().trim();
@@ -1235,6 +1415,8 @@ export function handleVoicebotWebsocket(ws, request) {
                             const key = k.trim();
                             const val = decodeURIComponent((v || '').trim());
                             if (key === 'campaignId' || key === 'campaign_id') session.campaignId = val;
+                            if (key === 'agentId' && val) session.agentId = val;
+                            if (key === 'direction' && val) session.direction = val === 'inbound' ? 'inbound' : 'outbound';
                             if (key === 'contactId') session.contactId = val;
                             if (key === 'service') {
                                 session.service = val.toLowerCase().trim();

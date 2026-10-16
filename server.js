@@ -151,6 +151,10 @@ app.get('/service/:slug', (req, res, next) => {
 });
 
 app.get('/how-it-works', (req, res) => res.sendFile(path.join(__dirname, 'how-it-works.html')));
+// Platform pages linked from the footer
+app.get('/overview', (req, res) => res.sendFile(path.join(__dirname, 'overview.html')));
+app.get('/enterprise', (req, res) => res.sendFile(path.join(__dirname, 'enterprise.html')));
+app.get('/security', (req, res) => res.sendFile(path.join(__dirname, 'security.html')));
 // (not /services: that path is blocked above as a private source folder)
 const INDUSTRY_SLUGS = ['healthcare', 'recruitment', 'sales', 'education', 'realestate', 'support', 'finance', 'automotive'];
 app.get('/industry/:slug', (req, res, next) => (INDUSTRY_SLUGS.includes(req.params.slug) ? res.sendFile(path.join(__dirname, 'industry.html')) : next()));

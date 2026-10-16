@@ -84,10 +84,10 @@ const AdminClient = {
    * POST /api/admin/{service}/upload
    */
   async uploadExcel(service, fileOrData) {
-    const validServices = ['recruitment', 'sales', 'support'];
+    const validServices = ['recruitment', 'sales', 'support', 'appointment', 'receptionist'];
     const s = String(service || '').toLowerCase();
     if (!validServices.includes(s)) {
-      throw new Error(`Invalid service "${service}". Must be recruitment, sales, or support.`);
+      throw new Error(`Invalid service "${service}". Must be recruitment, sales, support, appointment, or receptionist.`);
     }
 
     if (fileOrData instanceof File || fileOrData instanceof Blob) {
@@ -111,17 +111,25 @@ const AdminClient = {
    * Generic Campaign Start for any service
    * POST /api/admin/{service}/start
    */
-  async startCalling(service, fileId = 'temp-file-id') {
-    const validServices = ['recruitment', 'sales', 'support'];
+  async startCalling(service, fileId = 'temp-file-id', agentId = '') {
+    const validServices = ['recruitment', 'sales', 'support', 'appointment', 'receptionist'];
     const s = String(service || '').toLowerCase();
     if (!validServices.includes(s)) {
-      throw new Error(`Invalid service "${service}". Must be recruitment, sales, or support.`);
+      throw new Error(`Invalid service "${service}". Must be recruitment, sales, support, appointment, or receptionist.`);
     }
 
     return this.request(`/api/admin/${s}/start`, {
       method: 'POST',
-      body: JSON.stringify({ fileId })
+      body: JSON.stringify({ fileId, agentId })
     });
+  },
+
+  /**
+   * The agents (phone number + behaviour) the owner assigned to this admin.
+   * GET /api/admin/agents
+   */
+  async getAgents() {
+    return this.request('/api/admin/agents');
   },
 
   // Service-specific convenience methods
@@ -320,10 +328,11 @@ const AdminClient = {
     });
   },
 
-  async startCampaign(id) {
+  async startCampaign(id, agentId = '') {
     if (!id) throw new Error('Campaign ID is required');
     return this.request(`/api/admin/campaigns/${encodeURIComponent(id)}/start`, {
-      method: 'POST'
+      method: 'POST',
+      body: JSON.stringify({ agentId })
     });
   },
 

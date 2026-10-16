@@ -1893,6 +1893,18 @@ body.dashboard-body {
   border: 1px solid #CBD5E1;
 }
 
+.badge-appointment {
+  background: #F0FDF4;
+  color: #15803D;
+  border: 1px solid #BBF7D0;
+}
+
+.badge-receptionist {
+  background: #FAF5FF;
+  color: #7E22CE;
+  border: 1px solid #E9D5FF;
+}
+
 .badge-status-completed {
   background: #F0FDF4;
   color: #15803D;
@@ -2005,6 +2017,8 @@ body.dashboard-body {
   border-radius: 10px;
   margin-bottom: 24px;
   width: fit-content;
+  max-width: 100%;
+  flex-wrap: wrap;
 }
 
 .service-tab-btn {
@@ -3604,7 +3618,7 @@ body.dashboard-body {
 
 .service-selector-row {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 10px;
   margin-bottom: 16px;
 }

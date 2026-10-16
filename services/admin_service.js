@@ -50,7 +50,7 @@ export default class AdminService {
         const completedCalls = dbCompleted;
 
         const servicesData = {};
-        for (const s of ['recruitment', 'sales', 'support']) {
+        for (const s of ['recruitment', 'sales', 'support', 'appointment', 'receptionist']) {
             const sRow = (await db.get(`
                 SELECT
                     COUNT(*) as total,
@@ -116,6 +116,8 @@ export default class AdminService {
             recruitmentCalls: servicesData.recruitment.completed + servicesData.recruitment.inProgress,
             salesCalls: servicesData.sales.completed + servicesData.sales.inProgress,
             supportCalls: servicesData.support.completed + servicesData.support.inProgress,
+            appointmentCalls: servicesData.appointment.completed + servicesData.appointment.inProgress,
+            receptionistCalls: servicesData.receptionist.completed + servicesData.receptionist.inProgress,
             acceptedCount: dbAccepted,
             rejectedCount: dbRejected,
             onHoldCount: dbOnHold,

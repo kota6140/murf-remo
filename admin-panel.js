@@ -3,7 +3,7 @@
     const $ = (s, r = document) => r.querySelector(s);
     const $$ = (s, r = document) => [...r.querySelectorAll(s)];
     const STATUS_LABEL = { pending: 'Pending', in_review: 'In review', approved: 'Approved', rejected: 'Rejected' };
-    const state = { users: [], subs: [], demos: [], stats: null, tab: 'overview', editingId: null, openSubId: null, openDemoId: null };
+    const state = { users: [], subs: [], demos: [], agents: [], stats: null, tab: 'overview', editingId: null, editingAgentId: null, openSubId: null, openDemoId: null };
 
     // ── helpers ─────────────────────────────────────────────────────────────
     const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -92,8 +92,8 @@
 
     async function refreshAll() {
         try {
-            const [s, u, f, dm] = await Promise.all([api('/stats'), api('/users'), api('/submissions'), api('/demo-requests')]);
-            state.stats = s.stats; state.users = u.users; state.subs = f.submissions; state.demos = dm.requests;
+            const [s, u, f, dm, ag] = await Promise.all([api('/stats'), api('/users'), api('/submissions'), api('/demo-requests'), api('/agents').catch(() => ({ agents: state.agents }))]);
+            state.stats = s.stats; state.users = u.users; state.subs = f.submissions; state.demos = dm.requests; state.agents = ag.agents;
             renderAll();
         } catch (e) { toast(e.message, true); }
     }
@@ -101,7 +101,8 @@
     function renderAll() {
         $('#navSubCount').textContent = state.subs.length;
         $('#navUserCount').textContent = state.users.length;
-        renderStats(); renderRecent(); renderSubs(); renderDemos(); renderUsers();
+        $('#navAgentCount').textContent = state.agents.length;
+        renderStats(); renderRecent(); renderSubs(); renderDemos(); renderUsers(); renderAgents();
     }
 
     // ── overview ────────────────────────────────────────────────────────────
@@ -315,22 +316,123 @@
         pw.required = !u; pw.placeholder = u ? 'Leave blank to keep current password' : 'Min. 6 characters';
         $('#pwLabel').firstChild.textContent = u ? 'New password' : 'Password *';
         if (u) for (const el of form.elements) if (el.name && el.name !== 'password') el.value = u[el.name] ?? '';
+        renderUserAgents(u);
         openEl($('#userModal')); form.elements.name.focus();
     }
+
+    // Agent tick-boxes inside the user form (only for admins): ticked agents belong to this admin.
+    function renderUserAgents(u) {
+        const box = $('#userAgentsBox'), isAdmin = $('#userForm').elements.role.value === 'admin';
+        box.hidden = !isAdmin;
+        if (!isAdmin) return;
+        const mine = new Set((u ? state.agents.filter(a => a.assignedUserId === u.id) : []).map(a => a.id));
+        $('#userAgentsList').innerHTML = state.agents.length
+            ? state.agents.map(a => {
+                const other = a.assignedUserId && (!u || a.assignedUserId !== u.id);
+                return `<label class="check"><input type="checkbox" name="agentIds" value="${esc(a.id)}" ${mine.has(a.id) ? 'checked' : ''}>
+                    <span>${esc(a.name)} <span class="muted small">${esc(fmtNumber(a.phoneNumber))} · ${esc(SERVICE_LABEL[a.service] || a.service)}${other ? ` · now with ${esc(a.assignedName || 'another admin')}` : ''}</span></span></label>`;
+            }).join('')
+            : '<div class="muted small">No agents yet. Add one on the Agents tab.</div>';
+    }
+    $('#userForm').elements.role.addEventListener('change', () => renderUserAgents(state.editingId ? state.users.find(x => x.id === state.editingId) : null));
     $('#addUserBtn').addEventListener('click', () => openUserForm(null));
 
     $('#userForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const form = e.target, err = $('#userFormError'), btn = $('#userSaveBtn');
-        const body = Object.fromEntries(new FormData(form).entries());
+        const fd = new FormData(form);
+        const agentIds = fd.getAll('agentIds');
+        const body = Object.fromEntries(fd.entries());
+        delete body.agentIds;
         if (!body.password) delete body.password;
         err.hidden = true; btn.disabled = true;
         try {
-            if (state.editingId) await api('/users/' + encodeURIComponent(state.editingId), { method: 'PUT', body });
-            else await api('/users', { method: 'POST', body });
+            const saved = state.editingId
+                ? await api('/users/' + encodeURIComponent(state.editingId), { method: 'PUT', body })
+                : await api('/users', { method: 'POST', body });
+            if (body.role === 'admin' && !$('#userAgentsBox').hidden && saved.user) {
+                await api('/users/' + encodeURIComponent(saved.user.id) + '/agents', { method: 'PUT', body: { agentIds } });
+            }
             closeEl($('#userModal')); await refreshAll(); toast(state.editingId ? 'User updated' : 'User added');
         } catch (ex) { err.textContent = ex.message; err.hidden = false; }
         finally { btn.disabled = false; }
+    });
+
+    // ── agents: any number of them, each with its own number, behaviour and admin ──
+    const SERVICE_LABEL = { recruitment: 'Recruitment', sales: 'Sales', support: 'Support', appointment: 'Appointment setting', receptionist: 'Receptionist' };
+    const fmtNumber = (n) => n ? '+' + String(n).replace(/^\+/, '') : '—';
+
+    function renderAgents() {
+        const q = $('#agentSearch').value.trim().toLowerCase(), f = $('#agentFilter').value;
+        const rows = state.agents.filter(a =>
+            (!q || [a.name, a.phoneNumber, a.assignedName, a.assignedEmail, a.service].some(v => (v || '').toLowerCase().includes(q))) &&
+            (!f || (f === 'unassigned' && !a.assignedUserId) || (f === 'disabled' && a.status === 'disabled') || a.service === f));
+        $('#agentTable').innerHTML = !rows.length
+            ? `<tbody><tr><td class="empty">${state.agents.length ? 'No agents match your filters.' : 'No agents yet. Click "+ Add agent" to create the first one.'}</td></tr></tbody>`
+            : `<thead><tr><th>Agent</th><th>Phone number</th><th>Work type</th><th>Given to admin</th><th>Status</th><th></th></tr></thead><tbody>` +
+            rows.map(a => `<tr>
+                <td>${esc(a.name)}<div class="sub">${a.instructions ? 'Has its own instructions' : 'Standard behaviour'}${a.greeting ? ' · own greeting' : ''}${a.voiceId ? ' · own voice' : ''}</div></td>
+                <td>${esc(fmtNumber(a.phoneNumber))}</td>
+                <td>${esc(SERVICE_LABEL[a.service] || a.service)}</td>
+                <td>${a.assignedUserId ? `${esc(a.assignedName || 'Admin')}<div class="sub">${esc(a.assignedEmail)}</div>` : '<span class="owner-none">Not given to anyone</span>'}</td>
+                <td>${a.status === 'disabled' ? '<span class="pill bad">Switched off</span>' : '<span class="pill ok">On</span>'}</td>
+                <td class="actions">
+                    <button class="btn sm" data-agent-edit="${esc(a.id)}">Edit</button>
+                    <button class="btn sm danger" data-agent-del="${esc(a.id)}">Delete</button>
+                </td></tr>`).join('') + '</tbody>';
+    }
+    $('#agentSearch').addEventListener('input', renderAgents);
+    $('#agentFilter').addEventListener('change', renderAgents);
+
+    function openAgentForm(id) {
+        const form = $('#agentForm'), a = id ? state.agents.find(x => x.id === id) : null;
+        state.editingAgentId = id || null; form.reset(); $('#agentFormError').hidden = true;
+        $('#agentModalTitle').textContent = a ? 'Edit agent' : 'Add agent';
+        $('#agentAdminSelect').innerHTML = '<option value="">Not given to anyone yet</option>' +
+            state.users.filter(u => u.role === 'admin' && !u.disabled).map(u => `<option value="${esc(u.id)}">${esc(u.name)} (${esc(u.email)})</option>`).join('');
+        if (a) {
+            form.elements.name.value = a.name; form.elements.phoneNumber.value = fmtNumber(a.phoneNumber).replace('—', '');
+            form.elements.service.value = a.service; form.elements.assignedUserId.value = a.assignedUserId || '';
+            form.elements.voiceId.value = a.voiceId || ''; form.elements.status.value = a.status || 'active';
+            form.elements.greeting.value = a.greeting || ''; form.elements.instructions.value = a.instructions || '';
+        }
+        openEl($('#agentModal')); form.elements.name.focus();
+    }
+    $('#addAgentBtn').addEventListener('click', () => openAgentForm(null));
+
+    $('#agentForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const err = $('#agentFormError'), btn = $('#agentSaveBtn');
+        const body = Object.fromEntries(new FormData(e.target).entries());
+        const assignTo = body.assignedUserId || null;
+        err.hidden = true; btn.disabled = true;
+        try {
+            if (state.editingAgentId) {
+                delete body.assignedUserId;
+                await api('/agents/' + encodeURIComponent(state.editingAgentId), { method: 'PUT', body });
+                const cur = state.agents.find(x => x.id === state.editingAgentId);
+                if ((cur && cur.assignedUserId || null) !== assignTo) {
+                    await api('/agents/' + encodeURIComponent(state.editingAgentId) + '/assign', { method: 'PUT', body: { userId: assignTo } });
+                }
+            } else {
+                await api('/agents', { method: 'POST', body: { ...body, assignedUserId: assignTo } });
+            }
+            closeEl($('#agentModal')); await refreshAll(); toast(state.editingAgentId ? 'Agent updated' : 'Agent added');
+        } catch (ex) { err.textContent = ex.message; err.hidden = false; }
+        finally { btn.disabled = false; }
+    });
+
+    $('#agentTable').addEventListener('click', async (e) => {
+        const b = e.target.closest('button'); if (!b) return;
+        if (b.dataset.agentEdit) return openAgentForm(b.dataset.agentEdit);
+        const a = state.agents.find(x => x.id === b.dataset.agentDel); if (!a) return;
+        const r = await confirmDialog({
+            title: `Delete ${a.name}?`,
+            text: `${fmtNumber(a.phoneNumber)} will stop being answered by this agent, and ${a.assignedName || 'its admin'} will no longer be able to use it. Past calls are kept.`
+        });
+        if (!r.ok) return;
+        try { await api('/agents/' + encodeURIComponent(a.id), { method: 'DELETE' }); await refreshAll(); toast('Agent deleted'); }
+        catch (ex) { toast(ex.message, true); }
     });
 
     // ── admin workspace: conversations / call history / scheduled calls / contact sheets ──

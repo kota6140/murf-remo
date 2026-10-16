@@ -74,55 +74,211 @@
     g.stroke();
   };
 
-  // recruitment: six candidates are scored, re-rank themselves, and the top two get shortlisted
-  scenes.recruitment = (g, W, H, t, st) => {
-    const T = 6.4, cyc = Math.floor(t / T), s = t % T;
-    if (st.cyc !== cyc) {
-      const r = rng(cyc * 7 + 3);
-      st.cyc = cyc;
-      st.sc = Array.from({ length: 6 }, () => 42 + Math.floor(r() * 56));
-      const order = st.sc.map((v, i) => [v, i]).sort((x, y) => y[0] - x[0]);
-      st.rank = []; order.forEach((o, k) => { st.rank[o[1]] = k; });
+  // recruitment: Remo takes a screening call, a candidate card scores itself live, gets shortlisted and an interview lands in the calendar
+  const RC = [
+    { n: 'Priya Nair', r: 'Senior Backend Engineer', i: 'PN', sc: 94, slot: 'Tue · 10:30', rows: [['Skills match', 0.96, 'Node · Go · AWS'], ['Experience', 0.88, '7 years'], ['Notice period', 0.8, '30 days']] },
+    { n: 'Arjun Mehta', r: 'Product Designer', i: 'AM', sc: 91, slot: 'Wed · 14:00', rows: [['Skills match', 0.92, 'Figma · Systems'], ['Experience', 0.8, '5 years'], ['Notice period', 0.98, 'Immediate']] },
+    { n: 'Sara Khan', r: 'Data Analyst', i: 'SK', sc: 89, slot: 'Thu · 11:15', rows: [['Skills match', 0.9, 'SQL · Python · BI'], ['Experience', 0.75, '4 years'], ['Notice period', 0.9, '15 days']] },
+    { n: 'Rohan Iyer', r: 'Sales Manager', i: 'RI', sc: 92, slot: 'Fri · 16:00', rows: [['Skills match', 0.93, 'B2B · SaaS'], ['Experience', 0.9, '8 years'], ['Notice period', 0.7, '45 days']] }
+  ];
+  scenes.recruitment = (g, W, H, t0, st) => {
+    const t = Math.max(0, t0);
+    const T = 8, cyc = Math.floor(t / T), s = t % T, F = '"Outfit", sans-serif', M = '"JetBrains Mono", monospace';
+    const cx = W / 2, cw = W * 0.8, ch = H * 0.5, cy0 = H * 0.215, u = W / 700;
+    const cardCy = cy0 + ch / 2;
+
+    if (!st.p) {
+      const r = rng(11);
+      st.p = Array.from({ length: 34 }, () => ({ a: r() * TAU, v: 0.05 + r() * 0.07, o: r(), z: 0.6 + r() * 1.2 }));
+      st.sp = Array.from({ length: 22 }, () => ({ a: r() * TAU, v: 60 + r() * 120, z: 1.5 + r() * 2.2 }));
     }
-    const names = ['P', 'V', 'A', 'R', 'S', 'M'];
-    const x0 = W * 0.07, rw = W * 0.86, top = H * 0.04, rh = H * 0.088, gap = H * 0.017;
-    const sorted = ease(clamp((s - 1.7) / 1.3)), pick = ease(clamp((s - 3.3) / 0.5));
-    const fade = 1 - clamp((s - 5.8) / 0.5), fin = clamp(s / 0.3);
-    for (let i = 0; i < 6; i++) {
-      const slot = lerp(i, st.rank[i], sorted);
-      const y = top + slot * (rh + gap), win = st.rank[i] < 2;
-      const hot = win ? pick : 0;
-      const al = fade * fin * (win ? 1 : 1 - pick * 0.5);
-      g.save(); g.globalAlpha = al;
-      g.fillStyle = hot > 0 ? rgba(0.1 + 0.14 * hot, 1.1) : 'rgba(255,255,255,0.06)';
-      rr(g, x0, y, rw, rh, 14); g.fill();
-      g.strokeStyle = hot > 0 ? rgba(0.4 + 0.6 * hot, 1.2) : 'rgba(255,255,255,0.14)'; g.lineWidth = 1.4;
-      if (hot > 0) { g.shadowColor = rgba(1); g.shadowBlur = 18 * hot; }
-      rr(g, x0, y, rw, rh, 14); g.stroke(); g.shadowBlur = 0;
-      // avatar
-      g.fillStyle = rgba(0.25 + (i % 3) * 0.1, 1.15); g.beginPath(); g.arc(x0 + rh * 0.56, y + rh / 2, rh * 0.3, 0, TAU); g.fill();
-      g.fillStyle = '#fff'; g.font = `700 ${rh * 0.34}px "Outfit", sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.fillText(names[i], x0 + rh * 0.56, y + rh / 2 + 1);
-      // name line + score bar
-      g.fillStyle = 'rgba(255,255,255,0.3)'; rr(g, x0 + rh * 1.1, y + rh * 0.22, rw * 0.2, rh * 0.14, 4); g.fill();
-      const bx = x0 + rh * 1.1, bw = rw - rh * 1.1 - rh * 2.3, by = y + rh * 0.55;
-      g.fillStyle = 'rgba(255,255,255,0.1)'; rr(g, bx, by, bw, rh * 0.2, 5); g.fill();
-      const grow = ease(clamp((s - 0.2 - i * 0.12) / 1.0)), v = st.sc[i] * grow;
-      g.fillStyle = rgba(1, win && hot > 0 ? 1.35 : 1.1); rr(g, bx, by, Math.max(0, bw * (v / 100)), rh * 0.2, 5); g.fill();
-      // score
-      g.fillStyle = '#fff'; g.font = `700 ${rh * 0.36}px "JetBrains Mono", monospace`; g.textAlign = 'right';
-      g.fillText(String(Math.round(v)), x0 + rw - rh * 1.15, y + rh / 2 + 1);
-      // shortlist tick
-      if (hot > 0) {
-        const cx = x0 + rw - rh * 0.55, cy = y + rh / 2, k = 0.5 + hot * 0.5;
-        g.fillStyle = rgba(1, 1.15); g.beginPath(); g.arc(cx, cy, rh * 0.3 * k, 0, TAU); g.fill();
-        g.strokeStyle = '#fff'; g.lineWidth = 2.6; g.lineCap = 'round'; g.lineJoin = 'round';
-        g.beginPath(); g.moveTo(cx - rh * 0.12 * k, cy); g.lineTo(cx - rh * 0.03 * k, cy + rh * 0.1 * k); g.lineTo(cx + rh * 0.14 * k, cy - rh * 0.1 * k); g.stroke();
+
+    /* ---- ambient: breathing glow, slow dashed orbits, applicants drifting in */
+    const gl = g.createRadialGradient(cx, cardCy, 0, cx, cardCy, W * 0.62);
+    gl.addColorStop(0, rgba(0.2 + 0.05 * Math.sin(t * 1.3), 1.2)); gl.addColorStop(1, rgba(0));
+    g.fillStyle = gl; g.fillRect(0, 0, W, H);
+    [[0.5, 0.16, 18, 1], [0.62, 0.1, 26, -1]].forEach(([k, a, d, dir]) => {
+      g.save(); g.strokeStyle = rgba(a, 1.3); g.lineWidth = 1.2; g.setLineDash([d, d * 1.6]); g.lineDashOffset = dir * t * 14;
+      g.beginPath(); g.ellipse(cx, cardCy, W * k, H * k * 0.78, 0, 0, TAU); g.stroke(); g.restore();
+    });
+    st.p.forEach((o) => {
+      const k = (t * o.v + o.o) % 1, rad = lerp(0.62, 0.12, k), ang = o.a + k * 1.3;
+      const x = cx + Math.cos(ang) * W * rad, y = cardCy + Math.sin(ang) * H * rad * 0.78;
+      const al = Math.sin(k * Math.PI) * 0.8;
+      g.fillStyle = rgba(al, 1.4); g.shadowColor = rgba(1); g.shadowBlur = 8;
+      g.beginPath(); g.arc(x, y, o.z * u * 1.7, 0, TAU); g.fill(); g.shadowBlur = 0;
+    });
+
+    /* ---- one candidate card, drawn at any moment of its own timeline */
+    function card(p, ss, ox, al, entering) {
+      const y = cy0, pd = cw * 0.055, av = ch * 0.115;
+      const enter = entering ? ease(clamp(ss / 0.9)) : 1;
+      const xx = cx - cw / 2 + ox + (1 - enter) * W * 0.35;
+      const A = al * (entering ? clamp(ss / 0.45) : 1);
+      g.save(); g.globalAlpha = A;
+      // body
+      const bg = g.createLinearGradient(0, y, 0, y + ch);
+      bg.addColorStop(0, 'rgba(28,38,76,0.96)'); bg.addColorStop(1, 'rgba(12,18,42,0.96)');
+      g.shadowColor = rgba(0.55, 1.1); g.shadowBlur = 44 * u; g.fillStyle = bg; rr(g, xx, y, cw, ch, 24 * u); g.fill(); g.shadowBlur = 0;
+      g.strokeStyle = rgba(0.5, 1.25); g.lineWidth = 1.4; rr(g, xx, y, cw, ch, 24 * u); g.stroke();
+      const sh = g.createLinearGradient(xx, y, xx + cw, y + ch * 0.6);
+      sh.addColorStop(0, 'rgba(255,255,255,0.1)'); sh.addColorStop(0.5, 'rgba(255,255,255,0)');
+      g.fillStyle = sh; rr(g, xx, y, cw, ch, 24 * u); g.fill();
+
+      // avatar with progress ring
+      const ax = xx + pd + av, ay = y + pd + av, ring = ease(clamp((ss - 0.35) / 1.1));
+      g.lineWidth = 4 * u; g.strokeStyle = 'rgba(255,255,255,0.1)'; g.beginPath(); g.arc(ax, ay, av, 0, TAU); g.stroke();
+      g.strokeStyle = rgba(1, 1.3); g.shadowColor = rgba(1); g.shadowBlur = 10;
+      g.beginPath(); g.arc(ax, ay, av, -Math.PI / 2, -Math.PI / 2 + TAU * ring); g.stroke(); g.shadowBlur = 0;
+      const ag = g.createLinearGradient(ax - av, ay - av, ax + av, ay + av);
+      ag.addColorStop(0, rgba(0.9, 1.25)); ag.addColorStop(1, rgba(0.9, 0.7));
+      g.fillStyle = ag; g.beginPath(); g.arc(ax, ay, av * 0.78, 0, TAU); g.fill();
+      g.fillStyle = '#fff'; g.font = `700 ${av * 0.62}px ${F}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(p.i, ax, ay + 1);
+      // name + role
+      g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+      g.fillStyle = '#fff'; g.font = `700 ${ch * 0.066}px ${F}`; g.fillText(p.n, ax + av + 16 * u, ay - av * 0.08);
+      g.fillStyle = 'rgba(200,214,255,0.62)'; g.font = `400 ${ch * 0.044}px ${F}`; g.fillText(p.r, ax + av + 16 * u, ay + av * 0.62);
+
+      // score ring: spins while Remo listens, then settles on the score
+      const sr = av * 1.05, sx = xx + cw - pd - sr, sy = ay, fill = ease(clamp((ss - 3.1) / 1.2));
+      g.lineWidth = 5 * u; g.strokeStyle = 'rgba(255,255,255,0.1)'; g.beginPath(); g.arc(sx, sy, sr, 0, TAU); g.stroke();
+      if (ss < 3.1) {
+        const a0 = ss * 4.2; g.strokeStyle = rgba(0.85, 1.3); g.beginPath(); g.arc(sx, sy, sr, a0, a0 + 1.5); g.stroke();
+      } else {
+        g.strokeStyle = rgba(1, 1.35); g.shadowColor = rgba(1); g.shadowBlur = 14;
+        g.beginPath(); g.arc(sx, sy, sr, -Math.PI / 2, -Math.PI / 2 + TAU * (p.sc / 100) * fill); g.stroke(); g.shadowBlur = 0;
+      }
+      g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.font = `700 ${sr * 0.72}px ${M}`;
+      g.fillText(ss < 3.1 ? '...'.slice(0, 1 + (Math.floor(ss * 3) % 3)) : String(Math.round(p.sc * fill)), sx, sy - sr * 0.08);
+      g.fillStyle = 'rgba(200,214,255,0.6)'; g.font = `600 ${sr * 0.24}px ${M}`; g.fillText('MATCH', sx, sy + sr * 0.5);
+
+      // divider
+      const dy = y + pd * 2 + av * 2 - 2;
+      g.fillStyle = 'rgba(255,255,255,0.08)'; g.fillRect(xx + pd, dy, cw - pd * 2, 1);
+
+      // criteria rows, filled one after another as the call goes on
+      const top = dy + pd * 0.55, rh = (y + ch - pd * 0.7 - top) / 3, bw = cw - pd * 2;
+      p.rows.forEach((row, i) => {
+        const ry = top + i * rh, st0 = 1.3 + i * 0.75, k = ease(clamp((ss - st0) / 0.9)), done = ss > st0 + 0.85;
+        const ty = ry + rh * 0.4;
+        g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+        g.fillStyle = 'rgba(214,224,255,0.72)'; g.font = `500 ${ch * 0.04}px ${F}`; g.fillText(row[0], xx + pd, ty);
+        const vx = xx + pd + bw;
+        g.textAlign = 'right';
+        if (done) {
+          const pop = ease(clamp((ss - st0 - 0.85) / 0.3)), cyy = ty - ch * 0.013;
+          g.globalAlpha = A * pop; g.fillStyle = '#fff'; g.font = `600 ${ch * 0.038}px ${M}`; g.fillText(row[2], vx - 24 * u, ty);
+          g.fillStyle = rgba(1, 1.2); g.beginPath(); g.arc(vx - 8 * u, cyy, 8 * u * (0.6 + 0.4 * pop), 0, TAU); g.fill();
+          g.strokeStyle = '#fff'; g.lineWidth = 2 * u; g.lineCap = 'round'; g.lineJoin = 'round';
+          g.beginPath(); g.moveTo(vx - 12 * u, cyy); g.lineTo(vx - 8.5 * u, cyy + 3.5 * u); g.lineTo(vx - 3.5 * u, cyy - 3.5 * u); g.stroke();
+          g.globalAlpha = A;
+        }
+        const by = ry + rh * 0.58, bh = 7 * u;
+        g.fillStyle = 'rgba(255,255,255,0.09)'; rr(g, xx + pd, by, bw, bh, bh / 2); g.fill();
+        const fw = bw * row[1] * k;
+        if (fw > 1) {
+          const bf = g.createLinearGradient(xx + pd, 0, xx + pd + bw, 0);
+          bf.addColorStop(0, rgba(0.8, 0.9)); bf.addColorStop(1, rgba(1, 1.45));
+          g.fillStyle = bf; g.shadowColor = rgba(0.9); g.shadowBlur = 8; rr(g, xx + pd, by, Math.max(bh, fw), bh, bh / 2); g.fill(); g.shadowBlur = 0;
+          if (k < 1) { g.fillStyle = '#fff'; g.beginPath(); g.arc(xx + pd + fw, by + bh / 2, 3.2 * u, 0, TAU); g.fill(); }
+        }
+      });
+
+      // SHORTLISTED badge on the corner of the card
+      const bs = ss - 4.5;
+      if (bs > 0) {
+        const pw = cw * 0.31, ph = ch * 0.105, k = ease(clamp(bs / 0.35)), over = 1 + Math.sin(clamp(bs / 0.35) * Math.PI) * 0.18;
+        const bx = xx + cw - pw - pd * 0.7, by2 = y - ph * 0.5;
+        g.save(); g.translate(bx + pw / 2, by2 + ph / 2); g.scale(k * over, k * over); g.translate(-pw / 2, -ph / 2);
+        const pg = g.createLinearGradient(0, 0, pw, 0); pg.addColorStop(0, rgba(1, 1.1)); pg.addColorStop(1, rgba(1, 1.5));
+        g.shadowColor = rgba(1); g.shadowBlur = 24 + 10 * Math.sin(ss * 5); g.fillStyle = pg; rr(g, 0, 0, pw, ph, ph / 2); g.fill(); g.shadowBlur = 0;
+        g.strokeStyle = '#fff'; g.lineWidth = 2.4 * u; g.lineCap = 'round'; g.lineJoin = 'round';
+        g.beginPath(); g.moveTo(ph * 0.3, ph * 0.52); g.lineTo(ph * 0.42, ph * 0.66); g.lineTo(ph * 0.66, ph * 0.36); g.stroke();
+        g.fillStyle = '#fff'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.font = `700 ${ph * 0.4}px ${M}`; g.fillText('SHORTLISTED', ph * 0.85, ph / 2 + 1);
+        g.restore();
+        // a small burst of sparks
+        if (bs < 1.3) {
+          const bx2 = bx + pw / 2, by3 = by2 + ph / 2;
+          st.sp.forEach((o) => {
+            const d = o.v * u * ease(clamp(bs / 1.1)), a = clamp(1 - bs / 1.3);
+            g.fillStyle = rgba(a, 1.5); g.beginPath(); g.arc(bx2 + Math.cos(o.a) * d, by3 + Math.sin(o.a) * d + bs * bs * 18 * u, o.z * u * a, 0, TAU); g.fill();
+          });
+        }
+      }
+
+      // interview booked chip drops in under the card
+      const cs = ss - 5.3;
+      if (cs > 0) {
+        const k = ease(clamp(cs / 0.55)), w2 = cw * 0.72, h2 = H * 0.082, px = xx + cw / 2 - w2 / 2, py = y + ch + H * 0.03 + (1 - k) * 16 * u;
+        g.globalAlpha = A * k;
+        g.shadowColor = rgba(0.6, 1.1); g.shadowBlur = 26 * u; g.fillStyle = 'rgba(14,22,50,0.95)'; rr(g, px, py, w2, h2, h2 / 2); g.fill(); g.shadowBlur = 0;
+        g.strokeStyle = rgba(0.7, 1.3); g.lineWidth = 1.3; rr(g, px, py, w2, h2, h2 / 2); g.stroke();
+        const ix = px + h2 * 0.5, iy = py + h2 / 2, is = h2 * 0.27;
+        g.fillStyle = '#fff'; rr(g, ix - is, iy - is * 0.8, is * 2, is * 1.9, 5 * u); g.fill();
+        g.fillStyle = rgba(1, 1.2); rr(g, ix - is, iy - is * 0.8, is * 2, is * 0.65, 5 * u); g.fill(); g.fillRect(ix - is, iy - is * 0.45, is * 2, is * 0.3);
+        g.fillStyle = '#fff'; rr(g, ix - is * 0.55, iy - is * 1.05, 3 * u, is * 0.55, 1.5 * u); g.fill(); rr(g, ix + is * 0.55 - 3 * u, iy - is * 1.05, 3 * u, is * 0.55, 1.5 * u); g.fill();
+        g.fillStyle = rgba(1, 1.2); [-0.55, 0, 0.55].forEach((dx) => [0.2, 0.62].forEach((dy) => g.fillRect(ix + dx * is - 2.2 * u, iy + dy * is - 2.2 * u, 4.4 * u, 4.4 * u)));
+        g.fillStyle = '#fff'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.font = `600 ${h2 * 0.36}px ${F}`; g.fillText('Interview booked', px + h2 * 1.05, iy + 1);
+        g.textAlign = 'right'; g.fillStyle = rgba(1, 1.5); g.font = `700 ${h2 * 0.34}px ${M}`; g.fillText(p.slot, px + w2 - h2 * 0.5, iy + 1);
       }
       g.restore();
+      g.textBaseline = 'alphabetic'; g.textAlign = 'left';
     }
-    g.textBaseline = 'alphabetic';
+
+    // queued candidates stacked behind
+    [[1, 0.9, 0.32], [2, 0.8, 0.16]].forEach(([n, sc, a]) => {
+      const w2 = cw * sc, y2 = cy0 - n * 11 * u + Math.sin(t * 1.2 + n) * 1.5;
+      g.fillStyle = `rgba(30,42,86,${a})`; rr(g, cx - w2 / 2, y2, w2, ch, 22 * u); g.fill();
+      g.strokeStyle = rgba(a * 1.3, 1.2); g.lineWidth = 1; rr(g, cx - w2 / 2, y2, w2, ch, 22 * u); g.stroke();
+    });
+
+    // the card that just finished slides away while the next one arrives
+    if (cyc > 0 && s < 0.9) {
+      const k = ease(clamp(s / 0.9));
+      card(RC[(cyc - 1) % RC.length], 7.99, -k * W * 0.34, 1 - k, false);
+    }
+    card(RC[cyc % RC.length], s, 0, 1, true);
+
+    /* ---- Remo on the call, above the card */
+    const active = s > 0.35 && s < 4.5, ph = H * 0.085, pw = W * 0.5, px = cx - pw / 2, py = H * 0.05;
+    if (active) {
+      const gb = py + ph, ge = cy0;
+      const bg2 = g.createLinearGradient(0, gb, 0, ge); bg2.addColorStop(0, rgba(0.9, 1.4)); bg2.addColorStop(1, rgba(0.2));
+      g.strokeStyle = bg2; g.lineWidth = 1.6; g.beginPath(); g.moveTo(cx, gb); g.lineTo(cx, ge); g.stroke();
+      for (let i = 0; i < 3; i++) {
+        const k = (t * 1.2 + i / 3) % 1;
+        g.fillStyle = '#fff'; g.shadowColor = rgba(1); g.shadowBlur = 8; g.globalAlpha = 1 - k * 0.7;
+        g.beginPath(); g.arc(cx, lerp(gb, ge, k), 2.4 * u, 0, TAU); g.fill(); g.shadowBlur = 0; g.globalAlpha = 1;
+      }
+    }
+    g.shadowColor = rgba(0.7, 1.1); g.shadowBlur = 30 * u; g.fillStyle = 'rgba(12,19,44,0.96)'; rr(g, px, py, pw, ph, ph / 2); g.fill(); g.shadowBlur = 0;
+    g.strokeStyle = rgba(active ? 0.8 : 0.4, 1.3); g.lineWidth = 1.4; rr(g, px, py, pw, ph, ph / 2); g.stroke();
+    const ox2 = px + ph * 0.62, oy2 = py + ph / 2, orb = ph * 0.3;
+    if (active) {
+      const k = (t * 0.9) % 1;
+      g.strokeStyle = rgba((1 - k) * 0.7, 1.4); g.lineWidth = 1.6; g.beginPath(); g.arc(ox2, oy2, orb + k * ph * 0.42, 0, TAU); g.stroke();
+    }
+    const og = g.createRadialGradient(ox2 - orb * 0.3, oy2 - orb * 0.3, 0, ox2, oy2, orb);
+    og.addColorStop(0, '#fff'); og.addColorStop(0.35, rgba(1, 1.5)); og.addColorStop(1, rgba(1, 0.8));
+    g.fillStyle = og; g.shadowColor = rgba(1); g.shadowBlur = 16; g.beginPath(); g.arc(ox2, oy2, orb, 0, TAU); g.fill(); g.shadowBlur = 0;
+    g.textBaseline = 'middle'; g.textAlign = 'left';
+    g.fillStyle = '#fff'; g.font = `700 ${ph * 0.3}px ${F}`; g.fillText('Remo', ox2 + orb + 12 * u, oy2 - ph * 0.13);
+    g.fillStyle = 'rgba(200,214,255,0.65)'; g.font = `500 ${ph * 0.22}px ${F}`;
+    g.fillText(s < 0.35 ? 'Dialling...' : active ? 'Screening call' : 'Call complete', ox2 + orb + 12 * u, oy2 + ph * 0.2);
+    // voice bars
+    const nb = 13, bx0 = px + pw * 0.5;
+    for (let i = 0; i < nb; i++) {
+      const amp = active ? 0.2 + 0.8 * Math.abs(Math.sin(t * 6.5 + i * 0.85) * Math.sin(t * 2.7 + i * 0.4)) : 0.1;
+      const bh = ph * 0.56 * amp, bx = bx0 + i * 7.5 * u;
+      g.fillStyle = rgba(active ? 0.95 : 0.4, 1.4); rr(g, bx, oy2 - bh / 2, 3.4 * u, Math.max(3, bh), 2); g.fill();
+    }
+    // call timer
+    const secs = Math.floor(clamp(s - 0.35, 0, 4.15) / 4.15 * 134), tm = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+    g.textAlign = 'right'; g.fillStyle = active ? '#fff' : 'rgba(200,214,255,0.6)'; g.font = `600 ${ph * 0.27}px ${M}`; g.fillText(tm, px + pw - ph * 0.45, oy2 + 1);
+    g.textAlign = 'left'; g.textBaseline = 'alphabetic';
   };
+  scenes.recruitment.still = 5.9;
 
   // sales: a radar sweeps the market and lights up every lead
   scenes.sales = (g, W, H, t, st) => {
@@ -328,7 +484,7 @@
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
-      if (reduce) draw(3.2);
+      if (reduce) draw(scenes[slug].still || 3.2);
     }
     function draw(t) { g.clearRect(0, 0, W, H); g.lineCap = 'round'; scenes[slug](g, W, H, t, st); }
     const t0 = performance.now();
@@ -336,7 +492,7 @@
     resize();
     window.addEventListener('resize', resize);
     if ('IntersectionObserver' in window) new IntersectionObserver((es) => { visible = es[0].isIntersecting; }, { threshold: 0 }).observe(wrap);
-    if (reduce) draw(3.2); else requestAnimationFrame(loop);
+    if (reduce) draw(scenes[slug].still || 3.2); else requestAnimationFrame(loop);
   }
 
   /* ------------------------------------------------------- 2. live card */

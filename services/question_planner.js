@@ -260,6 +260,106 @@ Return ONLY a valid JSON array matching this format:
             }
         ];
     }
+
+    /**
+     * Appointment-setting plan: purpose, day, time, name, then a read-back confirmation.
+     */
+    static generateAppointmentPlan(knowledge = {}) {
+        const company = knowledge.company_name || 'our team';
+        const services = Array.isArray(knowledge.services_offered) && knowledge.services_offered.length
+            ? ` (for example ${knowledge.services_offered.slice(0, 3).join(', ')})`
+            : '';
+        return [
+            {
+                id: "q_appt_purpose",
+                stage: "PURPOSE",
+                text: `What would you like to book with ${company}${services}?`,
+                field_to_collect: "appointment_purpose",
+                mandatory: true
+            },
+            {
+                id: "q_appt_date",
+                stage: "PREFERRED_DATE",
+                text: "Which day would suit you best?",
+                field_to_collect: "preferred_date",
+                mandatory: true
+            },
+            {
+                id: "q_appt_time",
+                stage: "PREFERRED_TIME",
+                text: knowledge.working_hours
+                    ? `What time works for you? We are open ${knowledge.working_hours}.`
+                    : "What time works best for you?",
+                field_to_collect: "preferred_time",
+                mandatory: true
+            },
+            {
+                id: "q_appt_name",
+                stage: "CONTACT_DETAILS",
+                text: "May I have your name for the booking?",
+                field_to_collect: "caller_name",
+                mandatory: true
+            },
+            {
+                id: "q_appt_confirm",
+                stage: "CONFIRMATION",
+                text: knowledge.closing_note || "Let me repeat the details back to confirm. Is there anything else I can help you with?",
+                field_to_collect: "confirmation",
+                mandatory: false
+            }
+        ];
+    }
+
+    /**
+     * Receptionist plan: who is calling and why, answer from the document, take a message if needed.
+     */
+    static generateReceptionistPlan(knowledge = {}) {
+        const company = knowledge.company_name || 'our team';
+        return [
+            {
+                id: "q_recep_reason",
+                stage: "REASON_FOR_CALL",
+                text: `How may I help you with ${company} today?`,
+                field_to_collect: "reason_for_call",
+                mandatory: true
+            },
+            {
+                id: "q_recep_name",
+                stage: "CALLER_DETAILS",
+                text: "May I have your name, please?",
+                field_to_collect: "caller_name",
+                mandatory: false
+            },
+            {
+                id: "q_recep_callback",
+                stage: "MESSAGE",
+                text: knowledge.message_policy
+                    ? "I'll pass that to our team. What is the best number and time for a callback?"
+                    : "What is the best number and time for our team to call you back?",
+                field_to_collect: "callback_number",
+                mandatory: false
+            },
+            {
+                id: "q_recep_wrapup",
+                stage: "CLOSING",
+                text: knowledge.closing_note || "Is there anything else I can help you with?",
+                field_to_collect: "additional_needs",
+                mandatory: false
+            }
+        ];
+    }
+
+    /**
+     * Picks the right plan for a work type (used when a campaign document is read).
+     */
+    static async generatePlanFor(service, extracted = {}) {
+        const s = String(service || 'recruitment').toLowerCase();
+        if (s === 'sales') return this.generateSalesPlan(extracted);
+        if (s === 'support') return this.generateSupportPlan(extracted);
+        if (s === 'appointment') return this.generateAppointmentPlan(extracted);
+        if (s === 'receptionist') return this.generateReceptionistPlan(extracted);
+        return this.generateRecruitmentPlan(extracted);
+    }
 }
 
 export default QuestionPlanner;

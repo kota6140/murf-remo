@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enterprise | AI Voice Operations at Scale | TakeRemo</title>
+  <meta name="description"
+    content="One owner console, any number of teams. Each team gets its own AI agents, phone numbers and data. Run voice operations at the scale of your business.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+    rel="stylesheet">
+  <link rel="icon" type="image/jpeg" href="/assets/tab.jpeg">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="TakeRemo">
+  <meta property="og:title" content="TakeRemo for Enterprise">
+  <meta property="og:description" content="Voice operations at the scale of your business.">
+  <meta property="og:image" content="https://takeremo.com/assets/tab.jpeg">
+  <link rel="stylesheet" href="/styles.css?v=20261015c">
+  <link rel="stylesheet" href="/service.css?v=12">
+  <link rel="stylesheet" href="/platform.css?v=1">
+  <script>document.documentElement.classList.add('sv-js');</script>
+</head>
+
+<body class="sv pf" data-slug="enterprise" data-dark-page style="--a:96,140,255;--a2:168,85,247;--ad:59,100,235;--on-a:#FFFFFF">
+  <main class="pf-main">
+
+    <!-- 1. HERO: one owner, teams, agents, numbers -->
+    <section class="pf-hero" data-theme="dark">
+      <div class="sv-wrap pf-hero-grid">
+        <div class="pf-copy">
+          <span class="sv-eyebrow"><i></i>Enterprise</span>
+          <h1 class="pf-h1">Voice operations, <em>at the scale of your business.</em></h1>
+          <p class="pf-lead">One owner console, any number of teams. Every team gets its own agents, its own phone
+            numbers and its own calls, kept apart from every other team.</p>
+          <div class="pf-actions">
+            <button type="button" class="sv-btn sv-btn-primary" data-open-demo>Talk to our team
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12" />
+                <polyline points="12 5 19 12 12 19" />
+              </svg></button>
+            <a class="sv-btn sv-btn-ghost" href="#teams">See how teams work</a>
+          </div>
+          <div class="pf-proof">
+            <div><b>No limit</b>On agents</div>
+            <div><b>1 each</b>Phone number per agent</div>
+            <div><b>Kept apart</b>Calls per team</div>
+          </div>
+        </div>
+        <div class="pf-stage" id="pf-stage" aria-hidden="true"></div>
+      </div>
+      <div class="pf-cue" aria-hidden="true"><span></span></div>
+    </section>
+
+    <!-- 2. TEAM EXPLORER -->
+    <section class="pf-sec" id="teams" data-theme="light">
+      <div class="sv-wrap">
+        <header class="pf-head sv-reveal">
+          <span class="pf-kick">One owner. Any number of teams.</span>
+          <h2 class="sv-h2">Give every team its own agents, numbers and data.</h2>
+          <p class="sv-sub">The owner creates agents and hands them to the right admin. Pick a team to see how it looks
+            from the inside.</p>
+        </header>
+        <div class="pf-teams sv-reveal">
+          <div class="pf-team-list" id="pf-team-list" role="tablist" aria-label="Example teams"></div>
+          <div class="pf-panel" id="pf-panel" role="tabpanel"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. MISSION CONTROL -->
+    <section class="pf-sec" id="control" data-theme="dark">
+      <div class="sv-wrap">
+        <div class="pf-split">
+          <div class="sv-reveal">
+            <span class="pf-kick">Run it at volume</span>
+            <h2 class="sv-h2">Big lists, without babysitting.</h2>
+            <p class="sv-sub">Load a contact sheet and let Remo work through it, while you keep your hand on the wheel.</p>
+            <ul class="pf-bul">
+              <li><b>Bring your own sheets.</b> Excel or CSV files up to 25 MB.</li>
+              <li><b>Bad rows are caught first.</b> Invalid and duplicate phone numbers are flagged before anyone is dialled.</li>
+              <li><b>Pause, resume or cancel</b> a run at any moment.</li>
+              <li><b>Results in Excel.</b> Every contact's outcome, per campaign, one download away.</li>
+            </ul>
+          </div>
+          <div class="sv-reveal" style="--d:0.12s">
+            <div class="pf-console" id="pf-console">
+              <div class="pf-console-top">
+                <div><b>Q4 renewals</b><small>Outbound · Sales agent · +91 80 ···· 2201</small></div>
+                <span class="pf-state" id="pf-state">RUNNING</span>
+              </div>
+              <div class="pf-track"><div class="pf-fill" id="pf-fill"></div></div>
+              <div class="pf-pct"><span id="pf-pct">0% dialled</span><span id="pf-eta">Remo is working through the list</span></div>
+              <div class="pf-kpis">
+                <div class="pf-kpi"><b id="k-q">0</b><span>Queued</span></div>
+                <div class="pf-kpi"><b id="k-p">0</b><span>In progress</span></div>
+                <div class="pf-kpi"><b id="k-c">0</b><span>Completed</span></div>
+                <div class="pf-kpi"><b id="k-f">0</b><span>No answer</span></div>
+              </div>
+              <div class="pf-btns" role="group" aria-label="Campaign controls">
+                <button type="button" class="pf-btn2" data-act="pause"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>Pause</button>
+                <button type="button" class="pf-btn2 act" data-act="resume"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="7 4 20 12 7 20" /></svg>Resume</button>
+                <button type="button" class="pf-btn2" data-act="cancel"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" /></svg>Cancel</button>
+              </div>
+              <p class="pf-hint">Try the buttons. This is an illustration with sample numbers.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. DOCUMENT → BEHAVIOUR -->
+    <section class="pf-sec" id="knowledge" data-theme="light">
+      <div class="sv-wrap">
+        <header class="pf-head sv-reveal">
+          <span class="pf-kick">Knowledge in, behaviour out</span>
+          <h2 class="sv-h2">Your documents become the agent's knowledge.</h2>
+          <p class="sv-sub">Upload a job description, a product guide, a support manual or your business information.
+            Remo reads it, shows you what it understood, and you correct anything before a single call is made.</p>
+        </header>
+        <div class="pf-flow sv-reveal">
+          <div><h4>1 · You upload</h4>
+            <div class="pf-pdf"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          </div>
+          <div><h4>2 · Remo understands</h4>
+            <div class="pf-fields">
+              <div class="pf-field"><small>Business</small><b>Smile Dental Clinic</b></div>
+              <div class="pf-field"><small>Working hours</small><b>Mon–Sat · 9am to 6pm</b></div>
+              <div class="pf-field"><small>Services</small><b>Check-up · Cleaning · Root canal</b></div>
+              <div class="pf-field"><small>Booking rule</small><b>30-minute slots</b></div>
+            </div>
+          </div>
+          <div><h4>3 · Callers hear it</h4>
+            <div class="pf-say">
+              <div class="b q">Are you open on Saturday?</div>
+              <div class="b a">Yes, we're open Saturday from nine to six. Shall I book you a slot?</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. ROLLOUT -->
+    <section class="pf-sec" id="rollout" data-theme="dark">
+      <div class="sv-wrap">
+        <header class="pf-head c sv-reveal">
+          <span class="pf-kick">Rollout</span>
+          <h2 class="sv-h2">From first idea to every team, in four steps.</h2>
+          <p class="sv-sub">Start small, prove it, then grow. Nothing about the first pilot is wasted when you scale.</p>
+        </header>
+        <div class="pf-line" id="pf-line">
+          <div class="pf-st"><span class="no">01</span><h3>Pick the first use case</h3><p>Hiring screens, lead follow-ups, a busy front desk. One job, clearly defined.</p></div>
+          <div class="pf-st"><span class="no">02</span><h3>Set up numbers and agents</h3><p>An agent for each team, each with its own phone number, greeting and instructions.</p></div>
+          <div class="pf-st"><span class="no">03</span><h3>Pilot with one team</h3><p>Place real calls, read the transcripts, adjust the instructions until it sounds right.</p></div>
+          <div class="pf-st"><span class="no">04</span><h3>Roll out across teams</h3><p>Add agents and admins as you grow. There is no cap on either.</p></div>
+        </div>
+        <div class="pf-marq" aria-label="Industries Remo works in">
+          <div id="pf-marq"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sv-cta" data-theme="dark">
+      <h2>Let's design your rollout.</h2>
+      <p>Tell us how your teams work today. We'll show you how Remo fits.</p>
+      <button type="button" class="sv-btn sv-btn-primary" data-open-demo>Talk to our team
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+          stroke-linecap="round" stroke-linejoin="round">
+          <line x1="5" y1="12" x2="19" y2="12" />
+          <polyline points="12 5 19 12 12 19" />
+        </svg></button>
+      <span class="sv-cta-note">No commitment · We reply with a plan, not a sales script</span>
+    </section>
+  </main>
+
+  <script src="/service.js?v=13"></script>
+  <script src="/platform.js?v=1"></script>
+</body>
+
+</html>

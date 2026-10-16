@@ -76,6 +76,16 @@
             </svg>
             <span class="nav-label">Campaigns</span>
           </button>
+          <button type="button" class="sidebar-nav-item" data-nav="agents" data-tooltip="My Agents">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="4" y="8" width="16" height="12" rx="3" />
+              <path d="M12 4v4" />
+              <circle cx="9" cy="14" r="1.2" />
+              <circle cx="15" cy="14" r="1.2" />
+            </svg>
+            <span class="nav-label">My Agents</span>
+            <span class="nav-badge-pill" id="nav-agents-count">0</span>
+          </button>
         </div>
 
         <!-- CALLING & DIALOGUES GROUP -->
@@ -487,6 +497,8 @@
               <button type="button" class="camp-filter-pill" data-filter="recruitment">Recruitment (<span id="cnt-filter-rec">0</span>)</button>
               <button type="button" class="camp-filter-pill" data-filter="sales">Sales (<span id="cnt-filter-sales">0</span>)</button>
               <button type="button" class="camp-filter-pill" data-filter="support">Support (<span id="cnt-filter-support">0</span>)</button>
+              <button type="button" class="camp-filter-pill" data-filter="appointment">Appointment Setting (<span id="cnt-filter-appointment">0</span>)</button>
+              <button type="button" class="camp-filter-pill" data-filter="receptionist">Receptionist (<span id="cnt-filter-receptionist">0</span>)</button>
             </div>
 
             <!-- Saved Campaigns Cards Grid -->
@@ -685,6 +697,38 @@
         </div>
 
         <!-- ==================================================================
+             VIEW: MY AGENTS (/api/admin/agents) - only the agents the owner gave this admin
+             ================================================================== -->
+        <div class="admin-view-panel" id="view-agents">
+          <div class="admin-card">
+            <div class="admin-card-header">
+              <div class="admin-card-title-group">
+                <h3>My Agents</h3>
+                <p>Each agent has its own phone number and way of speaking. Outgoing calls come from the agent's number, and calls to that number are answered by the agent.</p>
+              </div>
+            </div>
+            <div class="table-responsive">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>Agent</th>
+                    <th>Phone Number</th>
+                    <th>Work Type</th>
+                    <th>Greeting</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="agents-table-body">
+                  <tr>
+                    <td colspan="5" style="text-align: center; padding: 28px; color: #94A3B8;">Loading your agents...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================================================================
              VIEW 3: VOICE CAMPAIGNS (/api/admin/{service}/upload & start)
              ================================================================== -->
         <div class="admin-view-panel" id="view-campaigns">
@@ -700,6 +744,13 @@
               </button>
             </div>
 
+            <!-- Which of this admin's agents places the calls (shown only when the owner gave them agents) -->
+            <div id="campaign-agent-row" style="display: none; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 14px;">
+              <label for="campaign-agent-select" style="font-size: 0.82rem; font-weight: 600; color: #475569;">Calling agent</label>
+              <select class="admin-select" id="campaign-agent-select" aria-label="Agent that places the calls"></select>
+              <span id="campaign-agent-hint" style="font-size: 0.78rem; color: #94A3B8;"></span>
+            </div>
+
             <!-- Service Selection Tabs -->
             <div class="service-tabs-bar" id="campaign-service-tabs">
               <button type="button" class="service-tab-btn active" data-service="recruitment">
@@ -710,6 +761,12 @@
               </button>
               <button type="button" class="service-tab-btn" data-service="support">
                 <span>🎧 Customer Support</span>
+              </button>
+              <button type="button" class="service-tab-btn" data-service="appointment">
+                <span>📅 Appointment Setting</span>
+              </button>
+              <button type="button" class="service-tab-btn" data-service="receptionist">
+                <span>☎️ Receptionist</span>
               </button>
             </div>
 
@@ -797,6 +854,8 @@
                   <option value="recruitment">Recruitment</option>
                   <option value="sales">Sales</option>
                   <option value="support">Customer Support</option>
+                  <option value="appointment">Appointment Setting</option>
+                  <option value="receptionist">Receptionist</option>
                 </select>
 
                 <select class="admin-select" id="convs-status-select">
@@ -862,6 +921,8 @@
                   <option value="recruitment">Recruitment</option>
                   <option value="sales">Sales</option>
                   <option value="support">Customer Support</option>
+                  <option value="appointment">Appointment Setting</option>
+                  <option value="receptionist">Receptionist</option>
                 </select>
 
                 <select class="admin-select" id="calls-status-select">
@@ -1178,6 +1239,16 @@
               <span class="service-choice-title">Customer Support</span>
               <span class="service-choice-sub">Diagnostic Triage</span>
             </div>
+            <div class="service-choice-btn" data-service-choice="appointment">
+              <span class="service-choice-icon">📅</span>
+              <span class="service-choice-title">Appointment Setting</span>
+              <span class="service-choice-sub">Book &amp; Reschedule</span>
+            </div>
+            <div class="service-choice-btn" data-service-choice="receptionist">
+              <span class="service-choice-icon">☎️</span>
+              <span class="service-choice-title">Receptionist</span>
+              <span class="service-choice-sub">Answer &amp; Take Messages</span>
+            </div>
           </div>
           <input type="hidden" id="camp-input-service" value="recruitment">
         </div>
@@ -1299,6 +1370,46 @@
               <div class="editable-field-row">
                 <span class="editable-field-label">Escalation Policy:</span>
                 <input type="text" id="edit-support-escalation" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Escalate to senior technician if unresolved after 2 steps">
+              </div>
+            </div>
+
+            <!-- Appointment Setting Extracted Fields -->
+            <div id="preview-fields-appointment" style="display: none;">
+              <div class="editable-field-row">
+                <span class="editable-field-label">Business Name:</span>
+                <input type="text" id="edit-appt-company" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Smile Dental Clinic">
+              </div>
+              <div class="editable-field-row">
+                <span class="editable-field-label">Services / Appointment Types:</span>
+                <input type="text" id="edit-appt-services" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Check-up, Teeth cleaning, Root canal">
+              </div>
+              <div class="editable-field-row">
+                <span class="editable-field-label">Working Hours:</span>
+                <input type="text" id="edit-appt-hours" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Mon-Sat 9am to 6pm">
+              </div>
+              <div class="editable-field-row">
+                <span class="editable-field-label">Booking Rules:</span>
+                <input type="text" id="edit-appt-rules" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. 30-minute slots, cancel at least 4 hours before">
+              </div>
+            </div>
+
+            <!-- Receptionist Extracted Fields -->
+            <div id="preview-fields-receptionist" style="display: none;">
+              <div class="editable-field-row">
+                <span class="editable-field-label">Business Name:</span>
+                <input type="text" id="edit-recep-company" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Smile Dental Clinic">
+              </div>
+              <div class="editable-field-row">
+                <span class="editable-field-label">Services / Topics Handled:</span>
+                <input type="text" id="edit-recep-services" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Appointments, Fees, Directions">
+              </div>
+              <div class="editable-field-row">
+                <span class="editable-field-label">Working Hours:</span>
+                <input type="text" id="edit-recep-hours" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Mon-Sat 9am to 6pm">
+              </div>
+              <div class="editable-field-row">
+                <span class="editable-field-label">Message Policy:</span>
+                <input type="text" id="edit-recep-policy" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Take name, number and reason; team calls back within one working day">
               </div>
             </div>
 
@@ -1575,10 +1686,14 @@
         if (viewName === 'dashboard') {
           loadDashboardStats();
           loadRecentCalls();
+          loadMyAgents();
         } else if (viewName === 'users') {
           loadUsers(1);
         } else if (viewName === 'campaigns') {
           setupCampaignView();
+          loadMyAgents();
+        } else if (viewName === 'agents') {
+          loadMyAgents();
         } else if (viewName === 'conversations') {
           loadConversations();
         } else if (viewName === 'calls') {
@@ -1619,6 +1734,62 @@
       };
       let activeConfirmService = null;
       let activeValErrorsService = null;
+
+      // ------------------------------------------------------------------
+      // My Agents: the agents (number + behaviour) the owner gave this admin
+      // ------------------------------------------------------------------
+      // (var, not let/const: the view switcher above may call loadMyAgents before this line has run)
+      var myAgents = [];
+      var AGENT_SERVICE_NAME = { recruitment: 'Recruitment', sales: 'Sales', support: 'Support', appointment: 'Appointment setting', receptionist: 'Receptionist' };
+      var agentEsc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+      // Colour class for a work-type badge (recruitment, sales, support, appointment, receptionist)
+      function serviceBadgeClass(service) {
+        return { recruitment: 'badge-recruitment', sales: 'badge-sales', appointment: 'badge-appointment', receptionist: 'badge-receptionist' }[service] || 'badge-support';
+      }
+
+      function getSelectedAgentId() {
+        const sel = document.getElementById('campaign-agent-select');
+        return sel && sel.value ? sel.value : '';
+      }
+
+      async function loadMyAgents() {
+        try {
+          const res = await AdminClient.getAgents();
+          myAgents = Array.isArray(res.agents) ? res.agents : [];
+        } catch (err) {
+          myAgents = [];
+        }
+        const count = document.getElementById('nav-agents-count');
+        if (count) count.textContent = myAgents.length;
+
+        const body = document.getElementById('agents-table-body');
+        if (body) {
+          body.innerHTML = myAgents.length
+            ? myAgents.map((a) => `<tr>
+                <td><strong>${agentEsc(a.name)}</strong></td>
+                <td style="font-family: monospace;">+${agentEsc(String(a.phoneNumber).replace(/^\+/, ''))}</td>
+                <td>${agentEsc(AGENT_SERVICE_NAME[a.service] || a.service)}</td>
+                <td style="max-width: 320px;">${a.greeting ? agentEsc(a.greeting) : '<span style="color:#94A3B8;">Standard greeting</span>'}</td>
+                <td>${a.status === 'disabled' ? 'Switched off' : 'On'}</td></tr>`).join('')
+            : `<tr><td colspan="5" style="text-align: center; padding: 28px; color: #94A3B8;">No agents have been given to your account yet. Calls use the shared company number until the owner assigns you an agent.</td></tr>`;
+        }
+
+        // Campaign view: pick which agent places the calls (only when this admin has agents)
+        const row = document.getElementById('campaign-agent-row');
+        const sel = document.getElementById('campaign-agent-select');
+        if (row && sel) {
+          const active = myAgents.filter((a) => a.status !== 'disabled');
+          const keep = sel.value;
+          sel.innerHTML = '<option value="">Automatic (best match for the work type)</option>' +
+            active.map((a) => `<option value="${agentEsc(a.id)}">${agentEsc(a.name)} · +${agentEsc(String(a.phoneNumber).replace(/^\+/, ''))} · ${agentEsc(AGENT_SERVICE_NAME[a.service] || a.service)}</option>`).join('');
+          if (active.some((a) => a.id === keep)) sel.value = keep;
+          row.style.display = active.length ? 'flex' : 'none';
+          const hint = document.getElementById('campaign-agent-hint');
+          if (hint) hint.textContent = active.length ? 'Calls go out from this agent\'s phone number.' : '';
+        }
+      }
+      loadMyAgents();
 
       async function loadDashboardStats() {
         try {
@@ -1984,7 +2155,7 @@
           batchConfirmStart.innerHTML = `<span class="auth-spinner"></span> <span>Queueing Calls...</span>`;
 
           try {
-            const res = await AdminClient.startCalling(service, fileId);
+            const res = await AdminClient.startCalling(service, fileId, getSelectedAgentId());
             closeBatchConfirmModal();
             showAdminAlert(`✓ Sequential outbound calling queue initialized for ${service.toUpperCase()} (${res.total || res.valid || 0} valid contacts queued). Calling 1 contact at a time.`, 'success');
             loadDashboardStats();
@@ -2047,7 +2218,7 @@
             return;
           }
           tbody.innerHTML = calls.map(c => {
-            const sBadgeClass = c.service === 'recruitment' ? 'badge-recruitment' : c.service === 'sales' ? 'badge-sales' : 'badge-support';
+            const sBadgeClass = serviceBadgeClass(c.service);
             const statusBadgeClass = c.status === 'completed' ? 'badge-status-completed' : c.status === 'in-progress' ? 'badge-status-calling' : 'badge-status-callback';
             return `
               <tr>
@@ -2179,7 +2350,9 @@
       const serviceDefaults = {
         recruitment: { label: 'Recruitment', defaultFile: 'candidates.xlsx', records: '120 candidates' },
         sales: { label: 'Outbound Sales', defaultFile: 'prospects.xlsx', records: '85 prospects' },
-        support: { label: 'Customer Support', defaultFile: 'support_tickets.xlsx', records: '50 tickets' }
+        support: { label: 'Customer Support', defaultFile: 'support_tickets.xlsx', records: '50 tickets' },
+        appointment: { label: 'Appointment Setting', defaultFile: 'appointments.xlsx', records: '60 contacts' },
+        receptionist: { label: 'Receptionist', defaultFile: 'follow_ups.xlsx', records: '40 contacts' }
       };
 
       function setupCampaignView() {
@@ -2311,7 +2484,7 @@
           startCampaignBtn.innerHTML = `<span class="auth-spinner"></span> <span>Initiating AI Telephony...</span>`;
 
           try {
-            const res = await AdminClient.startCalling(selectedCampaignService, stagedFileId);
+            const res = await AdminClient.startCalling(selectedCampaignService, stagedFileId, getSelectedAgentId());
 
             if (alertBox) {
               alertBox.className = 'admin-alert-banner success';
@@ -2450,6 +2623,10 @@
             pdfLabel.innerHTML = '<span class="form-step-badge">4</span>Upload Job Description Document (.pdf, .docx, .doc) (Required)';
           } else if (service === 'sales') {
             pdfLabel.innerHTML = '<span class="form-step-badge">4</span>Upload Product Guide & Sales Document (.pdf, .docx, .doc)';
+          } else if (service === 'appointment') {
+            pdfLabel.innerHTML = '<span class="form-step-badge">4</span>Upload Business Info & Booking Rules Document (.pdf, .docx, .doc)';
+          } else if (service === 'receptionist') {
+            pdfLabel.innerHTML = '<span class="form-step-badge">4</span>Upload Front-Desk Info & FAQ Document (.pdf, .docx, .doc)';
           } else {
             pdfLabel.innerHTML = '<span class="form-step-badge">4</span>Upload Support SOP & FAQ Document (.pdf, .docx, .doc)';
           }
@@ -2459,6 +2636,10 @@
             pdfSubText.textContent = 'Extracts job title, core requirements, screening questions and notice period';
           } else if (service === 'sales') {
             pdfSubText.textContent = 'Extracts product features, pricing, value propositions, objection handling & custom questions';
+          } else if (service === 'appointment') {
+            pdfSubText.textContent = 'Extracts services, working hours, location, booking rules and FAQs';
+          } else if (service === 'receptionist') {
+            pdfSubText.textContent = 'Extracts what the front desk may answer: services, hours, departments, FAQs and message policy';
           } else {
             pdfSubText.textContent = 'Extracts product procedures, troubleshooting steps, FAQs, and escalation policies';
           }
@@ -2611,8 +2792,19 @@
           if (pRec) pRec.style.display = service === 'recruitment' ? 'block' : 'none';
           if (pSales) pSales.style.display = service === 'sales' ? 'block' : 'none';
           if (pSupp) pSupp.style.display = service === 'support' ? 'block' : 'none';
+          const pAppt = document.getElementById('preview-fields-appointment');
+          const pRecep = document.getElementById('preview-fields-receptionist');
+          if (pAppt) pAppt.style.display = service === 'appointment' ? 'block' : 'none';
+          if (pRecep) pRecep.style.display = service === 'receptionist' ? 'block' : 'none';
 
-          if (service === 'recruitment') {
+          if (service === 'appointment' || service === 'receptionist') {
+            const p = service === 'appointment' ? 'appt' : 'recep';
+            const setVal = (suffix, v) => { const el = document.getElementById(`edit-${p}-${suffix}`); if (el) el.value = v || ''; };
+            setVal('company', stagedExtractedData.company_name);
+            setVal('services', (stagedExtractedData.services_offered || []).join(', '));
+            setVal('hours', stagedExtractedData.working_hours);
+            setVal(service === 'appointment' ? 'rules' : 'policy', service === 'appointment' ? stagedExtractedData.booking_rules : stagedExtractedData.message_policy);
+          } else if (service === 'recruitment') {
             const editRole = document.getElementById('edit-jd-role');
             const editSkills = document.getElementById('edit-jd-skills');
             const editExp = document.getElementById('edit-jd-exp');
@@ -2853,6 +3045,14 @@
 
               const escVal = document.getElementById('edit-support-escalation')?.value.trim();
               if (escVal) stagedExtractedData.escalation_policy = escVal;
+            } else if (service === 'appointment' || service === 'receptionist') {
+              const p = service === 'appointment' ? 'appt' : 'recep';
+              const getVal = (suffix) => (document.getElementById(`edit-${p}-${suffix}`)?.value || '').trim();
+              if (getVal('company')) stagedExtractedData.company_name = getVal('company');
+              if (getVal('services')) stagedExtractedData.services_offered = getVal('services').split(',').map(s => s.trim()).filter(Boolean);
+              if (getVal('hours')) stagedExtractedData.working_hours = getVal('hours');
+              if (service === 'appointment' && getVal('rules')) stagedExtractedData.booking_rules = getVal('rules');
+              if (service === 'receptionist' && getVal('policy')) stagedExtractedData.message_policy = getVal('policy');
             }
           }
 
@@ -2885,7 +3085,7 @@
 
           // 5. Start Campaign if requested
           if (startNow) {
-            await AdminClient.startCampaign(campaign.id);
+            await AdminClient.startCampaign(campaign.id, getSelectedAgentId());
             showAdminAlert(`✓ Campaign "${campaign.name}" launched successfully! Sequential outbound AI telephony active.`, 'success');
           } else {
             showAdminAlert(`✓ Campaign "${campaign.name}" saved as draft. You can launch or edit it anytime.`, 'success');
@@ -2928,6 +3128,8 @@
           setTxt('cnt-filter-rec', cachedCampaignsList.filter(c => c.service === 'recruitment').length);
           setTxt('cnt-filter-sales', cachedCampaignsList.filter(c => c.service === 'sales').length);
           setTxt('cnt-filter-support', cachedCampaignsList.filter(c => c.service === 'support').length);
+          setTxt('cnt-filter-appointment', cachedCampaignsList.filter(c => c.service === 'appointment').length);
+          setTxt('cnt-filter-receptionist', cachedCampaignsList.filter(c => c.service === 'receptionist').length);
 
           renderSavedCampaignCards(cachedCampaignsList, filter);
         } catch (err) {
@@ -2969,7 +3171,7 @@
         }
 
         container.innerHTML = filtered.map(c => {
-          const sBadge = c.service === 'recruitment' ? 'badge-recruitment' : c.service === 'sales' ? 'badge-sales' : 'badge-support';
+          const sBadge = serviceBadgeClass(c.service);
           const sLabel = c.service.charAt(0).toUpperCase() + c.service.slice(1);
           const statusLower = (c.status || 'DRAFT').toLowerCase();
           const isRecruitment = c.service === 'recruitment';
@@ -3098,7 +3300,7 @@
             btn.disabled = true;
             btn.textContent = 'Starting...';
             try {
-              await AdminClient.startCampaign(id);
+              await AdminClient.startCampaign(id, getSelectedAgentId());
               showAdminAlert('✓ Campaign calls initiated sequentially!', 'success');
               await loadCampaigns(filter);
               await loadDashboardStats();
@@ -3436,7 +3638,7 @@
           }
 
           tbody.innerHTML = convs.map(c => {
-            const sBadgeClass = c.service === 'recruitment' ? 'badge-recruitment' : c.service === 'sales' ? 'badge-sales' : 'badge-support';
+            const sBadgeClass = serviceBadgeClass(c.service);
             const statusClass = c.status === 'completed' ? 'badge-status-completed' : c.status === 'in-progress' ? 'badge-status-calling' : 'badge-status-callback';
 
             let dateDisplay = 'Today';
@@ -3539,7 +3741,7 @@
 
           const serviceBadge = document.getElementById('conv-modal-service-badge');
           if (serviceBadge) {
-            serviceBadge.className = `badge-pill ${c.service === 'recruitment' ? 'badge-recruitment' : c.service === 'sales' ? 'badge-sales' : 'badge-support'}`;
+            serviceBadge.className = `badge-pill ${serviceBadgeClass(c.service)}`;
             serviceBadge.textContent = c.service;
           }
 
@@ -3690,7 +3892,7 @@
           }
 
           tbody.innerHTML = calls.map(c => {
-            const sBadgeClass = c.service === 'recruitment' ? 'badge-recruitment' : c.service === 'sales' ? 'badge-sales' : 'badge-support';
+            const sBadgeClass = serviceBadgeClass(c.service);
             const statusClass = c.status === 'completed' ? 'badge-status-completed' : c.status === 'in-progress' ? 'badge-status-calling' : 'badge-status-callback';
 
             return `

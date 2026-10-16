@@ -365,6 +365,72 @@ ${text.slice(0, 10000)}
     }
 
     /**
+     * Parses a business information document for appointment setting (services, hours, booking rules, FAQs).
+     */
+    static async parseAppointmentKnowledge(input, filename = 'appointment_guide.pdf') {
+        return this._parseBusinessKnowledge(input, filename, 'appointment');
+    }
+
+    /**
+     * Parses a business information document for the receptionist (what the front desk may answer, hours, departments, message policy).
+     */
+    static async parseReceptionistKnowledge(input, filename = 'reception_guide.pdf') {
+        return this._parseBusinessKnowledge(input, filename, 'receptionist');
+    }
+
+    static async _parseBusinessKnowledge(input, filename, kind) {
+        const { text, fileType } = await this.extractText(input, filename);
+        const isAppt = kind === 'appointment';
+
+        const prompt = `You are a front-office operations manager.
+Extract the business information a voice assistant needs to ${isAppt ? 'book, reschedule and cancel appointments' : 'answer the phone as the front desk, answer common questions and take messages'} from the document below into strict JSON.
+
+Rules:
+1. Rely ONLY on facts in the document. Leave a field empty rather than guessing.
+2. Extract the business name, what kind of business it is, the services offered, working hours and location.
+3. ${isAppt ? 'Extract booking rules: appointment lengths, notice needed, cancellation or rescheduling rules, what the visitor should bring.' : 'Extract departments or people callers ask for, and what to do when the answer is not in the document (message policy).'}
+4. Extract frequently asked questions with their approved answers.
+5. Write a short friendly opening greeting for ${isAppt ? 'outgoing booking calls' : 'outgoing follow-up calls'}.
+
+Return ONLY a valid JSON object matching this schema:
+{
+  "company_name": "Smile Dental Clinic",
+  "business_type": "Dental clinic",
+  "services_offered": ["Check-up", "Teeth cleaning", "Root canal"],
+  "working_hours": "Mon-Sat 9am to 6pm, closed Sunday",
+  "location": "12 MG Road, Hyderabad",
+  "${isAppt ? 'booking_rules' : 'message_policy'}": "${isAppt ? 'Appointments last 30 minutes. Cancel at least 4 hours before.' : 'Take the caller name, number and reason, and say the team will call back within one working day.'}",
+  "departments_and_contacts": [{ "name": "Billing", "details": "Mon-Fri 10am to 4pm" }],
+  "approved_faqs": [{ "question": "Do you accept insurance?", "answer": "Yes, most major providers." }],
+  "opening_greeting": "Hello, this is Remo calling from Smile Dental Clinic.",
+  "closing_note": "Is there anything else I can help you with?"
+}
+
+Document Text:
+"""
+${text.slice(0, 10000)}
+"""`;
+
+        const llmRes = await LLMService.generate({
+            systemPrompt: 'You extract business information for a phone assistant into JSON. Rely strictly on facts in the document.',
+            messages: [{ role: 'user', content: prompt }],
+            maxTokens: 1400,
+            jsonMode: true,
+            timeoutMs: 12000
+        });
+
+        const extracted = llmRes.parsedJson || this._fallbackBusinessHeuristic(text, filename, kind);
+        if (!Array.isArray(extracted.services_offered)) extracted.services_offered = [];
+        if (!Array.isArray(extracted.approved_faqs)) extracted.approved_faqs = [];
+        if (!Array.isArray(extracted.departments_and_contacts)) extracted.departments_and_contacts = [];
+        extracted.document_type = fileType;
+        extracted.document_filename = filename;
+        extracted._raw_text_snippet = text.slice(0, 1500);
+        extracted._extracted_by = llmRes.provider || 'heuristic';
+        return extracted;
+    }
+
+    /**
      * General unified router for any service type.
      */
     static async parseCampaignDocument(input, filename, service = 'recruitment') {
@@ -373,6 +439,10 @@ ${text.slice(0, 10000)}
             return this.parseSalesKnowledge(input, filename);
         } else if (s === 'support') {
             return this.parseSupportKnowledge(input, filename);
+        } else if (s === 'appointment') {
+            return this.parseAppointmentKnowledge(input, filename);
+        } else if (s === 'receptionist') {
+            return this.parseReceptionistKnowledge(input, filename);
         } else {
             return this.parseRecruitmentJD(input, filename);
         }
@@ -430,6 +500,41 @@ ${text.slice(0, 10000)}
             objections_and_counters: [],
             call_to_action: cta,
             desired_outcome: cta
+        };
+    }
+
+    /**
+     * Fallback heuristic for appointment-setting / receptionist business documents
+     */
+    static _fallbackBusinessHeuristic(text, filename, kind) {
+        const cleanName = filename.replace(/\.(pdf|docx|doc)$/i, '').replace(/[_-]/g, ' ');
+        const compMatch = text.match(/(?:Company|Business|Clinic|Organization|Name)\s*[:\-]\s*([^\n\r]+)/i);
+        const hoursMatch = text.match(/(?:Working Hours|Opening Hours|Hours|Timings?)\s*[:\-]\s*([^\n\r]+)/i);
+        const locMatch = text.match(/(?:Location|Address)\s*[:\-]\s*([^\n\r]+)/i);
+        const servMatch = text.match(/(?:Services|Treatments|Offerings)\s*[:\-]\s*([^\n\r]+)/i);
+        const compName = compMatch ? compMatch[1].trim() : (cleanName || 'Score Labs');
+
+        const base = {
+            company_name: compName,
+            business_type: '',
+            services_offered: servMatch ? servMatch[1].split(/[,;]/).map(s => s.trim()).filter(Boolean) : [],
+            working_hours: hoursMatch ? hoursMatch[1].trim() : '',
+            location: locMatch ? locMatch[1].trim() : '',
+            departments_and_contacts: [],
+            approved_faqs: [],
+            closing_note: 'Is there anything else I can help you with?'
+        };
+        if (kind === 'appointment') {
+            return {
+                ...base,
+                booking_rules: '',
+                opening_greeting: `Hello, this is Remo calling from ${compName} to help you book your appointment. Is now a good time to talk?`
+            };
+        }
+        return {
+            ...base,
+            message_policy: 'Take the caller name, number and reason, and say the team will call back.',
+            opening_greeting: `Hello, this is Remo from the ${compName} front desk. Is now a good time to talk?`
         };
     }
 

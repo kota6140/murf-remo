@@ -75,7 +75,7 @@ export default class IntentService {
                 ),
                 detected_language: currentLang,
                 should_end_call: true,
-                classification: service === 'sales' ? 'Do Not Call' : 'Rejected',
+                classification: (service === 'sales' || service === 'appointment') ? 'Do Not Call' : (service === 'receptionist' ? 'Callback Requested' : 'Rejected'),
                 extracted_fields: { preferred_next_step: 'none', call_outcome: 'Do Not Call' },
                 reason: 'do_not_call'
             };
@@ -95,7 +95,7 @@ export default class IntentService {
                 ),
                 detected_language: currentLang,
                 should_end_call: true,
-                classification: service === 'sales' ? 'Wrong Contact' : 'Rejected',
+                classification: (service === 'sales' || service === 'appointment') ? 'Wrong Contact' : (service === 'receptionist' ? 'Wrong Number' : 'Rejected'),
                 extracted_fields: { preferred_next_step: 'none', call_outcome: 'Wrong Contact' },
                 reason: 'wrong_contact'
             };
@@ -115,7 +115,7 @@ export default class IntentService {
                 ),
                 detected_language: currentLang,
                 should_end_call: true,
-                classification: service === 'sales' ? 'Not Interested' : (service === 'recruitment' ? 'Rejected' : 'RESOLVED'),
+                classification: (service === 'sales' || service === 'appointment') ? 'Not Interested' : (service === 'recruitment' ? 'Rejected' : (service === 'receptionist' ? 'Query Answered' : 'RESOLVED')),
                 extracted_fields: { preferred_next_step: 'none', call_outcome: 'Not Interested', candidate_interest: 'Declined' },
                 reason: 'not_interested'
             };
@@ -245,7 +245,11 @@ export default class IntentService {
                         ? `ज़रूर, मैं हिंदी में बातचीत जारी रखते हैं। मैं स्कोर लैब्स से ${role} पद के लिए कॉल कर रहा हूँ। क्या आपके पास बात करने के लिए दो मिनट का समय है?`
                         : (service === 'sales'
                             ? `ज़रूर, हम हिंदी में बातचीत जारी रखते हैं। मैं स्कोरलैब्स इंक से कॉल कर रहा हूँ। क्या आपकी कंपनी किसी नए सॉफ्टवेयर प्रोजेक्ट या आईटी समाधान पर विचार कर रही है?`
-                            : `ज़रूर, हम हिंदी में सहायता करेंगे। कृपया अपनी समस्या संक्षेप में बताएं।`),
+                            : (service === 'appointment'
+                                ? `ज़रूर, हम हिंदी में बात करते हैं। आपकी अपॉइंटमेंट के लिए कौन सा दिन और समय सुविधाजनक रहेगा?`
+                                : (service === 'receptionist'
+                                    ? `ज़रूर, हम हिंदी में बात करते हैं। मैं आपकी कैसे मदद कर सकता हूँ?`
+                                    : `ज़रूर, हम हिंदी में सहायता करेंगे। कृपया अपनी समस्या संक्षेप में बताएं।`))),
                     detected_language: 'hi',
                     should_end_call: false,
                     next_stage: 'AVAILABILITY_CONFIRMED',
@@ -260,7 +264,11 @@ export default class IntentService {
                         ? `ఖచ్చితంగా, మనం తెలుగులోనే మాట్లాడగలను. నేను స్కోర్ ల్యాబ్స్ నుండి ${role} రోల్ గురించి మాట్లాడుతున్నాను. మాట్లాడటానికి రెండు నిమిషాలు సమయం ఉందా?`
                         : (service === 'sales'
                             ? `ఖచ్చితంగా, మనం తెలుగులోనే మాట్లాడగలను. నేను స్కోర్‌ల్యాబ్స్ ఇంక్ నుండి మాట్లాడుతున్నాను. మీ సంస్థ ఏదైనా కొత్త సాఫ్ట్‌వేర్ ప్రాజెక్ట్ లేదా ఐటీ భాగస్వామి కోసం చూస్తోందా?`
-                            : `ఖచ్చితంగా, మనం తెలుగులోనే మాట్లాడగలను. మీ సమస్య ఏమిటో కాస్త వివరించగలరా?`),
+                            : (service === 'appointment'
+                                ? `ఖచ్చితంగా, మనం తెలుగులోనే మాట్లాడదాం. మీ అపాయింట్‌మెంట్ కోసం ఏ రోజు మరియు సమయం అనుకూలంగా ఉంటుంది?`
+                                : (service === 'receptionist'
+                                    ? `ఖచ్చితంగా, మనం తెలుగులోనే మాట్లాడదాం. నేను మీకు ఎలా సహాయం చేయగలను?`
+                                    : `ఖచ్చితంగా, మనం తెలుగులోనే మాట్లాడగలను. మీ సమస్య ఏమిటో కాస్త వివరించగలరా?`))),
                     detected_language: 'te',
                     should_end_call: false,
                     next_stage: 'AVAILABILITY_CONFIRMED',
@@ -544,6 +552,23 @@ export default class IntentService {
             }
         }
 
+        if (service === 'appointment' && (stage === 'AVAILABILITY' || stage === 'GREETING')) {
+            return {
+                matched: true,
+                spoken_response: this.localize(
+                    "Thank you! What would the appointment be for, and which day would suit you best?",
+                    "धन्यवाद! अपॉइंटमेंट किस काम के लिए है, और आपके लिए कौन सा दिन सबसे सुविधाजनक रहेगा?",
+                    "ధన్యవాదాలు! అపాయింట్‌మెంట్ దేని కోసం, మరియు మీకు ఏ రోజు అనుకూలంగా ఉంటుంది?",
+                    lang
+                ),
+                detected_language: lang,
+                classification: 'Pending',
+                next_stage: 'APPOINTMENT_DETAILS',
+                should_end_call: false,
+                reason: 'appointment_availability_yes'
+            };
+        }
+
         if (service === 'support') {
             return {
                 matched: true,
@@ -676,6 +701,24 @@ export default class IntentService {
                         reason: 'recruitment_generic_no'
                     };
             }
+        }
+
+        if (service === 'appointment' && (stage === 'AVAILABILITY' || stage === 'GREETING')) {
+            return {
+                matched: true,
+                spoken_response: this.localize(
+                    "No problem at all. When would be a better time for me to call you back?",
+                    "कोई बात नहीं। मैं आपको किस समय दोबारा कॉल कर सकता हूँ?",
+                    "ఏమీ పర్వాలేదు. నేను మిమ్మల్ని ఏ సమయంలో తిరిగి కాల్ చేయాలి?",
+                    lang
+                ),
+                detected_language: lang,
+                classification: 'Callback Requested',
+                next_stage: 'CALLBACK_TIME',
+                extracted_fields: { preferred_next_step: 'callback' },
+                should_end_call: false,
+                reason: 'appointment_availability_no'
+            };
         }
 
         return { matched: false };
