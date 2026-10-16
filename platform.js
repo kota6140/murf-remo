@@ -194,25 +194,27 @@
   /* =================================================== SCENE: enterprise */
   function enterpriseScene() {
     const TEAMS = [
-      { n: 'HIRING', c: '96,140,255', ls: ['1101', '1102', '1103'], base: 128 },
-      { n: 'SALES', c: '252,36,21', ls: ['2201', '2202', '2203'], base: 341 },
-      { n: 'FRONT DESK', c: '34,211,238', ls: ['3301', '3302', '3303'], base: 207 }
+      { n: 'HIRING', c: '96,140,255', ls: ['RECRUIT', 'SCREEN'], ic: ['person', 'person'], base: 128 },
+      { n: 'SALES', c: '252,36,21', ls: ['LEADS', 'RENEWALS'], ic: ['chart', 'chart'], base: 341 },
+      { n: 'SUPPORT', c: '16,185,129', ls: ['TECH', 'ORDERS'], ic: ['headset', 'headset'], base: 176 },
+      { n: 'APPOINTMENTS', c: '168,85,247', ls: ['BOOKING', 'REMINDER'], ic: ['cal', 'cal'], base: 264 },
+      { n: 'RECEPTION', c: '34,211,238', ls: ['ANSWER', 'MESSAGES'], ic: ['phone', 'phone'], base: 207 }
     ];
     const r = rng(5);
     const dust = Array.from({ length: 50 }, () => ({ x: r(), y: r(), z: 0.5 + r(), p: r() * TAU }));
 
     return (g, W, H, t, m) => {
       const ox = W * 0.5, oy = H * 0.13, ty = H * 0.43, ly = H * 0.79;
-      const tx = (i) => W * (0.17 + i * 0.33);
-      const lx = (i, j) => tx(i) + (j - 1) * W * 0.1;
-      const active = m.in ? clamp(Math.round(((m.tx + 1) / 2) * 2 - 0.0001), 0, 2) : Math.floor(t / 3.2) % 3;
+      const tx = (i) => W * (0.1 + i * 0.2);
+      const lx = (i, j) => tx(i) + (j - 0.5) * W * 0.07;
+      const active = m.in ? clamp(Math.round(((m.tx + 1) / 2) * 4 - 0.0001), 0, 4) : Math.floor(t / 3.2) % 5;
 
       dust.forEach((d) => { g.fillStyle = `rgba(255,255,255,${0.1 + 0.2 * (0.5 + 0.5 * Math.sin(t + d.p))})`; g.beginPath(); g.arc(d.x * W + m.x * d.z * 5, d.y * H + m.y * d.z * 4, d.z, 0, TAU); g.fill(); });
 
       // each team's walled-off area
       TEAMS.forEach((T, i) => {
         const on = i === active, a = on ? 1 : 0.35;
-        const x = tx(i) - W * 0.155, y = ty - H * 0.085, w = W * 0.31, h = ly + H * 0.1 - y;
+        const x = tx(i) - W * 0.093, y = ty - H * 0.085, w = W * 0.186, h = ly + H * 0.1 - y;
         g.save(); g.setLineDash([6, 8]); g.lineDashOffset = -t * 6; g.strokeStyle = rgba(0.2 + 0.4 * (on ? 1 : 0), T.c); g.lineWidth = 1.4;
         rr(g, x, y, w, h, 22); g.stroke(); g.restore();
         if (on) { const fg = g.createLinearGradient(0, y, 0, y + h); fg.addColorStop(0, rgba(0.1, T.c)); fg.addColorStop(1, rgba(0.02, T.c)); g.fillStyle = fg; rr(g, x, y, w, h, 22); g.fill(); }
@@ -220,31 +222,31 @@
         // owner -> team
         const qx = (ox + tx(i)) / 2, qy = oy + (ty - oy) * 0.35;
         g.strokeStyle = rgba(0.35, T.c); g.lineWidth = 1.6; g.beginPath(); g.moveTo(ox, oy + 22); g.quadraticCurveTo(qx, qy, tx(i), ty - 24); g.stroke();
-        for (let j = 0; j < 3; j++) { // team -> agents
+        for (let j = 0; j < 2; j++) { // team -> agents
           g.strokeStyle = rgba(0.3, T.c); g.lineWidth = 1.3; g.beginPath(); g.moveTo(tx(i), ty + 24); g.quadraticCurveTo(tx(i), (ty + ly) / 2, lx(i, j), ly - 18); g.stroke();
         }
         // setup pulse going down, call results coming back up
         const dp = ((t * 0.34 + i * 0.3) % 1), u = ease(dp);
         const bx = (1 - u) * (1 - u) * ox + 2 * (1 - u) * u * qx + u * u * tx(i), by = (1 - u) * (1 - u) * (oy + 22) + 2 * (1 - u) * u * qy + u * u * (ty - 24);
         g.fillStyle = '#FFFFFF'; g.shadowColor = rgba(1, T.c); g.shadowBlur = 14; g.beginPath(); g.arc(bx, by, 3.4, 0, TAU); g.fill(); g.shadowBlur = 0;
-        for (let j = 0; j < 3; j++) {
+        for (let j = 0; j < 2; j++) {
           const up = ((t * 0.5 + i * 0.37 + j * 0.31) % 1), v = ease(up);
           const ux = lerp(lx(i, j), tx(i), v), uy = lerp(ly - 18, ty + 24, v);
           g.fillStyle = rgba(0.95 * (1 - Math.abs(up - 0.5) * 1.2), T.c); g.beginPath(); g.arc(ux, uy, 2.8, 0, TAU); g.fill();
         }
         // team box
-        const bw = W * 0.2, bh = 48, bx0 = tx(i) - bw / 2, by0 = ty - bh / 2;
+        const bw = W * 0.166, bh = 48, bx0 = tx(i) - bw / 2, by0 = ty - bh / 2;
         g.fillStyle = '#0A1122'; g.strokeStyle = rgba(on ? 1 : 0.7, T.c); g.lineWidth = on ? 2.4 : 1.6; g.shadowColor = rgba(on ? 0.8 : 0.3, T.c); g.shadowBlur = on ? 22 : 8;
         rr(g, bx0, by0, bw, bh, 16); g.fill(); g.stroke(); g.shadowBlur = 0;
         g.fillStyle = '#FFFFFF'; g.font = '700 12px "Outfit", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(T.n, tx(i), by0 + 17);
         g.fillStyle = `rgb(${T.c})`; g.font = '700 11px "JetBrains Mono", monospace'; g.fillText(`${T.base + Math.floor(t * (1.4 + i * 0.5))} calls`, tx(i), by0 + 34);
         // agents
-        for (let j = 0; j < 3; j++) {
+        for (let j = 0; j < 2; j++) {
           const x2 = lx(i, j), flash = 0.5 + 0.5 * Math.sin(t * 2 + i * 2 + j * 1.3);
           g.fillStyle = '#0A1122'; g.strokeStyle = rgba(0.9, T.c); g.lineWidth = 1.8; g.shadowColor = rgba(0.7 * flash, T.c); g.shadowBlur = 12 * flash;
           g.beginPath(); g.arc(x2, ly, 17, 0, TAU); g.fill(); g.stroke(); g.shadowBlur = 0;
-          icon(g, 'phone', x2, ly, 13);
-          g.fillStyle = 'rgba(203,213,225,0.85)'; g.font = '600 9.5px "JetBrains Mono", monospace'; g.textBaseline = 'alphabetic'; g.fillText(`···${T.ls[j]}`, x2, ly + 33);
+          icon(g, T.ic[j], x2, ly, 13);
+          g.fillStyle = 'rgba(203,213,225,0.9)'; g.font = '600 9px "JetBrains Mono", monospace'; g.textBaseline = 'alphabetic'; g.fillText(T.ls[j], x2, ly + 33);
         }
         g.globalAlpha = 1;
       });
@@ -261,69 +263,111 @@
 
   /* ===================================================== SCENE: security */
   function securityScene() {
-    const N = 30;
-    const RAW = '255,128,86', OK = '52,211,153';
+    // "The sealed voice": a spoken waveform flows in from the left and is wound into a glowing sphere of
+    // points that you can tilt with the pointer. Uninvited dots drift in from every side and are turned
+    // away at an invisible shell, which lights up only where it is touched.
+    const OK = '52,211,153', ICE = '167,243,208', RAW = '255,128,86';
+    const NP = 460, GOLD = 2.39996;
+    const pts = Array.from({ length: NP }, (_, i) => {
+      const y = 1 - (i + 0.5) * (2 / NP), rad = Math.sqrt(1 - y * y), a = i * GOLD;
+      return { x: Math.cos(a) * rad, y, z: Math.sin(a) * rad };
+    });
+    const hash = (n) => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+    const SLOTS = 5, PERIOD = 5.2;
+
     return (g, W, H, t, m) => {
-      const cx = W * 0.5 + m.x * 10, cy = H * 0.5 + m.y * 8, R = Math.min(W, H) * 0.47;
-      const radii = [0.3, 0.52, 0.74, 0.97].map((k) => k * R);
+      const cx = W * 0.56, cy = H * 0.5, U = Math.min(W * 0.8, H);
+      const Rs = U * 0.25, Rh = U * 0.43;
+      const yaw = t * 0.35 + m.x * 0.7, pit = -0.35 + m.y * 0.35;
+      const cy1 = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pit), sp = Math.sin(pit);
 
-      // faint scan-lines behind the rings
-      g.strokeStyle = 'rgba(255,255,255,0.035)'; g.lineWidth = 1;
-      for (let y = cy - R; y <= cy + R; y += 22) { const dx = Math.sqrt(Math.max(0, R * R - (y - cy) * (y - cy))); g.beginPath(); g.moveTo(cx - dx, y); g.lineTo(cx + dx, y); g.stroke(); }
+      // soft glow behind the sphere
+      const bg = g.createRadialGradient(cx, cy, 0, cx, cy, Rh * 1.5);
+      bg.addColorStop(0, rgba(0.2, OK)); bg.addColorStop(0.5, rgba(0.05, OK)); bg.addColorStop(1, rgba(0, OK));
+      g.fillStyle = bg; g.beginPath(); g.arc(cx, cy, Rh * 1.5, 0, TAU); g.fill();
 
-      // radar sweep
-      const sw = (t * 0.9) % TAU;
-      for (let i = 0; i < 40; i++) {
-        const k = i / 40; g.fillStyle = rgba((1 - k) * 0.16, OK);
-        g.beginPath(); g.moveTo(cx, cy); g.arc(cx, cy, radii[3], sw - k * 1.1 - 0.03, sw - k * 1.1 + 0.03); g.closePath(); g.fill();
+      // the voice: two thin waves that calm down and fade as they reach the sphere
+      const x0 = W * 0.02, x1 = cx - Rs * 1.05, my = cy;
+      for (let k = 0; k < 3; k++) {
+        g.beginPath();
+        for (let i = 0; i <= 90; i++) {
+          const u = i / 90, x = lerp(x0, x1, u);
+          const env = Math.sin(u * Math.PI * 0.5 + 0.0) * (1 - u * 0.15);
+          const amp = (U * 0.13) * (1 - u * 0.8) * (0.35 + 0.65 * Math.abs(Math.sin(t * 1.3 + u * 3 + k)));
+          const y = my + Math.sin(u * 14 - t * 4 + k * 1.1) * amp * (k === 0 ? 1 : 0.55) * env;
+          if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+        }
+        const lg = g.createLinearGradient(x0, 0, x1, 0);
+        lg.addColorStop(0, rgba(0, ICE)); lg.addColorStop(0.35, rgba(k === 0 ? 0.8 : 0.35, ICE)); lg.addColorStop(1, rgba(0.9, OK));
+        g.strokeStyle = lg; g.lineWidth = k === 0 ? 2 : 1.2; g.stroke();
+      }
+      // a few grains of the voice being drawn into the sphere
+      for (let i = 0; i < 14; i++) {
+        const u = (t * 0.22 + i / 14) % 1, x = lerp(x0 + (x1 - x0) * 0.3, x1, ease(u));
+        const y = my + Math.sin(i * 5.1 + t) * U * 0.05 * (1 - ease(u));
+        g.fillStyle = rgba(Math.sin(u * Math.PI) * 0.9, ICE); g.beginPath(); g.arc(x, y, 1.8, 0, TAU); g.fill();
       }
 
-      // four rotating, segmented rings; the second one is the gate
-      const spec = [[3, 0.55, 0.35, 18], [2.4, 0.9, -0.22, 26], [1.7, 0.3, 0.15, 36], [1.2, 0.2, -0.08, 54]];
-      spec.forEach(([lw, al, sp, segs], i) => {
-        const seg = TAU / segs;
-        g.lineWidth = lw; g.strokeStyle = i === 1 ? rgba(al, OK) : rgba(al * 0.8, '226,232,240');
-        for (let s = 0; s < segs; s++) {
-          const a0 = s * seg + t * sp; g.beginPath(); g.arc(cx, cy, radii[i], a0, a0 + seg * 0.62); g.stroke();
-        }
+      // the sphere: depth-shaded points, with a travelling band of light across its surface
+      const proj = pts.map((p) => {
+        const x1r = p.x * cy1 + p.z * sy, z1 = -p.x * sy + p.z * cy1;
+        const y2 = p.y * cp - z1 * sp, z2 = p.y * sp + z1 * cp;
+        return { x: cx + x1r * Rs, y: cy + y2 * Rs, z: z2, ky: p.y };
+      }).sort((a, b) => a.z - b.z);
+      const band = Math.sin(t * 0.9) * 0.9;
+      proj.forEach((p) => {
+        const depth = (p.z + 1) / 2, lit = Math.exp(-Math.pow((p.ky - band) * 3.2, 2));
+        const a = 0.12 + depth * 0.6 + lit * 0.5;
+        g.fillStyle = lit > 0.5 ? rgba(Math.min(1, a), '236,253,245') : rgba(Math.min(1, a), depth > 0.5 ? ICE : OK);
+        g.beginPath(); g.arc(p.x, p.y, 0.7 + depth * 1.5 + lit * 0.8, 0, TAU); g.fill();
       });
-      const gate = g.createRadialGradient(cx, cy, radii[1] - 6, cx, cy, radii[1] + 6);
-      gate.addColorStop(0, rgba(0)); gate.addColorStop(0.5, rgba(0.1, OK)); gate.addColorStop(1, rgba(0));
-      g.fillStyle = gate; g.beginPath(); g.arc(cx, cy, radii[1] + 6, 0, TAU); g.fill();
+      // a single orbiting ring, tilted with the sphere
+      g.strokeStyle = rgba(0.35, ICE); g.lineWidth = 1;
+      g.beginPath();
+      for (let i = 0; i <= 120; i++) {
+        const a = (i / 120) * TAU, ox = Math.cos(a) * 1.3, oz = Math.sin(a) * 0.62, oy = Math.sin(a) * 1.15; // inclined orbit
+        const xr = ox * cy1 + oz * sy, zr = -ox * sy + oz * cy1;
+        const yy = oy * cp - zr * sp;
+        const px = cx + xr * Rs, py = cy + yy * Rs;
+        if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+      }
+      g.stroke();
 
-      // data packets: raw outside the gate, sealed inside it
-      for (let i = 0; i < N; i++) {
-        const off = i / N, u = ((t / 7 + off) % 1), rad = lerp(radii[3] * 1.04, radii[0] * 0.9, ease(u) * 0.9 + u * 0.1);
-        const a = i * 2.39996 + u * 1.5;
-        const x = cx + Math.cos(a) * rad, y = cy + Math.sin(a) * rad, sealed = rad < radii[1];
-        const near = Math.abs(rad - radii[1]) < 7;
-        const c = sealed ? OK : RAW, al = u > 0.93 ? (1 - u) / 0.07 : 1;
-        if (near) { g.strokeStyle = rgba(0.7 * al, OK); g.lineWidth = 1.6; g.beginPath(); g.arc(x, y, 9 + (7 - Math.abs(rad - radii[1])) * 0.9, 0, TAU); g.stroke(); }
-        g.fillStyle = rgba(al, c); g.shadowColor = rgba(0.9, c); g.shadowBlur = sealed ? 10 : 6;
-        g.beginPath(); g.arc(x, y, sealed ? 3 : 2.4, 0, TAU); g.fill(); g.shadowBlur = 0;
-        if (!sealed) { // a short tail for raw packets
-          g.strokeStyle = rgba(0.25 * al, c); g.lineWidth = 1.5; g.beginPath(); g.moveTo(x, y); g.lineTo(cx + Math.cos(a - 0.14) * (rad + 10), cy + Math.sin(a - 0.14) * (rad + 10)); g.stroke();
+      // the shell and the uninvited dots
+      g.font = '600 10px "JetBrains Mono", monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      let shown = 0;
+      for (let s = 0; s < SLOTS; s++) {
+        const ph = t / PERIOD + s / SLOTS, cyc = Math.floor(ph), u = ph - cyc;
+        const ang = hash(cyc * 7 + s * 13) * TAU, dist = lerp(Rh * 1.9, Rh, ease(Math.min(1, u / 0.5)));
+        const ux = Math.cos(ang), uy = Math.sin(ang);
+        if (u < 0.5) { // approaching
+          const x = cx + ux * dist, y = cy + uy * dist;
+          g.strokeStyle = rgba(0.3 * (u / 0.5), RAW); g.lineWidth = 1.2;
+          g.beginPath(); g.moveTo(x, y); g.lineTo(x + ux * 16, y + uy * 16); g.stroke();
+          g.fillStyle = rgba(0.95, RAW); g.shadowColor = rgba(0.9, RAW); g.shadowBlur = 8;
+          g.beginPath(); g.arc(x, y, 2.6, 0, TAU); g.fill(); g.shadowBlur = 0;
+        } else { // turned away: the shell lights up around the touch point and the dot breaks into sparks
+          const v = (u - 0.5) / 0.5, hx = cx + ux * Rh, hy = cy + uy * Rh;
+          g.lineWidth = 2;
+          for (let r = 0; r < 3; r++) {
+            const spread = (0.25 + v * 1.1) * (1 + r * 0.45), al = (1 - v) * (0.7 - r * 0.2);
+            if (al > 0) { g.strokeStyle = rgba(al, ICE); g.beginPath(); g.arc(cx, cy, Rh + r * 1.5, ang - spread * 0.5, ang + spread * 0.5); g.stroke(); }
+          }
+          for (let k = 0; k < 7; k++) {
+            const sa = ang + (k - 3) * 0.32, sd = v * (14 + hash(s * 9 + k + cyc) * 26);
+            g.fillStyle = rgba((1 - v) * 0.9, RAW); g.beginPath(); g.arc(hx + Math.cos(sa) * sd, hy + Math.sin(sa) * sd, 1.8 * (1 - v) + 0.4, 0, TAU); g.fill();
+          }
+          if (v < 0.85 && shown < 1) {
+            shown++; g.fillStyle = rgba(1 - v, ICE);
+            g.fillText('TURNED AWAY', clamp(hx + ux * 54, 50, W - 50), clamp(hy + uy * 22, 12, H - 12));
+          }
         }
       }
-
-      // shield
-      const S = R * 0.17, pulse = 1 + 0.045 * Math.sin(t * 2.6);
-      for (let k = 0; k < 2; k++) { const ph = (t * 0.55 + k * 0.5) % 1; g.strokeStyle = rgba((1 - ph) * 0.5, OK); g.lineWidth = 2; g.beginPath(); g.arc(cx, cy, lerp(S * 1.1, radii[0] * 1.15, ease(ph)), 0, TAU); g.stroke(); }
-      const sg = g.createRadialGradient(cx, cy, 0, cx, cy, S * 3);
-      sg.addColorStop(0, rgba(0.45, OK)); sg.addColorStop(1, rgba(0, OK)); g.fillStyle = sg; g.beginPath(); g.arc(cx, cy, S * 3, 0, TAU); g.fill();
-      g.save(); g.translate(cx, cy); g.scale(pulse, pulse);
-      const sh = g.createLinearGradient(0, -S, 0, S); sh.addColorStop(0, '#34D399'); sh.addColorStop(1, '#0E9F6E');
-      g.fillStyle = sh; g.shadowColor = rgba(0.9, OK); g.shadowBlur = 30; g.beginPath();
-      g.moveTo(0, -S); g.lineTo(S * 0.86, -S * 0.58); g.lineTo(S * 0.8, S * 0.18); g.quadraticCurveTo(S * 0.66, S * 0.68, 0, S * 1.02); g.quadraticCurveTo(-S * 0.66, S * 0.68, -S * 0.8, S * 0.18); g.lineTo(-S * 0.86, -S * 0.58); g.closePath(); g.fill(); g.shadowBlur = 0;
-      g.strokeStyle = '#FFFFFF'; g.lineWidth = Math.max(3, S * 0.13); g.beginPath(); g.moveTo(-S * 0.36, S * 0.02); g.lineTo(-S * 0.07, S * 0.3); g.lineTo(S * 0.4, -S * 0.26); g.stroke();
-      g.restore();
-
-      // labels
-      g.font = '600 10px "JetBrains Mono", monospace'; g.textAlign = 'left'; g.textBaseline = 'middle';
-      [['IN TRANSIT', 3, -0.62, 'rgba(255,160,130,0.95)'], ['GATE', 1, -0.2, 'rgba(110,231,183,0.95)'], ['SEALED', 0, 0.52, 'rgba(110,231,183,0.95)']].forEach(([txt, ring, ang, col]) => {
-        const lx = cx + Math.cos(ang) * (radii[ring] + 10), ly = cy + Math.sin(ang) * (radii[ring] + 10);
-        g.fillStyle = col; g.fillText(txt, Math.min(lx, W - 70), ly);
-      });
+      // two quiet captions
+      g.fillStyle = rgba(0.75, ICE); g.textAlign = 'left';
+      g.fillText('VOICE IN', W * 0.04, cy - U * 0.12);
+      g.textAlign = 'center'; g.fillStyle = rgba(0.6, ICE);
+      g.fillText('SEALED', cx, cy + Rs + 26);
       g.textBaseline = 'alphabetic';
     };
   }
@@ -474,7 +518,9 @@
     const TEAMS = [
       { n: 'Hiring team', who: 'Talent lead', c: '96,140,255', i: 'H', agents: [['Campus hiring', 'Recruitment', '···1101', 64], ['Tech hiring', 'Recruitment', '···1102', 41], ['Interview reminders', 'Appointments', '···1103', 23]] },
       { n: 'Sales team', who: 'Sales head', c: '252,36,21', i: 'S', agents: [['Outbound leads', 'Sales', '···2201', 118], ['Renewals', 'Sales', '···2202', 76], ['Demo bookings', 'Appointments', '···2203', 39]] },
-      { n: 'Front desk', who: 'Operations', c: '34,211,238', i: 'F', agents: [['Main line', 'Receptionist', '···3301', 142], ['After hours', 'Receptionist', '···3302', 57], ['Support callbacks', 'Support', '···3303', 28]] }
+      { n: 'Customer support', who: 'Support head', c: '16,185,129', i: 'C', agents: [['Tech support', 'Support', '···5501', 87], ['Order queries', 'Support', '···5502', 63], ['Escalation callbacks', 'Support', '···5503', 24]] },
+      { n: 'Appointment setting', who: 'Clinic manager', c: '168,85,247', i: 'A', agents: [['New bookings', 'Appointment setting', '···4401', 96], ['Reschedules', 'Appointment setting', '···4402', 48], ['Reminder calls', 'Appointment setting', '···4403', 131]] },
+      { n: 'Receptionist', who: 'Front-office lead', c: '34,211,238', i: 'R', agents: [['Main line', 'Receptionist', '···3301', 142], ['After hours', 'Receptionist', '···3302', 57], ['Branch line', 'Receptionist', '···3303', 28]] }
     ];
     list.innerHTML = TEAMS.map((t, i) => `<button type="button" class="pf-team" role="tab" style="--c:${t.c}" aria-selected="false"><span class="dot">${t.i}</span><span><b>${t.n}</b><small>Admin · ${t.who}</small></span></button>`).join('');
     const btns = $$('.pf-team', list);
