@@ -5,6 +5,22 @@ import IntentService from './intent_service.js';
 import LatencyTracker from './latency_tracker.js';
 import ConversationMemory from './conversation_memory.js';
 import ScreeningEvaluator from './screening_evaluator.js';
+import PlivoService from './plivo_service.js';
+
+/**
+ * The exact one-way promotional script spoken by Remo on "Get Instant Call".
+ * Strictly delivered in a single uninterrupted speaking sequence without questioning or listening.
+ */
+export const PROMOTIONAL_DEMO_SCRIPT =
+`Still spending hours making calls for your business? There’s a smarter way!
+
+Meet TakeRemo.com — your AI calling platform that can make up to 1,000 calls with a single click!
+
+Whether you need Recruitment to screen and schedule candidates, Sales to connect with leads, Customer Support to assist customers 24/7, Appointment Setting to fill your calendar, or a Receptionist to answer every call — TakeRemo has you covered!
+
+For more details, log in to TakeRemo.com today and experience the future of AI calling!
+
+TakeRemo.com — AI Calling. Human Conversations. Real Results!`.trim();
 
 /**
  * services/voicebot_stream_service.js
@@ -227,6 +243,12 @@ export class CallSession {
             defaultName = cleanName;
         }
 
+        // Dedicated Promotional Demo Mode state
+        this.callMode = (params.callMode || 'STANDARD').toUpperCase().trim();
+        this.promoState = 'INITIATING'; // INITIATING | CONNECTED | PLAYING_PROMO | COMPLETED | FAILED
+        this.promoPlaybackTimer = null;
+        this.promoHangupTriggered = false;
+
         this.contact = {
             id: this.contactId || `cnt_${Date.now()}`,
             name: defaultName,
@@ -245,6 +267,16 @@ export class CallSession {
     async init() {
         this.latencyTracker.markSessionReady();
 
+        // DEDICATED PROMOTIONAL_DEMO MODE:
+        // Execute pure one-way promotional script delivery and disconnect.
+        // Completely isolated from standard conversational loop, DB candidate lookup, and LLM processing.
+        if (this.callMode === 'PROMOTIONAL_DEMO') {
+            console.log(`[CallSession] [PROMO] Call ${this.callId} initialized in PROMOTIONAL_DEMO mode.`);
+            this.promoState = 'CONNECTED';
+            await this.executePromotionalDemo();
+            return;
+        }
+
         // Enforce fast DB enrichment before greeting (with 150ms timeout guard so it never blocks audio)
         await Promise.race([
             this.enrichContactFromDbAsync(),
@@ -262,6 +294,140 @@ export class CallSession {
 
         // Deliver opening greeting immediately
         await this.deliverOpeningGreeting();
+    }
+
+    /**
+     * Executes the one-way promotional demo call:
+     * - Dispatches the complete promotional script in a single uninterrupted speaking sequence.
+     * - Completely ignores caller speech / input (no listening, no barge-in, no response generation).
+     * - Immediately terminates the telephone call via Plivo when playback finishes.
+     */
+    async executePromotionalDemo() {
+        if (this.promoState === 'PLAYING_PROMO' || this.promoState === 'COMPLETED' || this.isClosed) {
+            console.log(`[CallSession] [PROMO] Suppressing duplicate promotional execution (State: ${this.promoState}).`);
+            return;
+        }
+
+        this.promoState = 'PLAYING_PROMO';
+        this.isAiSpeaking = true;
+        this.latencyTracker.markTtsStart();
+
+        console.log(`[CallSession] [PROMO] Playing promotional script to ${this.phone || this.callId}...`);
+
+        try {
+            const voiceId = ElevenLabsService.getVoiceIdForLanguage('en');
+            const modelId = ElevenLabsService.selectTtsModel({ language: 'en', text: PROMOTIONAL_DEMO_SCRIPT, voiceId });
+
+            // 1. Retrieve pre-cached audio or synthesize via ElevenLabs
+            let audioBuffer = ElevenLabsService.getCachedAudio(PROMOTIONAL_DEMO_SCRIPT, { voiceId, modelId, language: 'en' });
+            if (!audioBuffer && ElevenLabsService.isConfigured()) {
+                console.log('[CallSession] [PROMO] Pre-cached audio not found. Synthesizing promotional audio...');
+                audioBuffer = await ElevenLabsService.textToSpeech(PROMOTIONAL_DEMO_SCRIPT, {
+                    voiceId,
+                    modelId,
+                    language: 'en',
+                    outputFormat: 'ulaw_8000',
+                    timeoutMs: 15000
+                });
+            }
+
+            if (!audioBuffer || audioBuffer.length === 0) {
+                console.error('[CallSession] [PROMO] Promotional audio unavailable; terminating call safely.');
+                this.promoState = 'FAILED';
+                await this.terminatePromotionalCall('AUDIO_UNAVAILABLE');
+                return;
+            }
+
+            this.latencyTracker.markTtsEnd(true);
+            this.latencyTracker.markFirstAudioChunkSent();
+
+            // 2. Exact audio duration calculation (8000 bytes/sec at 8kHz ulaw)
+            const durationMs = Math.round((audioBuffer.length / 8000) * 1000);
+            this.aiSpeechEndTime = Date.now() + durationMs;
+
+            // 3. Dispatch complete audio buffer to Plivo
+            const payloadBase64 = audioBuffer.toString('base64');
+            if (this.ws && this.ws.readyState === this.ws.OPEN) {
+                const playMsg = {
+                    event: 'playAudio',
+                    media: {
+                        contentType: 'audio/x-mulaw',
+                        sampleRate: 8000,
+                        payload: payloadBase64
+                    }
+                };
+                if (this.streamId) {
+                    playMsg.streamId = this.streamId;
+                    playMsg.stream_id = this.streamId;
+                }
+                this.ws.send(JSON.stringify(playMsg));
+                console.log(`[CallSession] [PROMO] Dispatched ${audioBuffer.length} bytes (~${durationMs}ms) of promotional audio to Plivo.`);
+            }
+
+            this.conversationHistory.push({
+                speaker: 'REMO',
+                text: PROMOTIONAL_DEMO_SCRIPT,
+                time: '00:00'
+            });
+
+            // 4. Exact playback completion event:
+            // Terminates the call immediately after audio finishes (+ 200ms to allow hardware jitter buffer to clear).
+            const completionMs = durationMs + 200;
+            console.log(`[CallSession] [PROMO] Promotional audio scheduled to finish in ${completionMs}ms. Hang-up will trigger immediately.`);
+
+            if (this.promoPlaybackTimer) clearTimeout(this.promoPlaybackTimer);
+            this.promoPlaybackTimer = setTimeout(async () => {
+                console.log(`[CallSession] [PROMO] Audio playback complete. Disconnecting call immediately.`);
+                this.promoState = 'COMPLETED';
+                await this.terminatePromotionalCall('PLAYBACK_COMPLETED');
+            }, completionMs);
+
+        } catch (err) {
+            console.error('[CallSession] [PROMO] Error in executePromotionalDemo:', err.message);
+            this.promoState = 'FAILED';
+            await this.terminatePromotionalCall('EXECUTION_ERROR');
+        }
+    }
+
+    /**
+     * Terminates promotional call immediately:
+     * - Hangs up telephony line via Plivo REST API.
+     * - Closes WebSocket stream.
+     * - Prevents any further conversational processing.
+     */
+    async terminatePromotionalCall(reason = 'NORMAL') {
+        if (this.promoHangupTriggered) return;
+        this.promoHangupTriggered = true;
+
+        if (this.promoPlaybackTimer) {
+            clearTimeout(this.promoPlaybackTimer);
+            this.promoPlaybackTimer = null;
+        }
+
+        this.isAiSpeaking = false;
+        this.callStatus = 'completed';
+        this.promoState = 'COMPLETED';
+
+        console.log(`[CallSession] [PROMO] Terminating promotional call ${this.callId} (Reason: ${reason})...`);
+
+        // 1. Send hangup request to Plivo REST API
+        try {
+            await PlivoService.hangupCall(this.callId);
+        } catch (hangupErr) {
+            console.warn('[CallSession] [PROMO] Plivo REST hangup note:', hangupErr.message);
+        }
+
+        // 2. Close WebSocket connection
+        try {
+            if (this.ws && this.ws.readyState === this.ws.OPEN) {
+                this.ws.close(1000, `Promotional call completed: ${reason}`);
+            }
+        } catch (wsErr) {}
+
+        // 3. Persist promotional call record
+        this.persistCallResults().catch(e => {
+            console.warn('[CallSession] [PROMO] Non-fatal promo persistence warning:', e.message);
+        });
     }
 
     /**
@@ -550,6 +716,10 @@ export class CallSession {
      */
     async playAiAudio(text) {
         if (!text || this.isClosed) return;
+        if (this.callMode === 'PROMOTIONAL_DEMO' && this.promoState === 'COMPLETED') {
+            console.log('[CallSession] [PROMO] Suppressing additional speech after promo completion.');
+            return;
+        }
 
         try {
             // Confirm text language and sync session if response text was in a different language
@@ -660,6 +830,13 @@ export class CallSession {
      * Processes inbound audio packets from the caller (Plivo media event).
      */
     async handleInboundAudio(mulawChunk) {
+        // STRICT ONE-WAY PROMOTIONAL DEMO GUARD:
+        // Remo must deliver the entire promotional script in a single uninterrupted sequence.
+        // Must not listen, buffer caller audio, trigger barge-in, or generate responses.
+        if (this.callMode === 'PROMOTIONAL_DEMO') {
+            return;
+        }
+
         if (this.isProcessingTurn || this.isClosed) return;
 
         const pcm16 = decodeMulawToPcm16(mulawChunk);
@@ -755,6 +932,7 @@ export class CallSession {
      * FIX-6: turnId guard prevents processing the same turn twice.
      */
     async processCallerTurn() {
+        if (this.callMode === 'PROMOTIONAL_DEMO') return;
         if (this.callerMulawChunks.length === 0 || this.isProcessingTurn) return;
         this.isProcessingTurn = true;
 
@@ -1122,6 +1300,14 @@ export class CallSession {
         if (this.isClosed) return;
         this.isClosed = true;
 
+        if (this.promoPlaybackTimer) {
+            clearTimeout(this.promoPlaybackTimer);
+            this.promoPlaybackTimer = null;
+        }
+        if (this.callMode === 'PROMOTIONAL_DEMO' && this.promoState === 'PLAYING_PROMO') {
+            this.promoState = 'COMPLETED';
+        }
+
         if (this.activeSpeechTimer) {
             clearTimeout(this.activeSpeechTimer);
             this.activeSpeechTimer = null;
@@ -1292,6 +1478,8 @@ export function handleVoicebotWebsocket(ws, request) {
 
     const rawService = parsedUrl.searchParams.get('service');
     const service = (rawService || 'recruitment').toLowerCase().trim();
+    const rawCallMode = parsedUrl.searchParams.get('callMode') || parsedUrl.searchParams.get('call_mode');
+    const callMode = (rawCallMode || (service === 'promotional' ? 'PROMOTIONAL_DEMO' : 'STANDARD')).toUpperCase().trim();
     const callerName = decodeURIComponent(parsedUrl.searchParams.get('name') || '').trim();
     const role = decodeURIComponent(parsedUrl.searchParams.get('role') || '').trim();
     const company = decodeURIComponent(parsedUrl.searchParams.get('company') || '').trim();
@@ -1306,7 +1494,8 @@ export function handleVoicebotWebsocket(ws, request) {
         callerName: callerName,
         role: role,
         company: company,
-        campaignId: parsedUrl.searchParams.get('campaignId') || parsedUrl.searchParams.get('campaign_id') || ''
+        campaignId: parsedUrl.searchParams.get('campaignId') || parsedUrl.searchParams.get('campaign_id') || '',
+        callMode: callMode
     };
 
     const session = new CallSession(ws, params);
@@ -1325,6 +1514,7 @@ export function handleVoicebotWebsocket(ws, request) {
                     if (typeof headers === 'object') {
                         if (headers.campaignId || headers.campaign_id) session.campaignId = headers.campaignId || headers.campaign_id;
                         if (headers.contactId) session.contactId = headers.contactId;
+                        if (headers.callMode || headers.call_mode) session.callMode = (headers.callMode || headers.call_mode).toUpperCase().trim();
                         if (headers.service) {
                             session.service = headers.service.toLowerCase().trim();
                             session.contact.service = session.service;
@@ -1355,6 +1545,7 @@ export function handleVoicebotWebsocket(ws, request) {
                             const val = decodeURIComponent((v || '').trim());
                             if (key === 'campaignId' || key === 'campaign_id') session.campaignId = val;
                             if (key === 'contactId') session.contactId = val;
+                            if (key === 'callMode' || key === 'call_mode') session.callMode = val.toUpperCase().trim();
                             if (key === 'service') {
                                 session.service = val.toLowerCase().trim();
                                 session.contact.service = session.service;
@@ -1378,6 +1569,12 @@ export function handleVoicebotWebsocket(ws, request) {
                             }
                         }
                     }
+                }
+
+                // Auto-sync promotional demo mode if service is promotional
+                if (session.service === 'promotional' || session.callMode === 'PROMOTIONAL_DEMO') {
+                    session.callMode = 'PROMOTIONAL_DEMO';
+                    session.service = 'promotional';
                 }
 
                 // Update in-memory contact fields from extracted parameters
@@ -1447,6 +1644,23 @@ export async function precacheStandardGreetings() {
                 // Non-fatal per phrase
             }
         }
+        // Pre-warm the exact one-way promotional script for "Get instant call" demo
+        try {
+            console.log('[VoicebotStream] Pre-warming promotional demo script in TTS cache...');
+            const promoVoiceId = ElevenLabsService.getVoiceIdForLanguage('en');
+            const promoModelId = ElevenLabsService.selectTtsModel({ language: 'en', text: PROMOTIONAL_DEMO_SCRIPT, voiceId: promoVoiceId });
+            await ElevenLabsService.textToSpeech(PROMOTIONAL_DEMO_SCRIPT, {
+                voiceId: promoVoiceId,
+                modelId: promoModelId,
+                language: 'en',
+                outputFormat: 'ulaw_8000',
+                timeoutMs: 15000
+            });
+            console.log('[VoicebotStream] Promotional demo script pre-cached successfully in RAM.');
+        } catch (promoErr) {
+            console.warn('[VoicebotStream] Promotional script pre-cache note:', promoErr.message);
+        }
+
         console.log('[VoicebotStream] Standard greetings and fast-path responses cached in RAM successfully.');
     } catch (e) {
         // Non-fatal

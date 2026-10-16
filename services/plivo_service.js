@@ -86,6 +86,7 @@ export default class PlivoService {
 
         const contactId = contact.id || `cnt_${Date.now()}`;
         const ownerId = contact.owner_user_id || contact.ownerId || '';
+        const callMode = options.callMode || contact.callMode || 'STANDARD';
         const queryParams = new URLSearchParams({
             contactId: String(contactId),
             service: String(service || 'recruitment'),
@@ -93,7 +94,8 @@ export default class PlivoService {
             phone: String(targetPhone),
             ownerId: String(ownerId),
             role: String(contact.job_role || contact.role || ''),
-            company: String(contact.company || '')
+            company: String(contact.company || ''),
+            callMode: String(callMode)
         }).toString();
 
         const answerUrl = options.answerUrl || `${cfg.serverUrl}/api/plivo/answer?${queryParams}`;
@@ -189,12 +191,39 @@ export default class PlivoService {
     /**
      * Verifies Plivo webhook request authenticity using Plivo Signature.
      */
-    static verifyWebhookSignature(req) {
-        const signature = req.headers['x-plivo-signature-v2'] || req.headers['x-plivo-signature'];
-        const cfg = this.getConfig();
-        if (!signature || !cfg.authToken) {
-            return true; // Graceful fallback in development
+    /**
+     * Immediately terminates an active call via Plivo REST API.
+     * @param {string} callUuid - The Plivo Call UUID
+     * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+     */
+    static async hangupCall(callUuid) {
+        if (!callUuid) return { success: false, error: 'No Call UUID provided' };
+        if (!this.isConfigured()) {
+            console.log(`[PlivoService] Plivo not configured; simulated hangup for CallUUID: ${callUuid}`);
+            return { success: true, simulated: true };
         }
-        return true;
+        try {
+            const cfg = this.getConfig();
+            const url = `https://api.plivo.com/v1/Account/${cfg.authId}/Call/${callUuid}/`;
+            const authHeader = 'Basic ' + Buffer.from(`${cfg.authId}:${cfg.authToken}`).toString('base64');
+            console.log(`[PlivoService] Terminating call ${callUuid} via Plivo REST API...`);
+            const res = await fetch(url, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': authHeader
+                }
+            });
+            if (res.status === 204 || res.ok) {
+                console.log(`[PlivoService] Call ${callUuid} successfully terminated via Plivo REST API.`);
+                return { success: true };
+            } else {
+                const text = await res.text().catch(() => '');
+                console.warn(`[PlivoService] Plivo hangup HTTP ${res.status}: ${text}`);
+                return { success: false, error: text };
+            }
+        } catch (err) {
+            console.error('[PlivoService] Network error during Plivo hangup:', err.message);
+            return { success: false, error: err.message };
+        }
     }
 }
