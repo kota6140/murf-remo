@@ -29,6 +29,7 @@ import { CallQueueWorker } from '../services/call_queue_worker.js';
 import PlivoService from '../services/plivo_service.js';
 import ElevenLabsService from '../services/elevenlabs_service.js';
 import AgentService from '../services/agent_service.js';
+import { updateDemoCallStatus } from './demo.js';
 
 const SERVICES = {
     recruitment: RecruitmentService,
@@ -521,6 +522,7 @@ export async function handlePlivoAnswer(req, res) {
     const callUuid = query.CallUUID || query.call_uuid || query.CallId || '';
     let contactId = query.contactId || '';
     let service = (query.service || '').toLowerCase().trim();
+    let callMode = (query.callMode || query.call_mode || '').trim() || 'STANDARD';
     let ownerId = query.ownerId || '';
     let phone = query.phone || query.To || query.From || '';
     let name = query.name || '';
@@ -550,6 +552,11 @@ export async function handlePlivoAnswer(req, res) {
         }
     } else if (agentId) {
         try { agent = await AgentService.get(agentId); } catch { /* keep going without the agent */ }
+    }
+
+    if (service === 'promotional' || callMode === 'PROMOTIONAL_DEMO') {
+        callMode = 'PROMOTIONAL_DEMO';
+        service = 'promotional';
     }
 
     // 1. If contactId was passed, verify and enrich directly from contacts table
@@ -662,10 +669,11 @@ export async function handlePlivoAnswer(req, res) {
         company: String(company || ''),
         campaignId: String(campaignId || ''),
         agentId: String(agentId || ''),
-        direction
+        direction,
+        callMode: String(callMode || 'STANDARD')
     });
     const streamWsUrl = `${wsBaseUrl}/voicebot?${wsParams.toString()}`;
-    const extraHeaders = `callId=${callUuid},contactId=${contactId},service=${service},ownerId=${ownerId},phone=${phone},name=${encodeURIComponent(name)},role=${encodeURIComponent(role)},company=${encodeURIComponent(company)},campaignId=${campaignId},agentId=${agentId},direction=${direction}`;
+    const extraHeaders = `callId=${callUuid},contactId=${contactId},service=${service},ownerId=${ownerId},phone=${phone},name=${encodeURIComponent(name)},role=${encodeURIComponent(role)},company=${encodeURIComponent(company)},campaignId=${campaignId},agentId=${agentId},direction=${direction},callMode=${callMode}`;
 
     const xml = PlivoService.generateAnswerXml(streamWsUrl, extraHeaders);
     res.set('Content-Type', 'text/xml');
@@ -698,6 +706,9 @@ export async function handlePlivoStatus(req, res) {
                 const cause = String(body.HangupCauseName || body.HangupCause || '').trim();
                 const reason = ['FAILED', 'UNANSWERED'].includes(dbStatus)
                     ? `Plivo reported "${status}"${cause ? ` (${cause})` : ''}` : '';
+
+                // Sync demo call tracking if this was an instant promotional demo call
+                updateDemoCallStatus(callUuid, dbStatus);
 
                 // A call that has already finished (completed, failed, unanswered, cancelled) keeps its result.
                 const res1 = await db.run(
@@ -735,6 +746,7 @@ export async function handlePlivoHangup(req, res) {
     if (callUuid) {
         try {
             const now = utcNow();
+            updateDemoCallStatus(callUuid, 'COMPLETED');
             const row = await db.get('SELECT id, call_status FROM contacts WHERE provider_call_id = ?', [callUuid]);
             if (row) {
                 const open = ['PENDING', 'CALLING', 'in-progress'].includes(row.call_status);

@@ -9,6 +9,7 @@ import express from 'express';
 import crypto from 'crypto';
 import { sendEmail, escapeHtml } from '../services/email_service.js';
 import { addDemoRequest, readDemoRequests, writeDemoRequests } from '../demo_store.js';
+import PlivoService from '../services/plivo_service.js';
 
 const router = express.Router();
 
@@ -199,10 +200,37 @@ router.post('/request', async (req, res) => {
     return res.status(200).json({ success: true, email: fields.email, message: 'Confirmation email sent.' });
 });
 
+// ---- Active Demo Calls Tracking & Cooldown Guard ----
+export const activeDemoCalls = new Map(); // callUuid -> { phone, status, startedAt, updatedAt }
+const recentCallAttempts = new Map();     // cleanDigits -> timestamp
+
+/**
+ * Updates status of an active promotional demo call (called from Plivo webhook handlers).
+ */
+export function updateDemoCallStatus(callUuid, status) {
+    if (!callUuid) return;
+    const record = activeDemoCalls.get(callUuid);
+    if (record) {
+        record.status = status;
+        record.updatedAt = Date.now();
+        console.log(`[Demo] Demo call ${callUuid} status updated: ${status}`);
+    }
+}
+
+// Clean up stale demo records every 15 minutes
+setInterval(() => {
+    const cutoff = Date.now() - 30 * 60 * 1000;
+    for (const [id, item] of activeDemoCalls) {
+        if (item.startedAt < cutoff) activeDemoCalls.delete(id);
+    }
+    for (const [digits, time] of recentCallAttempts) {
+        if (time < cutoff) recentCallAttempts.delete(digits);
+    }
+}, 15 * 60 * 1000).unref();
+
 // ---- POST /api/demo/instant ----
-// The "Get instant call" box on the landing page: the visitor only types a mobile number.
-// We just record it so the team can see it in the admin panel under 60-sec demo requests.
-router.post('/instant', (req, res) => {
+// The "Get instant call" box on the landing page: triggers a one-way promotional call.
+router.post('/instant', async (req, res) => {
     if (clean(req.body && req.body.website, 200)) return res.status(200).json({ success: true });
 
     const digits = String(req.body?.phone ?? '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
@@ -215,35 +243,100 @@ router.post('/instant', (req, res) => {
         return res.status(429).json({ success: false, message: 'Too many requests from your connection. Please try again in a little while.' });
     }
 
+    // Prevent duplicate simultaneous submissions / rapid clicks (45-second cooldown per phone number)
+    const now = Date.now();
+    const lastAttempt = recentCallAttempts.get(digits);
+    if (lastAttempt && (now - lastAttempt) < 45000) {
+        const remainingSec = Math.ceil((45000 - (now - lastAttempt)) / 1000);
+        return res.status(409).json({
+            success: false,
+            message: `A promotional call was just dispatched to this number. Please check your phone or wait ${remainingSec}s.`
+        });
+    }
+    recentCallAttempts.set(digits, now);
+
     try {
         const phone = `+91 ${digits}`;
         const all = readDemoRequests();
         const dayAgo = Date.now() - WINDOW_MS;
-        // The same number pressed twice in an hour is one lead, not two
         const dup = all.some((x) => x.source === 'instant-call' && x.phone === phone && new Date(x.submittedAt).getTime() > dayAgo);
         if (!dup) {
             addDemoRequest({
                 id: crypto.randomUUID(),
                 source: 'instant-call',
-                name: '',
+                name: 'Website Visitor',
                 email: '',
-                company: '',
+                company: 'TakeRemo Demo',
                 phone,
-                useCaseKey: '',
-                useCase: '',
-                notes: '',
+                useCaseKey: 'promotional',
+                useCase: 'One-Way Promotional Call Demo',
+                notes: 'Triggered via Get Instant Call on homepage',
                 submittedAt: new Date().toISOString(),
                 status: 'new',
                 adminNote: '',
                 confirmationSent: false
             });
-            console.log('[Demo] Instant-call number received.');
+            console.log('[Demo] Instant-call lead recorded.');
         }
-        return res.status(200).json({ success: true });
+
+        // Initiate the dedicated ONE-WAY PROMOTIONAL DEMO call via Plivo
+        const contact = {
+            id: `cnt_promo_${Date.now()}`,
+            name: 'Website Visitor',
+            phone: `+91${digits}`,
+            service: 'promotional',
+            role: 'Demo Visitor',
+            company: 'TakeRemo Demo',
+            callMode: 'PROMOTIONAL_DEMO'
+        };
+
+        const callResult = await PlivoService.initiateOutboundCall(contact, 'promotional', {
+            callMode: 'PROMOTIONAL_DEMO'
+        });
+
+        if (callResult.success) {
+            const callUuid = callResult.callUuid;
+            activeDemoCalls.set(callUuid, {
+                phone: `+91 ${digits}`,
+                status: 'INITIATING',
+                startedAt: Date.now(),
+                updatedAt: Date.now()
+            });
+
+            console.log(`[Demo] Promotional demo call successfully dispatched to ${phone} (CallUUID: ${callUuid}).`);
+            return res.status(200).json({
+                success: true,
+                message: 'Promotional call initiated! Remo will speak with you in a few seconds.',
+                callUuid: callUuid,
+                phone: phone
+            });
+        } else {
+            console.error(`[Demo] Plivo failed to initiate promotional call to ${phone}:`, callResult.error);
+            return res.status(502).json({
+                success: false,
+                message: callResult.error || 'Telephony provider could not connect the call. Please try again shortly.'
+            });
+        }
     } catch (e) {
-        console.error('[Demo] Could not save instant-call number:', e.message);
-        return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+        console.error('[Demo] Could not initiate instant-call:', e.message);
+        return res.status(500).json({ success: false, message: 'Something went wrong while initiating the call. Please try again.' });
     }
+});
+
+// ---- GET /api/demo/instant-status/:callId ----
+// Polling endpoint for the landing page to track call lifecycle (INITIATING -> in-progress -> COMPLETED)
+router.get('/instant-status/:callId', (req, res) => {
+    const callId = req.params.callId;
+    const call = activeDemoCalls.get(callId);
+    if (!call) {
+        return res.status(200).json({ success: true, status: 'UNKNOWN' });
+    }
+    return res.status(200).json({
+        success: true,
+        status: call.status,
+        phone: call.phone,
+        elapsedSeconds: Math.round((Date.now() - call.startedAt) / 1000)
+    });
 });
 
 export default router;

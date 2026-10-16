@@ -586,33 +586,134 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
+  const instantCallFeedback = document.getElementById('instant-call-feedback');
+
+  const showInstantFeedback = (text, type = 'info') => {
+    if (!instantCallFeedback) return;
+    instantCallFeedback.style.display = 'block';
+    if (type === 'error') {
+      instantCallFeedback.style.background = '#FEF2F2';
+      instantCallFeedback.style.borderColor = '#FCA5A5';
+      instantCallFeedback.style.color = '#B91C1C';
+      instantCallFeedback.style.border = '1px solid #FCA5A5';
+      instantCallFeedback.innerHTML = `⚠️ ${text}`;
+    } else if (type === 'success') {
+      instantCallFeedback.style.background = '#F0FDF4';
+      instantCallFeedback.style.borderColor = '#86EFAC';
+      instantCallFeedback.style.color = '#15803D';
+      instantCallFeedback.style.border = '1px solid #86EFAC';
+      instantCallFeedback.innerHTML = `✓ ${text}`;
+    } else {
+      instantCallFeedback.style.background = '#EFF6FF';
+      instantCallFeedback.style.borderColor = '#BFDBFE';
+      instantCallFeedback.style.color = '#1E40AF';
+      instantCallFeedback.style.border = '1px solid #BFDBFE';
+      instantCallFeedback.innerHTML = `ℹ️ ${text}`;
+    }
+  };
+
+  let activeDemoPollingInterval = null;
+
+  const pollDemoCallStatus = (callUuid) => {
+    if (activeDemoPollingInterval) clearInterval(activeDemoPollingInterval);
+    let polls = 0;
+    activeDemoPollingInterval = setInterval(async () => {
+      polls++;
+      if (polls > 35) { // Max ~70 seconds of polling
+        clearInterval(activeDemoPollingInterval);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/demo/instant-status/${encodeURIComponent(callUuid)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data || !data.success) return;
+        const status = (data.status || '').toLowerCase();
+        if (status === 'in-progress' || status === 'answered') {
+          showInstantFeedback('Call Connected: Remo is speaking live with you!', 'info');
+          if (instantCallStatusPill) {
+            instantCallStatusPill.innerHTML = `
+              <span class="live-dot-pulse pulse-blue"></span>
+              <span>Call Connected · Remo is delivering TakeRemo promotional demo live</span>
+            `;
+          }
+        } else if (status === 'completed') {
+          clearInterval(activeDemoPollingInterval);
+          showInstantFeedback('Call Completed: Thank you for trying TakeRemo!', 'success');
+          endActiveCallExperience();
+        } else if (status === 'unanswered' || status === 'busy') {
+          clearInterval(activeDemoPollingInterval);
+          showInstantFeedback('Call Unanswered: The line was busy or not answered. Please try again.', 'error');
+          cancelDialing();
+        } else if (status === 'failed') {
+          clearInterval(activeDemoPollingInterval);
+          showInstantFeedback('Call Failed: Telephony carrier reported a connection failure.', 'error');
+          cancelDialing();
+        }
+      } catch (pollErr) {
+        // Non-fatal polling error
+      }
+    }, 2000);
+  };
+
   if (instantCallForm && instantMobileInput) {
-    instantCallForm.addEventListener('submit', (e) => {
+    instantCallForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const phoneNum = instantMobileInput.value.trim();
-      if (!phoneNum) return;
+      if (instantTriggerBtn.disabled) return;
 
-      // Send the number to the team (shows in the admin panel). The animation below plays either way.
-      fetch('/api/demo/instant', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: phoneNum })
-      }).catch(() => { /* offline: the demo animation still runs */ });
+      const rawNum = instantMobileInput.value.trim();
+      const cleanDigits = rawNum.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
 
+      // 1. Validate mobile number
+      if (!/^[6-9]\d{9}$/.test(cleanDigits)) {
+        showInstantFeedback('Please enter a valid 10-digit Indian mobile number (e.g., 9876543210).', 'error');
+        instantMobileInput.focus();
+        return;
+      }
+
+      // 2. Prevent multiple simultaneous submissions & show "Connecting..." loading state
       const origBtnContent = instantTriggerBtn.innerHTML;
-      instantTriggerBtn.innerHTML = `
-        <span class="c-spinner" style="width:14px;height:14px;flex:none;border:2px solid #ffffff;border-top-color:transparent;border-radius:50%;display:inline-block;animation:spin 0.6s linear infinite;"></span>
-        <span>Calling…</span>
-      `;
       instantTriggerBtn.disabled = true;
+      instantTriggerBtn.innerHTML = `
+        <span class="c-spinner" style="width:14px;height:14px;flex:none;border:2px solid #ffffff;border-top-color:transparent;border-radius:50%;display:inline-block;animation:spin 0.6s linear infinite;margin-right:6px;"></span>
+        <span>Connecting...</span>
+      `;
 
-      // Start outbound dialing animation flow
-      showDialingAnimation(phoneNum);
+      showInstantFeedback('Connecting to carrier network and dispatching call...', 'info');
 
-      setTimeout(() => {
+      try {
+        const response = await fetch('/api/demo/instant', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: cleanDigits })
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (response.ok && data.success) {
+          showInstantFeedback(data.message || 'Call initiated! Your phone will ring in a few seconds.', 'success');
+          showDialingAnimation(cleanDigits);
+
+          // Poll carrier status
+          if (data.callUuid) {
+            pollDemoCallStatus(data.callUuid);
+          }
+
+          // Keep button disabled briefly to avoid rapid re-dialing, then restore
+          setTimeout(() => {
+            instantTriggerBtn.innerHTML = origBtnContent;
+            instantTriggerBtn.disabled = false;
+          }, 15000);
+        } else {
+          showInstantFeedback(data.message || 'Unable to place call at this moment. Please check your number and try again.', 'error');
+          instantTriggerBtn.innerHTML = origBtnContent;
+          instantTriggerBtn.disabled = false;
+        }
+      } catch (networkErr) {
+        showInstantFeedback('Network connection error. Please try again.', 'error');
         instantTriggerBtn.innerHTML = origBtnContent;
         instantTriggerBtn.disabled = false;
-      }, 1800);
+      }
     });
   }
 
