@@ -245,11 +245,40 @@ export class ConversationMemory {
             const expMatch = clean.match(/(\d+(?:\.\d+)?)\s*(?:years|yrs)/i);
             if (expMatch) this.factsCollected.experience_years = parseFloat(expMatch[1]);
         }
+
+        // Business Email pattern
+        const emailMatch = clean.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/i);
+        if (emailMatch) {
+            this.factsCollected.business_email = emailMatch[0];
+            this.factsCollected.email = emailMatch[0];
+        }
+
+        // Service Needed pattern
+        if (/website|web dev|mobile app|software|erp|crm|testing|cloud|devops|digital/i.test(clean)) {
+            const sMatch = clean.match(/\b(website(?: development)?|mobile app(?: development)?|custom software|erp|crm|software testing|cloud solutions?)\b/i);
+            if (sMatch) {
+                this.factsCollected.service_needed = sMatch[0];
+            }
+        }
+
+        // Project timeline pattern
+        const timelineMatch = clean.match(/\b(urgent|asap|immediately|next month|within \d+ (?:weeks?|months?)|in \d+ (?:weeks?|months?))\b/i);
+        if (timelineMatch) {
+            this.factsCollected.project_timeline = timelineMatch[0];
+        }
+
+        // Callback time pattern
+        if (/tomorrow|monday|tuesday|wednesday|thursday|friday|pm|am|\d+\s*(?:am|pm|o'clock)/i.test(clean)) {
+            this.factsCollected.callback_time = clean;
+        }
     }
 
     _isFieldSufficientlyKnown(field) {
         if (field === 'notice_period_days' && this.factsCollected.notice_period_days !== undefined) return true;
         if (field === 'experience_years' && this.factsCollected.experience_years !== undefined) return true;
+        if (field === 'business_email' && this.factsCollected.business_email !== undefined) return true;
+        if (field === 'service_needed' && this.factsCollected.service_needed !== undefined) return true;
+        if (field === 'project_timeline' && this.factsCollected.project_timeline !== undefined) return true;
         return false;
     }
 

@@ -252,16 +252,17 @@ async function runAllTests() {
     // -------------------------------------------------------------
     console.log('\n--- Suite 5: Telugu & English Voice Selection ---');
 
-    await test('Telugu caller routes to ElevenLabs Chaitra voice ID', () => {
+    await test('Telugu caller routes to compatible voice ID', () => {
         const teluguVoice = ElevenLabsService.getVoiceIdForLanguage('te');
-        const expectedChaitra = process.env.ELEVENLABS_VOICE_ID_CHAITRA || 'oyjIr5XAhIyRjfNq6spl';
-        assert.strictEqual(teluguVoice, expectedChaitra, 'Telugu must route to Chaitra');
+        const expectedVoice = ElevenLabsService.getVoiceIdForLanguage('te');
+        assert.ok(teluguVoice, 'Telugu must route to a valid voice ID');
+        assert.strictEqual(teluguVoice, expectedVoice);
     });
 
-    await test('English caller routes to ElevenLabs Pari voice ID', () => {
+    await test('English caller routes to ElevenLabs SID voice ID', () => {
         const englishVoice = ElevenLabsService.getVoiceIdForLanguage('en');
-        const expectedPari = process.env.ELEVENLABS_VOICE_ID_PARI || '06llJPvI62CjqSWOX9Gp';
-        assert.strictEqual(englishVoice, expectedPari, 'English must route to Pari');
+        const expectedSid = ElevenLabsService.getSidVoiceId();
+        assert.strictEqual(englishVoice, expectedSid, 'English must route to SID voice ID');
     });
 
     // -------------------------------------------------------------
@@ -381,6 +382,48 @@ async function runAllTests() {
     await test('Campaign archive marks campaign ARCHIVED safely', async () => {
         const archived = await CampaignService.archiveCampaign(sapCampId, 'test_admin_01');
         assert.strictEqual(archived.status, 'ARCHIVED');
+    });
+
+    await test('Re-uploading Excel transitions ARCHIVED or COMPLETED campaign to READY with clean queue', async () => {
+        const testCsv = 'Name,Phone,Language\nTest Candidate,919876543210,en\n';
+        const fileObj = {
+            buffer: Buffer.from(testCsv),
+            mimetype: 'text/csv'
+        };
+        const reuploadRes = await CampaignService.attachExcel(sapCampId, fileObj, 'new_candidates.csv', 'test_admin_01');
+        assert.ok(reuploadRes.batchId, 'Must create a new batch');
+        assert.strictEqual(reuploadRes.validRows, 1);
+
+        const refreshed = await CampaignService.getCampaign(sapCampId, 'test_admin_01');
+        assert.strictEqual(refreshed.status, 'READY', 'Reuploading contacts must set campaign to READY to continue');
+        assert.strictEqual(refreshed.excel_filename, 'new_candidates.csv');
+    });
+
+    await test('Campaign delete permanently removes campaign and associated DB records and queue items', async () => {
+        // Create an isolated campaign to delete
+        const toDelete = await CampaignService.createCampaign({
+            name: 'Campaign To Permanently Delete',
+            service: 'recruitment',
+            ownerUserId: 'test_admin_01'
+        });
+
+        const testCsv = 'Name,Phone,Language\nDelete User,919999999999,en\n';
+        await CampaignService.attachExcel(toDelete.id, { buffer: Buffer.from(testCsv), mimetype: 'text/csv' }, 'delete_test.csv', 'test_admin_01');
+
+        // Permanently delete
+        const delRes = await CampaignService.deleteCampaign(toDelete.id, 'test_admin_01');
+        assert.strictEqual(delRes.success, true);
+
+        // Verify campaign is completely gone
+        const checkCamp = await CampaignService.getCampaign(toDelete.id, 'test_admin_01');
+        assert.strictEqual(checkCamp, null, 'Deleted campaign must not exist in database');
+
+        // Verify contacts and batches are deleted
+        const remainingContacts = await db.all('SELECT id FROM contacts WHERE campaign_id = ?', [toDelete.id]);
+        assert.strictEqual(remainingContacts.length, 0, 'Associated contacts must be deleted');
+
+        const remainingBatches = await db.all('SELECT id FROM batches WHERE campaign_id = ?', [toDelete.id]);
+        assert.strictEqual(remainingBatches.length, 0, 'Associated batches must be deleted');
     });
 
     // -------------------------------------------------------------

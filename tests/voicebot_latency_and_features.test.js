@@ -251,8 +251,7 @@ async function main() {
         const supGreeting = GeminiService.getOpeningGreeting('support', {});
 
         assert.ok(recGreeting.includes('application for Data Scientist'));
-        assert.ok(salGreeting.includes('Scorelabs Inc.'));
-        assert.ok(salGreeting.includes('custom software development'));
+        assert.ok(salGreeting.includes('Rahul'), 'Sales greeting should address the contact naturally');
         assert.ok(supGreeting.includes('customer support'));
         assert.notStrictEqual(recGreeting, salGreeting);
         assert.notStrictEqual(salGreeting, supGreeting);
@@ -268,14 +267,13 @@ async function main() {
     runTest('Sales opening greeting formats prospect name and never asks recruitment questions', () => {
         const greetingWithName = GeminiService.getOpeningGreeting('sales', { name: 'pooja', company: 'Acme Corp' });
         assert.ok(greetingWithName.includes('pooja'), 'Should personalize with prospect name');
-        assert.ok(greetingWithName.includes('Scorelabs Inc.'), 'Must represent Scorelabs Inc.');
-        assert.ok(greetingWithName.includes('custom software development'), 'Must offer IT solutions');
+        assert.ok(!greetingWithName.includes('custom software development'), 'Must not dump services on opening greeting before permission');
         assert.ok(!greetingWithName.includes('open position'), 'Must NOT mention open position');
         assert.ok(!greetingWithName.includes('application'), 'Must NOT mention job application');
 
         const greetingWithoutName = GeminiService.getOpeningGreeting('sales', { name: 'Contact (Row 2)' });
         assert.ok(!greetingWithoutName.includes('Contact (Row 2)'), 'Must not speak raw spreadsheet row label as a name');
-        assert.ok(greetingWithoutName.includes('Scorelabs Inc.'));
+        assert.ok(greetingWithoutName.includes('Scorelabs Inc.') || greetingWithoutName.includes('Score Labs'));
     });
 
     runTest('Support opening greeting addresses ticket/query and never asks recruitment questions', () => {
@@ -299,7 +297,7 @@ async function main() {
         assert.strictEqual(session.contact.name, 'pooja');
 
         await session.deliverOpeningGreeting();
-        assert.ok(session.currentQuestion.includes('Scorelabs Inc.'));
+        assert.ok(session.currentQuestion.includes('pooja'), 'Should personalize with prospect name');
         assert.ok(!session.currentQuestion.includes('application'));
         assert.ok(!session.currentQuestion.includes('open position'));
     });

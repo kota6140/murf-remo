@@ -452,7 +452,17 @@ router.post('/campaigns/:id/duplicate', wrap(async (req, res) => {
     res.status(201).json({ success: true, campaign: result });
 }));
 
-// Archive Campaign
+// Delete Campaign (Permanent)
+router.delete('/campaigns/:id', wrap(async (req, res) => {
+    const result = await CampaignService.deleteCampaign(req.params.id, req.user.id);
+    res.json(result);
+}));
+router.post('/campaigns/:id/delete', wrap(async (req, res) => {
+    const result = await CampaignService.deleteCampaign(req.params.id, req.user.id);
+    res.json(result);
+}));
+
+// Archive Campaign (kept for backwards compatibility)
 router.post('/campaigns/:id/archive', wrap(async (req, res) => {
     const result = await CampaignService.archiveCampaign(req.params.id, req.user.id);
     res.json({ success: true, ...result });

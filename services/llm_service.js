@@ -151,6 +151,71 @@ export class LLMService {
     }
 
     /**
+     * Executes a completion with token streaming and early extraction of spoken_response.
+     * When onSpokenSentence callback is passed, sentences are dispatched to TTS as soon as completed.
+     */
+    static async generateStream({
+        systemPrompt = '',
+        messages = [],
+        maxTokens = 110,
+        temperature = 0.2,
+        timeoutMs = 5000,
+        jsonMode = true,
+        onToken = null,
+        onSpokenSentence = null
+    }) {
+        const startTime = performance.now();
+        const claudeKey = this.getClaudeApiKey();
+
+        if (claudeKey) {
+            try {
+                const claudeModel = this.getClaudeModel();
+                const claudeResult = await this._callClaudeStream({
+                    apiKey: claudeKey,
+                    model: claudeModel,
+                    systemPrompt,
+                    messages,
+                    maxTokens,
+                    temperature,
+                    timeoutMs,
+                    onToken,
+                    onSpokenSentence
+                });
+
+                const latencyMs = Math.round(performance.now() - startTime);
+                if (claudeResult && claudeResult.text && claudeResult.text.trim()) {
+                    let parsedJson = null;
+                    if (jsonMode) {
+                        parsedJson = this.extractJson(claudeResult.text);
+                    }
+                    return {
+                        text: claudeResult.text.trim(),
+                        parsedJson,
+                        provider: 'claude',
+                        model: claudeModel,
+                        latencyMs,
+                        firstTokenMs: claudeResult.firstTokenMs,
+                        emittedSentences: claudeResult.emittedSentences || [],
+                        fallback: false
+                    };
+                }
+            } catch (claudeErr) {
+                console.warn(`[LLMService] Claude streaming error (${claudeErr.message}). Triggering fallback...`);
+            }
+        }
+
+        // Automatic fallback to non-streaming generate
+        return await this.generate({
+            systemPrompt,
+            messages,
+            maxTokens,
+            temperature,
+            timeoutMs,
+            jsonMode
+        });
+    }
+
+    /**
      * Direct Claude REST API call
      */
     static async _callClaude({ apiKey, model, systemPrompt, messages, maxTokens, temperature, timeoutMs }) {
@@ -208,6 +273,148 @@ export class LLMService {
             // Filter specifically for text content blocks (ignoring any thinking/signature blocks)
             const text = data.content?.filter(c => c.type === 'text').map(c => c.text || '').join('\n') || '';
             return { text };
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    /**
+     * Streams Claude Haiku completion with early extraction of spoken dialogue.
+     */
+    static async _callClaudeStream({
+        apiKey,
+        model,
+        systemPrompt,
+        messages,
+        maxTokens,
+        temperature,
+        timeoutMs,
+        onToken = null,
+        onSpokenSentence = null
+    }) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+        const claudeMessages = messages.map(m => ({
+            role: m.role === 'assistant' || m.role === 'model' ? 'assistant' : 'user',
+            content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
+        }));
+
+        if (claudeMessages.length === 0) {
+            claudeMessages.push({ role: 'user', content: 'Begin conversation.' });
+        } else if (claudeMessages[0].role !== 'user') {
+            claudeMessages.unshift({ role: 'user', content: 'Begin conversation.' });
+        }
+
+        try {
+            const bodyPayload = {
+                model,
+                max_tokens: maxTokens,
+                messages: claudeMessages,
+                stream: true
+            };
+            if (model.includes('haiku') || model.includes('claude')) {
+                bodyPayload.thinking = { type: 'disabled' };
+            }
+            if (!model.includes('5-5') && typeof temperature === 'number') {
+                bodyPayload.temperature = temperature;
+            }
+            if (systemPrompt && systemPrompt.trim()) {
+                bodyPayload.system = systemPrompt.trim();
+            }
+
+            const res = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                    'x-api-key': apiKey,
+                    'anthropic-version': '2023-06-01',
+                    'content-type': 'application/json'
+                },
+                body: JSON.stringify(bodyPayload),
+                signal: controller.signal
+            });
+
+            clearTimeout(timer);
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`Claude HTTP ${res.status}: ${errText.slice(0, 150)}`);
+            }
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let sseBuffer = '';
+            let fullText = '';
+            let spokenBuffer = '';
+            let inSpokenQuote = false;
+            let emittedSentences = [];
+            let firstTokenMs = null;
+            const startTime = performance.now();
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                sseBuffer += decoder.decode(value, { stream: true });
+                const lines = sseBuffer.split('\n');
+                sseBuffer = lines.pop();
+
+                for (const line of lines) {
+                    if (!line.startsWith('data: ')) continue;
+                    const jsonStr = line.slice(6).trim();
+                    if (jsonStr === '[DONE]') break;
+
+                    try {
+                        const event = JSON.parse(jsonStr);
+                        if (event.type === 'content_block_delta' && event.delta?.text) {
+                            const chunk = event.delta.text;
+                            if (firstTokenMs === null) {
+                                firstTokenMs = Math.round(performance.now() - startTime);
+                            }
+                            fullText += chunk;
+                            if (typeof onToken === 'function') {
+                                try { onToken(chunk, firstTokenMs); } catch (_) {}
+                            }
+
+                            if (!inSpokenQuote) {
+                                const match = fullText.match(/"spoken_response"\s*:\s*"/);
+                                if (match) {
+                                    inSpokenQuote = true;
+                                    const startIdx = fullText.indexOf(match[0]) + match[0].length;
+                                    spokenBuffer = fullText.slice(startIdx);
+                                }
+                            } else {
+                                const endQuoteIdx = chunk.indexOf('"');
+                                if (endQuoteIdx !== -1) {
+                                    spokenBuffer += chunk.slice(0, endQuoteIdx);
+                                    inSpokenQuote = false;
+                                    const remaining = spokenBuffer.trim();
+                                    if (remaining.length > 0 && typeof onSpokenSentence === 'function') {
+                                        emittedSentences.push(remaining);
+                                        try { onSpokenSentence(remaining, emittedSentences.length === 1, true); } catch (_) {}
+                                    }
+                                } else {
+                                    spokenBuffer += chunk;
+                                    const sentenceMatch = spokenBuffer.match(/^([\s\S]+?[.?!])\s+([\s\S]*)$/);
+                                    if (sentenceMatch) {
+                                        const sentence = sentenceMatch[1].trim();
+                                        spokenBuffer = sentenceMatch[2];
+                                        if (sentence.length > 0 && typeof onSpokenSentence === 'function') {
+                                            emittedSentences.push(sentence);
+                                            try { onSpokenSentence(sentence, emittedSentences.length === 1, false); } catch (_) {}
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } catch (_) {}
+                }
+            }
+
+            return {
+                text: fullText,
+                firstTokenMs: firstTokenMs || Math.round(performance.now() - startTime),
+                emittedSentences
+            };
         } finally {
             clearTimeout(timer);
         }

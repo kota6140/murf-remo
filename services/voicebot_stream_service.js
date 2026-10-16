@@ -334,6 +334,12 @@ export class CallSession {
                 if (row.campaign_id && !this.campaignId) {
                     this.campaignId = row.campaign_id;
                 }
+                if (!this.campaignId && row.batch_id) {
+                    const batchRow = await db.get('SELECT campaign_id FROM batches WHERE id = ?', [row.batch_id]);
+                    if (batchRow && batchRow.campaign_id) {
+                        this.campaignId = batchRow.campaign_id;
+                    }
+                }
                 this.contact = { ...this.contact, ...row, service: this.service, name: this.contact.name };
                 console.log(`[CallSession] Contact enriched from DB for ${this.contact.name} (${this.phone || 'N/A'}) — Service: ${this.service.toUpperCase()}`);
             }
@@ -358,6 +364,16 @@ export class CallSession {
                         if (this.campaignContext && this.campaignContext.job_title && (!this.jobRole || this.jobRole === 'the open position')) {
                             this.jobRole = this.campaignContext.job_title;
                             this.contact.job_role = this.campaignContext.job_title;
+                        }
+                        if (this.service === 'sales' && this.campaignContext) {
+                            if (this.campaignContext.company_name) {
+                                this.contact.company = this.campaignContext.company_name;
+                                this.companyName = this.campaignContext.company_name;
+                            }
+                            if (this.campaignContext.product_name) {
+                                this.contact.job_role = this.campaignContext.product_name;
+                                this.jobRole = this.campaignContext.product_name;
+                            }
                         }
                         if (camp.question_plan) {
                             try {
@@ -394,7 +410,13 @@ export class CallSession {
             campaignContext: this.campaignContext
         });
         this.currentQuestion = greeting;
-        this.currentStage = 'AVAILABILITY';
+        if (this.service === 'sales') {
+            const rawName = (this.contact && this.contact.name) ? String(this.contact.name).trim() : '';
+            const isNamed = rawName && !rawName.startsWith('Contact') && !rawName.startsWith('Caller') && !rawName.startsWith('Customer');
+            this.currentStage = isNamed ? 'GREETING' : 'PERMISSION_CHECK';
+        } else {
+            this.currentStage = 'AVAILABILITY';
+        }
 
         console.log(`[CallSession] Delivering opening greeting: "${greeting.substring(0, 80)}..."`);
 
@@ -414,8 +436,12 @@ export class CallSession {
 
         try {
             // 1. Instant Cache Check (< 1ms delivery)
+            const textLang = ElevenLabsService.detectLanguageFromText(greeting, this.detectedLanguage);
+            if (textLang && textLang !== this.detectedLanguage) {
+                this.setSessionLanguage(textLang, 'GREETING_SCRIPT');
+            }
             const voiceId = ElevenLabsService.getVoiceIdForLanguage(this.detectedLanguage);
-            const modelId = ElevenLabsService.selectTtsModel({ language: this.detectedLanguage, voiceId });
+            const modelId = ElevenLabsService.selectTtsModel({ language: this.detectedLanguage, text: greeting, voiceId });
             const cachedAudio = ElevenLabsService.getCachedAudio(greeting, { voiceId, modelId });
             if (cachedAudio) {
                 console.log(`[CallSession] Instant cache hit for opening greeting! Dispatching audio in < 5ms.`);
@@ -486,19 +512,60 @@ export class CallSession {
     }
 
     /**
+     * Updates call session language and halts any active audio from the previous language.
+     * Prevents stale audio from playing after a language switch.
+     */
+    setSessionLanguage(newLanguage, reason = 'unknown') {
+        const normalized = ElevenLabsService.normalizeLanguageCode(newLanguage);
+        if (normalized && normalized !== this.detectedLanguage) {
+            const oldLanguage = this.detectedLanguage;
+            console.log(`[CallSession] Language switch detected: ${oldLanguage} -> ${normalized} (Reason: ${reason})`);
+
+            // Clear any queued / in-flight Plivo playback buffer from the previous language
+            if (this.streamId && this.ws && this.ws.readyState === this.ws.OPEN) {
+                try {
+                    this.ws.send(JSON.stringify({
+                        event: 'clearAudio',
+                        streamId: this.streamId
+                    }));
+                } catch (wsErr) {
+                    // Non-fatal
+                }
+            }
+
+            // Cancel any active speech timer
+            if (this.activeSpeechTimer) {
+                clearTimeout(this.activeSpeechTimer);
+                this.activeSpeechTimer = null;
+            }
+
+            this.isAiSpeaking = false;
+            this.detectedLanguage = normalized;
+        }
+    }
+
+    /**
      * Synthesizes dialogue text via ElevenLabs with caching and dispatches audio to Plivo.
-     * Uses automatic language-aware voice routing (Telugu Chaitra vs. English Pari).
+     * Uses automatic language-aware model and voice selection (Telugu v4 Turbo, Hindi/English Flash v2.5).
      */
     async playAiAudio(text) {
         if (!text || this.isClosed) return;
 
         try {
+            // Confirm text language and sync session if response text was in a different language
+            const textLang = ElevenLabsService.detectLanguageFromText(text, this.detectedLanguage);
+            if (textLang && textLang !== this.detectedLanguage) {
+                this.setSessionLanguage(textLang, 'RESPONSE_TEXT_SCRIPT');
+            }
+
             this.currentQuestion = text;
             this.latencyTracker.markTtsStart();
 
             const voiceId = ElevenLabsService.getVoiceIdForLanguage(this.detectedLanguage);
-            const modelId = ElevenLabsService.selectTtsModel({ language: this.detectedLanguage, voiceId });
-            const voiceName = (voiceId === (process.env.ELEVENLABS_VOICE_ID_CHAITRA || 'oyjIr5XAhIyRjfNq6spl')) ? 'Chaitra (Telugu)' : 'Pari (English/Hindi)';
+            const modelId = ElevenLabsService.selectTtsModel({ language: this.detectedLanguage, text, voiceId });
+            const isCustomTelugu = Boolean(process.env.ELEVENLABS_VOICE_ID_CHAITRA || process.env.ELEVENLABS_VOICE_ID_TELUGU) &&
+                voiceId === (process.env.ELEVENLABS_VOICE_ID_TELUGU || process.env.ELEVENLABS_VOICE_ID_CHAITRA);
+            const voiceName = isCustomTelugu ? 'Chaitra (Telugu)' : 'Sid';
             console.log(`[CallSession] Voice selected: ${voiceName} (VoiceID: ${voiceId}, Lang: ${this.detectedLanguage}, Model: ${modelId})`);
 
             // Check cache
@@ -653,19 +720,19 @@ export class CallSession {
                 this.callerMulawChunks.push(mulawChunk);
                 this.consecutiveSilenceFrames++;
 
-                // Configurable, low-latency adaptive silence threshold:
-                // Default: 14 frames (~280ms) for brief answers ("yes", "okay", "no")
-                // 18 frames (~360ms) for longer speech to allow natural breathing pauses
-                // Configurable via VAD_SILENCE_THRESHOLD_MS (e.g. 250 - 350ms)
+                // Ultra-low-latency adaptive silence detection:
+                // 11 frames (~220ms) for common short answers ("yes", "okay", "no", "works for me")
+                // 14 frames (~280ms) for longer complex speech to allow natural pauses
+                // Configurable via VAD_SILENCE_THRESHOLD_MS (e.g. 200 - 300ms)
                 const baseShortFrames = process.env.VAD_SILENCE_THRESHOLD_MS
-                    ? Math.max(12, Math.round(parseInt(process.env.VAD_SILENCE_THRESHOLD_MS, 10) / 20))
-                    : 14;
-                const silenceRequired = this.consecutiveSpeechFrames < 60 ? baseShortFrames : (baseShortFrames + 4);
+                    ? Math.max(10, Math.round(parseInt(process.env.VAD_SILENCE_THRESHOLD_MS, 10) / 20))
+                    : 11;
+                const silenceRequired = this.consecutiveSpeechFrames < 50 ? baseShortFrames : (baseShortFrames + 3);
 
                 if (this.consecutiveSilenceFrames >= silenceRequired) {
                     const silenceMs = this.consecutiveSilenceFrames * 20;
                     console.log(`[CallSession] Silence threshold met (${silenceMs}ms). Processing caller turn.`);
-                    this.latencyTracker.markVadSilence(silenceMs);
+                    this.latencyTracker.markVadSilence(silenceMs, this.currentTurnId + 1);
 
                     this.isCallerSpeaking = false;
                     this.consecutiveSilenceFrames = 0;
@@ -700,6 +767,7 @@ export class CallSession {
         // Check minimum audio duration (>= 200ms = 1600 bytes)
         // Prevents dropping short words ("yes", "ok", "no") while filtering clicks
         if (totalMulaw.length < this.MIN_AUDIO_BYTES) {
+            this.latencyTracker.cancelTurn();
             this.isProcessingTurn = false;
             return;
         }
@@ -713,11 +781,11 @@ export class CallSession {
         try {
             if (ElevenLabsService.isConfigured()) {
                 this.latencyTracker.markSttStart();
-                const sttResult = await ElevenLabsService.speechToText(wavBuffer, 'caller_turn.wav');
+                const sttResult = await ElevenLabsService.speechToText(wavBuffer, 'caller_turn.wav', this.detectedLanguage);
                 transcript = (sttResult.transcript || '').trim();
                 if (sttResult.language) {
-                    detectedLanguage = sttResult.language;
-                    this.detectedLanguage = detectedLanguage;
+                    this.setSessionLanguage(sttResult.language, 'STT_DETECTION');
+                    detectedLanguage = this.detectedLanguage;
                 }
                 this.latencyTracker.markSttEnd(transcript.length);
             }
@@ -728,6 +796,7 @@ export class CallSession {
         // FIX-6: If a newer turn started while we were in STT, discard this stale result
         if (turnId !== this.currentTurnId) {
             console.log(`[CallSession] Turn ${turnId} discarded (superseded by turn ${this.currentTurnId}).`);
+            this.latencyTracker.cancelTurn();
             this.isProcessingTurn = false;
             return;
         }
@@ -735,6 +804,7 @@ export class CallSession {
         // FIX-2: Filter noise transcripts before ANY processing
         if (!transcript || isNoiseTranscript(transcript)) {
             console.log(`[CallSession] Noise/empty transcript filtered: "${transcript || '(empty)'}". Resuming listening.`);
+            this.latencyTracker.cancelTurn();
             this.isProcessingTurn = false;
             return;
         }
@@ -742,15 +812,18 @@ export class CallSession {
         // Normalize 3-letter language codes from ElevenLabs Scribe to standard 2-letter codes
         const hasTeluguChars = /[\u0C00-\u0C7F]/.test(transcript);
         const teluguWords = /\b(avunu|kaadu|sare|alaage|alage|cheppandi|namaskaram|meeru|nenu|telugu|undi|ledu|eppudu)\b/i.test(transcript);
+        const hasHindiChars = /[\u0900-\u097F]/.test(transcript);
+        const hindiWords = /\b(haan|nahi|theek|kahiye|namaste|aap|main|hindi|baat|karo|bataiye|samjha|shukriya)\b/i.test(transcript);
+
         if (hasTeluguChars || teluguWords || detectedLanguage === 'tel') {
+            this.setSessionLanguage('te', 'TELUGU_TRANSCRIPT_SCRIPT');
             detectedLanguage = 'te';
-            this.detectedLanguage = 'te';
-        } else if (detectedLanguage === 'hin') {
+        } else if (hasHindiChars || hindiWords || detectedLanguage === 'hin') {
+            this.setSessionLanguage('hi', 'HINDI_TRANSCRIPT_SCRIPT');
             detectedLanguage = 'hi';
-            this.detectedLanguage = 'hi';
         } else if (detectedLanguage === 'eng') {
+            this.setSessionLanguage('en', 'ENGLISH_STT_NORMALIZE');
             detectedLanguage = 'en';
-            this.detectedLanguage = 'en';
         }
 
         console.log(`[CallSession] Caller said: "${transcript}" (Lang: ${detectedLanguage}, TurnId: ${turnId})`);
@@ -798,6 +871,9 @@ export class CallSession {
         try {
             if (this.memory && typeof this.memory.recordTurn === 'function') {
                 this.memory.recordTurn('USER', transcript);
+                if (this.memory.factsCollected) {
+                    this.collectedData = { ...this.memory.factsCollected, ...this.collectedData };
+                }
             }
         } catch (memErr) {
             console.warn('[CallSession] Memory recordTurn USER error:', memErr.message);
@@ -828,6 +904,11 @@ export class CallSession {
 
             if (intent.extracted_fields && Object.keys(intent.extracted_fields).length > 0) {
                 this.collectedData = { ...this.collectedData, ...intent.extracted_fields };
+                if (this.memory && typeof this.memory.recordFact === 'function') {
+                    for (const [k, v] of Object.entries(intent.extracted_fields)) {
+                        this.memory.recordFact(k, v);
+                    }
+                }
             }
             if (intent.classification) {
                 this.classification = intent.classification;
@@ -839,7 +920,8 @@ export class CallSession {
                 this.currentStage = intent.next_stage;
             }
             if (intent.detected_language) {
-                this.detectedLanguage = intent.detected_language;
+                this.setSessionLanguage(intent.detected_language, `INTENT_FAST_PATH:${intent.reason || 'DIRECT'}`);
+                detectedLanguage = this.detectedLanguage;
             }
 
             const spokenResponse = intent.spoken_response;
@@ -883,6 +965,8 @@ export class CallSession {
         // STEP 2: LLM (Claude Haiku primary / Gemini fallback) FOR COMPLEX/AMBIGUOUS RESPONSES
         // -------------------------------------------------------------
         try {
+            let firstSentenceDispatched = false;
+
             const reply = await GeminiService.generateReply(
                 this.service,
                 this.contact,
@@ -894,11 +978,24 @@ export class CallSession {
                     questionPlan: this.questionPlan,
                     memoryState: this.memory ? this.memory.getStateSummary() : null,
                     detectedLanguage: this.detectedLanguage,
-                    currentStage: this.currentStage
+                    currentStage: this.currentStage,
+                    onToken: (token, ttftMs) => {
+                        this.latencyTracker.markLlmFirstToken();
+                    },
+                    onSpokenSentence: async (sentence, isFirst, isFinal) => {
+                        if (isFirst && !firstSentenceDispatched && turnId === this.currentTurnId && !this.isClosed) {
+                            firstSentenceDispatched = true;
+                            this.latencyTracker.markDecisionEnd('LLM_STREAM');
+                            console.log(`[CallSession] Early spoken phrase extracted. Streaming to TTS: "${sentence.slice(0, 50)}..."`);
+                            await this.playAiAudio(sentence);
+                        }
+                    }
                 }
             );
 
-            this.latencyTracker.markDecisionEnd('LLM');
+            if (!firstSentenceDispatched) {
+                this.latencyTracker.markDecisionEnd('LLM');
+            }
 
             // FIX-6: Check if we've been superseded by a newer turn
             if (turnId !== this.currentTurnId) {
@@ -911,6 +1008,9 @@ export class CallSession {
                 for (const [k, v] of Object.entries(reply.extracted_fields)) {
                     if (v !== null && v !== undefined && String(v).trim() !== '') {
                         this.collectedData[k] = v;
+                        if (this.memory && typeof this.memory.recordFact === 'function') {
+                            this.memory.recordFact(k, v);
+                        }
                     }
                 }
             }
@@ -922,13 +1022,21 @@ export class CallSession {
                 this.summary = reply.call_summary;
             }
             if (reply.detected_language) {
-                this.detectedLanguage = reply.detected_language;
+                this.setSessionLanguage(reply.detected_language, 'LLM_REPLY');
+                detectedLanguage = this.detectedLanguage;
+            }
+            if (reply.next_stage) {
+                this.stageHistory.push(this.currentStage);
+                this.currentStage = reply.next_stage;
+                if (this.memory) {
+                    this.memory.currentStage = reply.next_stage;
+                }
             }
 
             const spokenResponse = reply.spoken_response;
             if (!spokenResponse) {
-                console.warn('[CallSession] LLM returned empty spoken_response. Using universal fallback.');
-                const fallback = GeminiService.getUniversalFallback(this.detectedLanguage, this.service);
+                console.warn('[CallSession] LLM returned empty spoken_response. Using stage-aware universal fallback.');
+                const fallback = GeminiService.getUniversalFallback(this.detectedLanguage, this.service, this.currentStage);
                 const replyTimeSec = Math.floor((Date.now() - this.startTime) / 1000);
                 const replyTimeStr = `${String(Math.floor(replyTimeSec / 60)).padStart(2, '0')}:${String(replyTimeSec % 60).padStart(2, '0')}`;
                 this.conversationHistory.push({ speaker: 'REMO', text: fallback, time: replyTimeStr });
@@ -960,8 +1068,19 @@ export class CallSession {
             this.currentQuestion = spokenResponse;
             this.interruptedWithAnswer = false;
 
-            // FIX-1: Play LLM response BEFORE clearing isProcessingTurn
-            await this.playAiAudio(spokenResponse);
+            // FIX-1: Play remaining or full LLM response BEFORE clearing isProcessingTurn
+            if (firstSentenceDispatched) {
+                const emitted = (reply.emittedSentences && reply.emittedSentences.length > 0)
+                    ? reply.emittedSentences[0]
+                    : '';
+                const remainder = spokenResponse.replace(emitted, '').trim();
+                if (remainder && remainder.length > 5 && turnId === this.currentTurnId && !this.isClosed) {
+                    console.log(`[CallSession] Streaming remainder sentence to TTS: "${remainder.slice(0, 50)}..."`);
+                    await this.playAiAudio(remainder);
+                }
+            } else {
+                await this.playAiAudio(spokenResponse);
+            }
             this.latencyTracker.markAudioDispatched();
 
             // FIX-1: Only NOW clear the processing lock
@@ -978,9 +1097,9 @@ export class CallSession {
             this.latencyTracker.markDecisionEnd('LLM_ERROR');
 
             // FIX-5: Always record audio dispatched even on error, so TOTAL latency is correct
-            // Deliver a service-specific recovery phrase so caller isn't left in silence
+            // Deliver a stage-specific recovery phrase so caller isn't left in silence or restarted
             try {
-                const recoveryPhrase = GeminiService.getUniversalFallback(this.detectedLanguage, this.service);
+                const recoveryPhrase = GeminiService.getUniversalFallback(this.detectedLanguage, this.service, this.currentStage);
                 const replyTimeSec = Math.floor((Date.now() - this.startTime) / 1000);
                 const replyTimeStr = `${String(Math.floor(replyTimeSec / 60)).padStart(2, '0')}:${String(replyTimeSec % 60).padStart(2, '0')}`;
                 this.conversationHistory.push({ speaker: 'REMO', text: recoveryPhrase, time: replyTimeStr });
@@ -1308,18 +1427,27 @@ export function handleVoicebotWebsocket(ws, request) {
 export async function precacheStandardGreetings() {
     if (!ElevenLabsService.isConfigured()) return;
     try {
+        ElevenLabsService.validateConfiguration();
         // Sequential pre-warm (concurrency = 1) to respect ElevenLabs rate limits
-        console.log('[VoicebotStream] Pre-warming standard opening greetings in TTS cache...');
-        const salesGreeting = GeminiService.getOpeningGreeting('sales', {});
-        const salesVoice = ElevenLabsService.getVoiceIdForLanguage('en');
-        const salesModel = ElevenLabsService.selectTtsModel({ language: 'en', voiceId: salesVoice });
-        await ElevenLabsService.textToSpeech(salesGreeting, { voiceId: salesVoice, modelId: salesModel, language: 'en', outputFormat: 'ulaw_8000', timeoutMs: 10000 });
+        console.log('[VoicebotStream] Pre-warming standard opening greetings and fast-path responses in TTS cache...');
+        const prewarmPhrases = [
+            GeminiService.getOpeningGreeting('sales', {}),
+            GeminiService.getOpeningGreeting('recruitment', { job_role: 'the open position' }),
+            "Thank you! I just wanted to check if you're currently looking for any services that we could help you with?",
+            "Great! Could you tell me a little about what you're looking for?",
+            "I understand. Thank you for your time. Have a great day."
+        ];
 
-        const recGreeting = GeminiService.getOpeningGreeting('recruitment', { job_role: 'the open position' });
-        const recVoice = ElevenLabsService.getVoiceIdForLanguage('en');
-        const recModel = ElevenLabsService.selectTtsModel({ language: 'en', voiceId: recVoice });
-        await ElevenLabsService.textToSpeech(recGreeting, { voiceId: recVoice, modelId: recModel, language: 'en', outputFormat: 'ulaw_8000', timeoutMs: 10000 });
-        console.log('[VoicebotStream] Standard greetings cached in RAM successfully.');
+        for (const phrase of prewarmPhrases) {
+            try {
+                const voiceId = ElevenLabsService.getVoiceIdForLanguage('en');
+                const modelId = ElevenLabsService.selectTtsModel({ language: 'en', text: phrase, voiceId });
+                await ElevenLabsService.textToSpeech(phrase, { voiceId, modelId, language: 'en', outputFormat: 'ulaw_8000', timeoutMs: 10000 });
+            } catch (err) {
+                // Non-fatal per phrase
+            }
+        }
+        console.log('[VoicebotStream] Standard greetings and fast-path responses cached in RAM successfully.');
     } catch (e) {
         // Non-fatal
     }

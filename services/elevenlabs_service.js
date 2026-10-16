@@ -25,19 +25,49 @@ export default class ElevenLabsService {
         return key;
     }
 
+    static getSidVoiceId() {
+        return (
+            process.env.ELEVENLABS_VOICE_ID_SId ||
+            process.env.ELEVENLABS_VOICE_ID_SID ||
+            process.env.ELEVENLABS_VOICE_ID_Sid ||
+            process.env.ELEVENLABS_VOICE_ID ||
+            '0muxiGNHAVvmM1qWRtyV'
+        ).trim();
+    }
+
+    static getPariVoiceId() {
+        return (process.env.ELEVENLABS_VOICE_ID_PARI || this.getSidVoiceId()).trim();
+    }
+
+    static getChaitraVoiceId() {
+        return (process.env.ELEVENLABS_VOICE_ID_CHAITRA || 'oyjIr5XAhIyRjfNq6spl').trim();
+    }
+
     static getVoiceId(lang = null) {
         if (lang) {
             return this.getVoiceIdForLanguage(lang);
         }
-        return (process.env.ELEVENLABS_VOICE_ID || process.env.ELEVENLABS_VOICE_ID_PARI || '06llJPvI62CjqSWOX9Gp').trim();
+        return this.getSidVoiceId();
     }
 
     static getVoiceIdForLanguage(lang = 'en') {
         const l = (lang || '').toLowerCase().trim();
-        if (l === 'te' || l === 'tel' || l === 'telugu') {
-            return (process.env.ELEVENLABS_VOICE_ID_CHAITRA || 'oyjIr5XAhIyRjfNq6spl').trim();
+        if ((l === 'te' || l === 'tel' || l === 'telugu') && (process.env.ELEVENLABS_VOICE_ID_TELUGU || process.env.ELEVENLABS_VOICE_ID_CHAITRA)) {
+            return (process.env.ELEVENLABS_VOICE_ID_TELUGU || process.env.ELEVENLABS_VOICE_ID_CHAITRA).trim();
         }
-        return (process.env.ELEVENLABS_VOICE_ID_PARI || process.env.ELEVENLABS_VOICE_ID || '06llJPvI62CjqSWOX9Gp').trim();
+        return this.getSidVoiceId();
+    }
+
+    static getModelForTelugu() {
+        return (process.env.ELEVENLABS_MODEL_TELUGU || process.env.ELEVENLABS_TELUGU_MODEL_ID || 'eleven_v4_turbo').trim();
+    }
+
+    static getModelForHindi() {
+        return (process.env.ELEVENLABS_MODEL_HINDI || process.env.ELEVENLABS_FAST_MODEL_ID || 'eleven_flash_v2_5').trim();
+    }
+
+    static getModelForEnglish() {
+        return (process.env.ELEVENLABS_MODEL_ENGLISH || process.env.ELEVENLABS_FAST_MODEL_ID || 'eleven_flash_v2_5').trim();
     }
 
     static getFastModelId() {
@@ -49,12 +79,107 @@ export default class ElevenLabsService {
     }
 
     /**
+     * Normalizes arbitrary language strings to standard 2-letter codes.
+     */
+    static normalizeLanguageCode(lang = 'en') {
+        if (!lang || typeof lang !== 'string') return 'en';
+        const l = lang.toLowerCase().trim();
+        if (l === 'te' || l === 'tel' || l === 'telugu') return 'te';
+        if (l === 'hi' || l === 'hin' || l === 'hindi') return 'hi';
+        if (l === 'en' || l === 'eng' || l === 'english') return 'en';
+        return l;
+    }
+
+    /**
+     * Detects the language of dialogue text from character scripts and common markers.
+     * Telugu Unicode range: \u0C00-\u0C7F
+     * Devanagari Unicode range: \u0900-\u097F
+     */
+    static detectLanguageFromText(text, fallbackLang = 'en') {
+        if (!text || typeof text !== 'string') return this.normalizeLanguageCode(fallbackLang);
+        if (/[\u0C00-\u0C7F]/.test(text)) return 'te';
+        if (/[\u0900-\u097F]/.test(text)) return 'hi';
+
+        if (/\b(namaskaram|cheppandi|meeru|nenu|telugu|avunu|kaadu|eppudu)\b/i.test(text)) return 'te';
+        if (/\b(namaste|kahiye|aap|hum|hindi|shukriya|dhanyawad)\b/i.test(text)) return 'hi';
+
+        return this.normalizeLanguageCode(fallbackLang);
+    }
+
+    /**
+     * Checks if a given model supports a specific language.
+     * Prevents silently sending Telugu text to Flash v2.5 or other incompatible combinations.
+     */
+    static isLanguageSupportedByModel(modelId, language) {
+        const lang = this.normalizeLanguageCode(language);
+        const m = (modelId || '').toLowerCase().trim();
+
+        if (lang === 'te') {
+            if (m === 'eleven_flash_v2_5' || m === 'eleven_multilingual_v2' || m === 'eleven_turbo_v2' || m === 'eleven_flash_v2') {
+                return false;
+            }
+            return true;
+        }
+
+        if (lang === 'hi') {
+            if (m === 'eleven_turbo_v2' || m === 'eleven_flash_v2' || m === 'eleven_english_sts_v2') {
+                return false;
+            }
+            return true;
+        }
+
+        return true;
+    }
+
+    /**
+     * Validates model and voice compatibility before synthesis.
+     * If incompatible, auto-resolves the correct compatible model.
+     */
+    static validateModelCompatibility(modelId, language) {
+        const lang = this.normalizeLanguageCode(language);
+        if (!this.isLanguageSupportedByModel(modelId, lang)) {
+            console.warn(`[ElevenLabsService] Model '${modelId}' does not support language '${lang}'. Auto-resolving compatible model.`);
+            if (lang === 'te') {
+                return this.getModelForTelugu();
+            }
+            if (lang === 'hi') {
+                return this.getModelForHindi();
+            }
+            return this.getModelForEnglish();
+        }
+        return modelId;
+    }
+
+    /**
+     * Verifies that the requested voice and model combination is valid before dispatch.
+     * If incompatible or unsupported, safely resolves to compatible settings.
+     */
+    static validateVoiceAndModel(voiceId, modelId, language = 'en') {
+        const effectiveVoiceId = (voiceId || this.getSidVoiceId()).trim();
+        let effectiveModelId = modelId || this.selectTtsModel({ language, voiceId: effectiveVoiceId });
+
+        // Ensure language compatibility with model
+        effectiveModelId = this.validateModelCompatibility(effectiveModelId, language);
+
+        // Ensure voice ID is not an empty string
+        if (!effectiveVoiceId) {
+            console.warn('[ElevenLabsService] Empty voice ID provided, falling back to configured SID voice ID.');
+            return { voiceId: this.getSidVoiceId(), modelId: effectiveModelId };
+        }
+
+        return { voiceId: effectiveVoiceId, modelId: effectiveModelId };
+    }
+
+    /**
      * Centralized TTS model selection function.
-     * Evaluates language, voice, and configured preferences to select either
-     * Flash v2.5 (low-latency) or Multilingual v2 (phonetic stability).
+     * Evaluates language, response text script, voice, and environment configuration:
+     * - Telugu ('te') -> ELEVENLABS_MODEL_TELUGU (default eleven_v4_turbo)
+     * - Hindi ('hi')   -> ELEVENLABS_MODEL_HINDI (default eleven_flash_v2_5)
+     * - English ('en') -> ELEVENLABS_MODEL_ENGLISH (default eleven_flash_v2_5)
      * 
      * @param {object|string} options - Selection options or language code string
      * @param {string} [options.language='en'] - Conversation language (e.g. en, hi, te)
+     * @param {string} [options.text=null] - Spoken dialogue text (used for script-level language confirmation)
      * @param {string} [options.voiceId=null] - Voice ID
      * @param {string} [options.preferModel=null] - Optional override ('fast' | 'multilingual')
      * @param {string} [options.overrideModel=null] - Explicit model ID override
@@ -64,48 +189,45 @@ export default class ElevenLabsService {
         if (typeof options === 'string') {
             options = { language: options };
         }
-        const { language = 'en', voiceId = null, preferModel = null, overrideModel = null } = options;
+        const {
+            language = null,
+            text = null,
+            voiceId = null,
+            preferModel = null,
+            overrideModel = null
+        } = options;
 
         if (overrideModel && typeof overrideModel === 'string' && overrideModel.trim()) {
             return overrideModel.trim();
         }
 
-        const fastModel = this.getFastModelId();
-        const multilingualModel = this.getMultilingualModelId();
+        // Determine effective language: text script detection takes precedence if text is provided
+        let effectiveLang = 'en';
+        if (text) {
+            effectiveLang = this.detectLanguageFromText(text, language || 'en');
+        } else if (language) {
+            effectiveLang = this.normalizeLanguageCode(language);
+        }
 
         // Explicit preference override via option or env
         const globalPref = (preferModel || process.env.ELEVENLABS_PREFERRED_MODEL || '').toLowerCase().trim();
         if (globalPref === 'multilingual' || globalPref === 'eleven_multilingual_v2') {
-            return multilingualModel;
+            return this.getMultilingualModelId();
         }
         if (globalPref === 'fast' || globalPref === 'flash' || globalPref === 'eleven_flash_v2_5') {
-            return fastModel;
+            return this.getFastModelId();
         }
 
-        // Language normalization
-        const l = (language || '').toLowerCase().trim();
-
-        // Check language-specific override env if configured
-        if ((l === 'te' || l === 'tel' || l === 'telugu') && process.env.ELEVENLABS_TELUGU_MODEL_ID) {
-            return process.env.ELEVENLABS_TELUGU_MODEL_ID.trim();
+        // Language-specific selection from .env source of truth
+        switch (effectiveLang) {
+            case 'te':
+                return this.getModelForTelugu();
+            case 'hi':
+                return this.getModelForHindi();
+            case 'en':
+            default:
+                return this.getModelForEnglish();
         }
-
-        // Policy:
-        // 1. English (en/eng) -> Flash v2.5 (preferred low-latency conversational model)
-        // 2. Hindi (hi/hin) -> Flash v2.5 (verified sub-500ms synthesis with Pari voice)
-        // 3. Telugu (te/tel) -> Multilingual v2 (verified stability for complex Telugu script with Chaitra)
-        // 4. Default -> Flash v2.5
-        if (l === 'te' || l === 'tel' || l === 'telugu') {
-            return multilingualModel;
-        }
-        if (l === 'hi' || l === 'hin' || l === 'hindi') {
-            return fastModel;
-        }
-        if (l === 'en' || l === 'eng' || l === 'english') {
-            return fastModel;
-        }
-
-        return fastModel;
     }
 
     /**
@@ -116,13 +238,52 @@ export default class ElevenLabsService {
     }
 
     /**
-     * Returns the configured alternative model for compatibility fallback.
+     * Returns the configured alternative model for compatibility fallback,
+     * ensuring the fallback model actually supports the requested language.
      */
-    static getAlternativeModel(currentModel) {
-        const fast = this.getFastModelId();
+    static getAlternativeModel(currentModel, language = 'en') {
+        const lang = this.normalizeLanguageCode(language);
+        if (lang === 'te') {
+            const primaryTe = this.getModelForTelugu();
+            if (currentModel === primaryTe) {
+                return process.env.ELEVENLABS_TELUGU_FALLBACK_MODEL || 'eleven_v4';
+            }
+            return primaryTe;
+        }
+        if (lang === 'hi') {
+            const fast = this.getModelForHindi();
+            const multi = this.getMultilingualModelId();
+            if (currentModel === fast) return multi;
+            return fast;
+        }
+        // Default / English
+        const fast = this.getModelForEnglish();
         const multi = this.getMultilingualModelId();
         if (currentModel === fast) return multi;
         return fast;
+    }
+
+    /**
+     * Validates configuration at startup and logs selected models without exposing credentials.
+     */
+    static validateConfiguration() {
+        const isConfigured = this.isConfigured();
+        console.log('[ElevenLabsService] Voice AI Configuration:');
+        console.log(`  - API Key: ${isConfigured ? 'Configured (verified)' : 'Missing/Not set'}`);
+        console.log(`  - Telugu Model (ELEVENLABS_MODEL_TELUGU): ${this.getModelForTelugu()}`);
+        console.log(`  - Hindi Model (ELEVENLABS_MODEL_HINDI): ${this.getModelForHindi()}`);
+        console.log(`  - English Model (ELEVENLABS_MODEL_ENGLISH): ${this.getModelForEnglish()}`);
+        console.log(`  - Fast Model (ELEVENLABS_FAST_MODEL_ID): ${this.getFastModelId()}`);
+        console.log(`  - Multilingual Model (ELEVENLABS_MULTILINGUAL_MODEL_ID): ${this.getMultilingualModelId()}`);
+        console.log(`  - SID Voice ID (ELEVENLABS_VOICE_ID_SId): ${this.getSidVoiceId()}`);
+        if (process.env.ELEVENLABS_VOICE_ID_CHAITRA || process.env.ELEVENLABS_VOICE_ID_TELUGU) {
+            console.log(`  - Telugu Voice ID (Custom): ${this.getVoiceIdForLanguage('te')}`);
+        }
+
+        const teModel = this.getModelForTelugu();
+        if (!this.isLanguageSupportedByModel(teModel, 'te')) {
+            console.error(`[ElevenLabsService] CONFIG WARNING: Configured Telugu model '${teModel}' does not support Telugu. Please use 'eleven_v4_turbo' or 'eleven_v4'.`);
+        }
     }
 
     static getWebhookSecret() {
@@ -178,14 +339,22 @@ export default class ElevenLabsService {
     static async textToSpeech(text, options = {}) {
         if (!text || !text.trim()) return null;
 
-        const language = options.language || options.lang || 'en';
-        const voiceId = options.voiceId || this.getVoiceId(language);
-        const modelId = options.modelId || this.selectTtsModel({
+        const rawLanguage = options.language || options.lang || 'en';
+        const language = this.detectLanguageFromText(text, rawLanguage);
+        const rawVoiceId = options.voiceId || this.getVoiceId(language);
+        let rawModelId = options.modelId || this.selectTtsModel({
             language,
-            voiceId,
+            text,
+            voiceId: rawVoiceId,
             preferModel: options.preferModel,
             overrideModel: options.overrideModel
         });
+
+        // Validate compatibility of voice, model, and language before synthesis
+        const validated = this.validateVoiceAndModel(rawVoiceId, rawModelId, language);
+        const voiceId = validated.voiceId;
+        const modelId = validated.modelId;
+
         const outputFormat = options.outputFormat || 'ulaw_8000';
 
         // Timing Log 1: Centralized Model Selection
@@ -217,8 +386,9 @@ export default class ElevenLabsService {
         const voiceId = options.voiceId;
         const outputFormat = options.outputFormat;
         const timeoutMs = options.timeoutMs || 8000;
+        const language = options.language || 'en';
 
-        const res = await this._executeTtsFetch(text, primaryModel, voiceId, outputFormat, timeoutMs, options.onChunk);
+        const res = await this._executeTtsFetch(text, primaryModel, voiceId, outputFormat, timeoutMs, options.onChunk, language);
 
         if (res.success && res.buffer) {
             this.precacheAudio(text, res.buffer, { voiceId, modelId: primaryModel, outputFormat });
@@ -233,10 +403,10 @@ export default class ElevenLabsService {
              res.errorText?.toLowerCase().includes('voice'));
 
         if (isModelCompatError && !options._isRetry) {
-            const altModel = this.getAlternativeModel(primaryModel);
+            const altModel = this.getAlternativeModel(primaryModel, language);
             if (altModel && altModel !== primaryModel) {
-                console.warn(`[ElevenLabsService] TTS fallback triggered: Primary model ${primaryModel} failed (HTTP ${res.status} - ${res.errorText?.slice(0, 80)}). Retrying with alternative model ${altModel}...`);
-                const retryRes = await this._executeTtsFetch(text, altModel, voiceId, outputFormat, timeoutMs, options.onChunk);
+                console.warn(`[ElevenLabsService] TTS fallback triggered: Primary model ${primaryModel} failed (HTTP ${res.status} - ${res.errorText?.slice(0, 80)}). Retrying with alternative model ${altModel} for language '${language}'...`);
+                const retryRes = await this._executeTtsFetch(text, altModel, voiceId, outputFormat, timeoutMs, options.onChunk, language);
                 if (retryRes.success && retryRes.buffer) {
                     this.precacheAudio(text, retryRes.buffer, { voiceId, modelId: altModel, outputFormat });
                     return retryRes.buffer;
@@ -250,7 +420,7 @@ export default class ElevenLabsService {
     /**
      * Executes the HTTP POST request to ElevenLabs with streaming byte metrics and timing logs.
      */
-    static async _executeTtsFetch(text, modelId, voiceId, outputFormat, timeoutMs, onChunk = null) {
+    static async _executeTtsFetch(text, modelId, voiceId, outputFormat, timeoutMs, onChunk = null, language = 'en') {
         const apiKey = this.getApiKey();
         const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=${outputFormat}`;
 
@@ -264,6 +434,13 @@ export default class ElevenLabsService {
                 use_speaker_boost: true
             }
         };
+
+        if (language) {
+            const normalizedLang = this.normalizeLanguageCode(language);
+            if (normalizedLang) {
+                payload.language_code = normalizedLang;
+            }
+        }
 
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -361,9 +538,11 @@ export default class ElevenLabsService {
         const blob = new Blob([audioBuffer], { type: filename.endsWith('.wav') ? 'audio/wav' : 'audio/basic' });
         form.append('file', blob, filename);
         form.append('model_id', 'scribe_v1');
+        form.append('tag_audio_events', 'false');
 
         if (languageCode) {
-            form.append('language_code', languageCode);
+            const mapped = languageCode === 'te' ? 'tel' : (languageCode === 'hi' ? 'hin' : (languageCode === 'en' ? 'eng' : languageCode));
+            form.append('language_code', mapped);
         }
 
         const timeoutMs = 4500;

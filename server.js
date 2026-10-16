@@ -150,6 +150,9 @@ app.get('/service/:slug', (req, res, next) => {
     res.sendFile(path.join(__dirname, file));
 });
 
+app.get('/overview', (req, res) => res.sendFile(path.join(__dirname, 'overview.html')));
+app.get('/enterprise', (req, res) => res.sendFile(path.join(__dirname, 'enterprise.html')));
+app.get(['/security-compliance', '/security', '/security-privacy'], (req, res) => res.sendFile(path.join(__dirname, 'security.html')));
 app.get('/how-it-works', (req, res) => res.sendFile(path.join(__dirname, 'how-it-works.html')));
 // (not /services: that path is blocked above as a private source folder)
 const INDUSTRY_SLUGS = ['healthcare', 'recruitment', 'sales', 'education', 'realestate', 'support', 'finance', 'automotive'];

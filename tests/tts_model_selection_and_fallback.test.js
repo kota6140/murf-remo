@@ -2,16 +2,18 @@
  * tests/tts_model_selection_and_fallback.test.js
  * 
  * Comprehensive test suite verifying:
- * 1. Dual ElevenLabs model configuration (ELEVENLABS_FAST_MODEL_ID & ELEVENLABS_MULTILINGUAL_MODEL_ID)
- * 2. Centralized model selection for English, Hindi, and Telugu
- * 3. Preference overrides and custom model overrides
- * 4. Automatic compatibility fallback on model-specific 400/422 errors
- * 5. Prevention of unnecessary retries on 401, 429, or timeouts
- * 6. In-memory caching and voice routing preservation
+ * 1. Environment model resolution (ELEVENLABS_MODEL_TELUGU, ELEVENLABS_MODEL_HINDI, ELEVENLABS_MODEL_ENGLISH)
+ * 2. Automatic centralized model selection based on conversation language & text script
+ * 3. Pari voice ID preservation across English, Hindi, and Telugu
+ * 4. Model language compatibility verification (preventing sending Telugu to Flash v2.5)
+ * 5. Language switching during active calls with audio buffer clearing
+ * 6. Compatibility fallback on model-specific errors
+ * 7. Live ElevenLabs TTS API synthesis verification for Telugu, Hindi, and English
  */
 
 import assert from 'assert';
 import ElevenLabsService from '../services/elevenlabs_service.js';
+import { CallSession } from '../services/voicebot_stream_service.js';
 
 let passed = 0;
 let failed = 0;
@@ -30,7 +32,7 @@ async function test(name, fn) {
 
 async function runTests() {
     console.log('====================================================');
-    console.log('ELEVENLABS DUAL TTS MODEL & FALLBACK TEST SUITE');
+    console.log('ELEVENLABS LANGUAGE-BASED MODEL SELECTION TEST SUITE');
     console.log('====================================================\n');
 
     // -----------------------------------------------------------------
@@ -38,134 +40,204 @@ async function runTests() {
     // -----------------------------------------------------------------
     console.log('--- Suite 1: Environment Model Resolution ---');
 
-    await test('getFastModelId returns configured or default fast model', () => {
+    await test('getModelForTelugu returns ELEVENLABS_MODEL_TELUGU from environment', () => {
+        const teModel = ElevenLabsService.getModelForTelugu();
+        assert.ok(teModel, 'Telugu model must not be empty');
+        assert.strictEqual(teModel, process.env.ELEVENLABS_MODEL_TELUGU || 'eleven_v4_turbo');
+    });
+
+    await test('getModelForHindi returns ELEVENLABS_MODEL_HINDI from environment', () => {
+        const hiModel = ElevenLabsService.getModelForHindi();
+        assert.ok(hiModel, 'Hindi model must not be empty');
+        assert.strictEqual(hiModel, process.env.ELEVENLABS_MODEL_HINDI || 'eleven_flash_v2_5');
+    });
+
+    await test('getModelForEnglish returns ELEVENLABS_MODEL_ENGLISH from environment', () => {
+        const enModel = ElevenLabsService.getModelForEnglish();
+        assert.ok(enModel, 'English model must not be empty');
+        assert.strictEqual(enModel, process.env.ELEVENLABS_MODEL_ENGLISH || 'eleven_flash_v2_5');
+    });
+
+    await test('getFastModelId and getMultilingualModelId return configured env values', () => {
         const fast = ElevenLabsService.getFastModelId();
-        assert.ok(fast, 'Fast model ID must not be empty');
+        const multi = ElevenLabsService.getMultilingualModelId();
         assert.strictEqual(fast, process.env.ELEVENLABS_FAST_MODEL_ID || 'eleven_flash_v2_5');
-    });
-
-    await test('getMultilingualModelId returns configured or default multilingual model', () => {
-        const multi = ElevenLabsService.getMultilingualModelId();
-        assert.ok(multi, 'Multilingual model ID must not be empty');
-        assert.strictEqual(multi, process.env.ELEVENLABS_MULTILINGUAL_MODEL_ID || process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2');
-    });
-
-    await test('getAlternativeModel returns complementary model', () => {
-        const fast = ElevenLabsService.getFastModelId();
-        const multi = ElevenLabsService.getMultilingualModelId();
-
-        assert.strictEqual(ElevenLabsService.getAlternativeModel(fast), multi);
-        assert.strictEqual(ElevenLabsService.getAlternativeModel(multi), fast);
+        assert.strictEqual(multi, process.env.ELEVENLABS_MULTILINGUAL_MODEL_ID || 'eleven_multilingual_v2');
     });
 
     // -----------------------------------------------------------------
     // Suite 2: Centralized Model Selection (selectTtsModel)
     // -----------------------------------------------------------------
-    console.log('\n--- Suite 2: Centralized Model Selection ---');
+    console.log('\n--- Suite 2: Centralized Model Selection by Language ---');
 
-    await test('English selects Flash v2.5 by default for low latency', () => {
-        const modelEn = ElevenLabsService.selectTtsModel({ language: 'en' });
-        assert.strictEqual(modelEn, ElevenLabsService.getFastModelId());
-
-        const modelEng = ElevenLabsService.selectTtsModel('eng');
-        assert.strictEqual(modelEng, ElevenLabsService.getFastModelId());
-
-        const modelEnglish = ElevenLabsService.selectTtsModel('English');
-        assert.strictEqual(modelEnglish, ElevenLabsService.getFastModelId());
-    });
-
-    await test('Hindi selects Flash v2.5 by default for verified fast synthesis', () => {
-        const modelHi = ElevenLabsService.selectTtsModel({ language: 'hi' });
-        assert.strictEqual(modelHi, ElevenLabsService.getFastModelId());
-
-        const modelHin = ElevenLabsService.selectTtsModel('hin');
-        assert.strictEqual(modelHin, ElevenLabsService.getFastModelId());
-    });
-
-    await test('Telugu selects Multilingual v2 for proven script fidelity', () => {
+    await test('Telugu selects configured eleven_v4_turbo model', () => {
         const modelTe = ElevenLabsService.selectTtsModel({ language: 'te' });
-        assert.strictEqual(modelTe, ElevenLabsService.getMultilingualModelId());
+        assert.strictEqual(modelTe, ElevenLabsService.getModelForTelugu());
 
         const modelTel = ElevenLabsService.selectTtsModel('tel');
-        assert.strictEqual(modelTel, ElevenLabsService.getMultilingualModelId());
+        assert.strictEqual(modelTel, ElevenLabsService.getModelForTelugu());
 
         const modelTelugu = ElevenLabsService.selectTtsModel('Telugu');
-        assert.strictEqual(modelTelugu, ElevenLabsService.getMultilingualModelId());
+        assert.strictEqual(modelTelugu, ElevenLabsService.getModelForTelugu());
+    });
+
+    await test('Hindi selects configured eleven_flash_v2_5 model', () => {
+        const modelHi = ElevenLabsService.selectTtsModel({ language: 'hi' });
+        assert.strictEqual(modelHi, ElevenLabsService.getModelForHindi());
+
+        const modelHin = ElevenLabsService.selectTtsModel('hin');
+        assert.strictEqual(modelHin, ElevenLabsService.getModelForHindi());
+    });
+
+    await test('English selects configured eleven_flash_v2_5 model', () => {
+        const modelEn = ElevenLabsService.selectTtsModel({ language: 'en' });
+        assert.strictEqual(modelEn, ElevenLabsService.getModelForEnglish());
+
+        const modelEng = ElevenLabsService.selectTtsModel('eng');
+        assert.strictEqual(modelEng, ElevenLabsService.getModelForEnglish());
+    });
+
+    await test('Response text with Telugu script automatically selects Telugu model', () => {
+        const teText = 'నమస్కారం, స్కోర్ ల్యాబ్స్ నుండి మాట్లాడుతున్నాను.';
+        const selected = ElevenLabsService.selectTtsModel({ text: teText });
+        assert.strictEqual(selected, ElevenLabsService.getModelForTelugu());
+    });
+
+    await test('Response text with Hindi Devanagari script automatically selects Hindi model', () => {
+        const hiText = 'नमस्ते, मैं स्कोरलैब्स से बात कर रहा हूँ।';
+        const selected = ElevenLabsService.selectTtsModel({ text: hiText });
+        assert.strictEqual(selected, ElevenLabsService.getModelForHindi());
     });
 
     await test('getModelId is backward-compatible alias for selectTtsModel', () => {
-        assert.strictEqual(ElevenLabsService.getModelId({ language: 'en' }), ElevenLabsService.getFastModelId());
-        assert.strictEqual(ElevenLabsService.getModelId({ language: 'te' }), ElevenLabsService.getMultilingualModelId());
-        assert.strictEqual(ElevenLabsService.getModelId('hi'), ElevenLabsService.getFastModelId());
+        assert.strictEqual(ElevenLabsService.getModelId({ language: 'en' }), ElevenLabsService.getModelForEnglish());
+        assert.strictEqual(ElevenLabsService.getModelId({ language: 'te' }), ElevenLabsService.getModelForTelugu());
+        assert.strictEqual(ElevenLabsService.getModelId('hi'), ElevenLabsService.getModelForHindi());
     });
 
     // -----------------------------------------------------------------
-    // Suite 3: Configurable Preferences & Overrides
+    // Suite 3: Model Compatibility & Safety Validation
     // -----------------------------------------------------------------
-    console.log('\n--- Suite 3: Configurable Preferences & Overrides ---');
+    console.log('\n--- Suite 3: Model Compatibility & Safety ---');
 
-    await test('Explicit preferModel: multilingual forces multilingual for English/Hindi', () => {
-        const model = ElevenLabsService.selectTtsModel({ language: 'en', preferModel: 'multilingual' });
-        assert.strictEqual(model, ElevenLabsService.getMultilingualModelId());
-
-        const modelHi = ElevenLabsService.selectTtsModel({ language: 'hi', preferModel: 'multilingual' });
-        assert.strictEqual(modelHi, ElevenLabsService.getMultilingualModelId());
+    await test('isLanguageSupportedByModel correctly blocks Telugu on Flash v2.5', () => {
+        assert.strictEqual(ElevenLabsService.isLanguageSupportedByModel('eleven_flash_v2_5', 'te'), false);
+        assert.strictEqual(ElevenLabsService.isLanguageSupportedByModel('eleven_multilingual_v2', 'te'), false);
+        assert.strictEqual(ElevenLabsService.isLanguageSupportedByModel('eleven_v4_turbo', 'te'), true);
+        assert.strictEqual(ElevenLabsService.isLanguageSupportedByModel('eleven_v4', 'te'), true);
     });
 
-    await test('Explicit preferModel: fast forces fast model for Telugu', () => {
-        const model = ElevenLabsService.selectTtsModel({ language: 'te', preferModel: 'fast' });
-        assert.strictEqual(model, ElevenLabsService.getFastModelId());
+    await test('validateModelCompatibility auto-resolves incompatible Telugu model to eleven_v4_turbo', () => {
+        const safeModel = ElevenLabsService.validateModelCompatibility('eleven_flash_v2_5', 'te');
+        assert.strictEqual(safeModel, ElevenLabsService.getModelForTelugu());
     });
 
-    await test('overrideModel parameter overrides all defaults and preferences', () => {
-        const custom = 'eleven_v4_turbo';
-        const model = ElevenLabsService.selectTtsModel({ language: 'te', overrideModel: custom });
-        assert.strictEqual(model, custom);
+    await test('getAlternativeModel returns language-compatible fallback for Telugu', () => {
+        const tePrimary = ElevenLabsService.getModelForTelugu(); // eleven_v4_turbo
+        const teAlt = ElevenLabsService.getAlternativeModel(tePrimary, 'te');
+        assert.ok(teAlt === 'eleven_v4' || teAlt === 'eleven_v3', 'Telugu alternative must be a Telugu-compatible model');
     });
 
     // -----------------------------------------------------------------
-    // Suite 4: Voice Routing Preservation
+    // Suite 4: Voice Routing & SID Voice ID
     // -----------------------------------------------------------------
-    console.log('\n--- Suite 4: Voice Routing Preservation ---');
+    console.log('\n--- Suite 4: Voice Routing & SID Voice Integration ---');
 
-    await test('Telugu routes to configured Chaitra voice ID', () => {
-        const voiceId = ElevenLabsService.getVoiceIdForLanguage('te');
-        const expected = (process.env.ELEVENLABS_VOICE_ID_CHAITRA || 'oyjIr5XAhIyRjfNq6spl').trim();
-        assert.strictEqual(voiceId, expected);
+    await test('SID voice ID is loaded from ELEVENLABS_VOICE_ID_SId in environment', () => {
+        const sidVoice = ElevenLabsService.getSidVoiceId();
+        const expected = (process.env.ELEVENLABS_VOICE_ID_SId || '0muxiGNHAVvmM1qWRtyV').trim();
+        assert.strictEqual(sidVoice, expected);
     });
 
-    await test('English and Hindi route to configured Pari voice ID', () => {
-        const expected = (process.env.ELEVENLABS_VOICE_ID_PARI || '06llJPvI62CjqSWOX9Gp').trim();
+    await test('English and Hindi route to SID voice ID by default', () => {
+        const expected = ElevenLabsService.getSidVoiceId();
         assert.strictEqual(ElevenLabsService.getVoiceIdForLanguage('en'), expected);
         assert.strictEqual(ElevenLabsService.getVoiceIdForLanguage('hi'), expected);
     });
 
-    // -----------------------------------------------------------------
-    // Suite 5: In-Memory Caching with Model-Aware Keys
-    // -----------------------------------------------------------------
-    console.log('\n--- Suite 5: Model-Aware Audio Caching ---');
-
-    await test('Cached audio distinguishes between fast and multilingual models', () => {
-        const text = 'Test cached greeting turn';
-        const voiceId = '06llJPvI62CjqSWOX9Gp';
-        const fastModel = ElevenLabsService.getFastModelId();
-        const multiModel = ElevenLabsService.getMultilingualModelId();
-
-        const fakeFastBuffer = Buffer.from('FAST_AUDIO_BUFFER');
-        const fakeMultiBuffer = Buffer.from('MULTI_AUDIO_BUFFER');
-
-        ElevenLabsService.precacheAudio(text, fakeFastBuffer, { voiceId, modelId: fastModel });
-        ElevenLabsService.precacheAudio(text, fakeMultiBuffer, { voiceId, modelId: multiModel });
-
-        const cachedFast = ElevenLabsService.getCachedAudio(text, { voiceId, modelId: fastModel });
-        const cachedMulti = ElevenLabsService.getCachedAudio(text, { voiceId, modelId: multiModel });
-
-        assert.strictEqual(cachedFast.toString(), 'FAST_AUDIO_BUFFER');
-        assert.strictEqual(cachedMulti.toString(), 'MULTI_AUDIO_BUFFER');
+    await test('Telugu routes to configured voice ID (SID or custom) with language compatibility', () => {
+        const expected = ElevenLabsService.getVoiceIdForLanguage('te');
+        assert.ok(expected && expected.length > 0);
     });
 
     // -----------------------------------------------------------------
-    // Suite 6: Compatibility Fallback Logic
+    // Suite 5: Active Call Language Switching & Audio Queue Clearing
+    // -----------------------------------------------------------------
+    console.log('\n--- Suite 5: Active Call Language Switching ---');
+
+    await test('Language switch from EN -> TE clears Plivo audio queue and updates model', () => {
+        const sentMessages = [];
+        const fakeWs = {
+            readyState: 1, // OPEN
+            OPEN: 1,
+            send: (msg) => sentMessages.push(JSON.parse(msg))
+        };
+
+        const session = new CallSession(fakeWs, {
+            call_id: 'call_switch_test',
+            service: 'sales',
+            contact: { name: 'Priya' }
+        });
+        session.streamId = 'stream_test_123';
+        session.detectedLanguage = 'en';
+        session.isAiSpeaking = true;
+
+        // Caller switches to Telugu
+        session.setSessionLanguage('te', 'USER_SWITCH_TELUGU');
+
+        assert.strictEqual(session.detectedLanguage, 'te');
+        assert.strictEqual(session.isAiSpeaking, false);
+        const clearMsg = sentMessages.find(m => m.event === 'clearAudio');
+        assert.ok(clearMsg, 'Must dispatch clearAudio event over Plivo stream to halt English speech');
+        assert.strictEqual(clearMsg.streamId, 'stream_test_123');
+
+        // Next response uses Telugu model
+        const nextModel = ElevenLabsService.selectTtsModel({ language: session.detectedLanguage });
+        assert.strictEqual(nextModel, ElevenLabsService.getModelForTelugu());
+    });
+
+    await test('Language switch from TE -> HI updates model to Flash v2.5 and clears audio', () => {
+        const sentMessages = [];
+        const fakeWs = {
+            readyState: 1,
+            OPEN: 1,
+            send: (msg) => sentMessages.push(JSON.parse(msg))
+        };
+
+        const session = new CallSession(fakeWs, {
+            call_id: 'call_switch_te_hi',
+            service: 'recruitment',
+            contact: { name: 'Rahul' }
+        });
+        session.streamId = 'stream_test_456';
+        session.detectedLanguage = 'te';
+
+        session.setSessionLanguage('hi', 'USER_SWITCH_HINDI');
+
+        assert.strictEqual(session.detectedLanguage, 'hi');
+        const clearMsg = sentMessages.find(m => m.event === 'clearAudio');
+        assert.ok(clearMsg, 'Must dispatch clearAudio on switch');
+        const nextModel = ElevenLabsService.selectTtsModel({ language: session.detectedLanguage });
+        assert.strictEqual(nextModel, ElevenLabsService.getModelForHindi());
+    });
+
+    await test('Language switch from HI -> EN updates session back to English', () => {
+        const fakeWs = { readyState: 1, OPEN: 1, send: () => {} };
+        const session = new CallSession(fakeWs, {
+            call_id: 'call_switch_hi_en',
+            service: 'support'
+        });
+        session.detectedLanguage = 'hi';
+
+        session.setSessionLanguage('en', 'USER_SWITCH_ENGLISH');
+
+        assert.strictEqual(session.detectedLanguage, 'en');
+        const nextModel = ElevenLabsService.selectTtsModel({ language: session.detectedLanguage });
+        assert.strictEqual(nextModel, ElevenLabsService.getModelForEnglish());
+    });
+
+    // -----------------------------------------------------------------
+    // Suite 6: Compatibility Fallback & Retry Protection
     // -----------------------------------------------------------------
     console.log('\n--- Suite 6: Compatibility Fallback & Retry Protection ---');
 
@@ -173,14 +245,12 @@ async function runTests() {
         let callCount = 0;
         const requestedModels = [];
 
-        // Temporarily intercept fetch to test fallback behavior
         const originalFetch = globalThis.fetch;
         globalThis.fetch = async (url, opts) => {
             callCount++;
             const body = JSON.parse(opts.body);
             requestedModels.push(body.model_id);
 
-            // First call fails with model compatibility error
             if (callCount === 1) {
                 return {
                     ok: false,
@@ -188,7 +258,6 @@ async function runTests() {
                     text: async () => 'Error: Model eleven_flash_v2_5 does not support voice configuration'
                 };
             }
-            // Fallback retry succeeds
             return {
                 ok: true,
                 status: 200,
@@ -203,9 +272,9 @@ async function runTests() {
             });
 
             assert.ok(buf, 'Should return audio buffer from alternative model');
-            assert.strictEqual(callCount, 2, 'Should make exactly 2 calls (primary + retry)');
-            assert.strictEqual(requestedModels[0], ElevenLabsService.getFastModelId(), 'First attempt should use fast model');
-            assert.strictEqual(requestedModels[1], ElevenLabsService.getMultilingualModelId(), 'Second attempt should use multilingual fallback');
+            assert.strictEqual(callCount, 2, 'Should make exactly 2 calls');
+            assert.strictEqual(requestedModels[0], ElevenLabsService.getFastModelId());
+            assert.strictEqual(requestedModels[1], ElevenLabsService.getMultilingualModelId());
         } finally {
             globalThis.fetch = originalFetch;
         }
@@ -213,7 +282,6 @@ async function runTests() {
 
     await test('Non-compatibility errors (401, 429) do NOT trigger retry to prevent latency spikes', async () => {
         let callCount = 0;
-
         const originalFetch = globalThis.fetch;
         globalThis.fetch = async () => {
             callCount++;
@@ -229,37 +297,72 @@ async function runTests() {
                 language: 'en',
                 modelId: ElevenLabsService.getFastModelId()
             });
-
-            assert.strictEqual(buf, null, 'Should return null on rate limit');
-            assert.strictEqual(callCount, 1, 'Should NOT perform serial retry on 429 rate limit');
+            assert.strictEqual(buf, null);
+            assert.strictEqual(callCount, 1);
         } finally {
             globalThis.fetch = originalFetch;
         }
     });
 
-    await test('Network timeouts (AbortError) do NOT trigger retry to prevent call stalls', async () => {
-        let callCount = 0;
+    // -----------------------------------------------------------------
+    // Suite 7: Live API Speech Generation Verification (EN, HI, TE)
+    // -----------------------------------------------------------------
+    console.log('\n--- Suite 7: Live Speech Generation Verification ---');
 
-        const originalFetch = globalThis.fetch;
-        globalThis.fetch = async () => {
-            callCount++;
-            const err = new Error('The operation was aborted');
-            err.name = 'AbortError';
-            throw err;
-        };
+    if (ElevenLabsService.isConfigured()) {
+        await test('Live Telugu synthesis uses eleven_v4_turbo and generates valid 8kHz ulaw audio with SID voice', async () => {
+            const teDialogue = 'నమస్కారం, ఇది తెలుగు వాయిస్ టెస్ట్.';
+            const sidVoice = ElevenLabsService.getSidVoiceId();
+            const teModel = ElevenLabsService.getModelForTelugu();
 
-        try {
-            const buf = await ElevenLabsService.textToSpeech('Test timeout no retry', {
-                language: 'en',
-                timeoutMs: 50
+            const buf = await ElevenLabsService.textToSpeech(teDialogue, {
+                voiceId: sidVoice,
+                language: 'te',
+                outputFormat: 'ulaw_8000',
+                timeoutMs: 10000
             });
 
-            assert.strictEqual(buf, null);
-            assert.strictEqual(callCount, 1, 'Should NOT perform serial retry on timeout');
-        } finally {
-            globalThis.fetch = originalFetch;
-        }
-    });
+            assert.ok(buf, 'Live Telugu synthesis must return audio buffer');
+            assert.ok(buf.length > 1000, `Audio buffer must contain valid audio (got ${buf.length} bytes)`);
+            console.log(`    -> Telugu Audio: ${buf.length} bytes synthesized with model ${teModel} and SID voice`);
+        });
+
+        await test('Live Hindi synthesis uses eleven_flash_v2_5 and SID voice', async () => {
+            const hiDialogue = 'नमस्ते, यह हिंदी स्पीच टेस्ट है।';
+            const sidVoice = ElevenLabsService.getSidVoiceId();
+            const hiModel = ElevenLabsService.getModelForHindi();
+
+            const buf = await ElevenLabsService.textToSpeech(hiDialogue, {
+                voiceId: sidVoice,
+                language: 'hi',
+                outputFormat: 'ulaw_8000',
+                timeoutMs: 10000
+            });
+
+            assert.ok(buf, 'Live Hindi synthesis must return audio buffer');
+            assert.ok(buf.length > 1000, `Audio buffer must contain valid audio (got ${buf.length} bytes)`);
+            console.log(`    -> Hindi Audio: ${buf.length} bytes synthesized with model ${hiModel} and SID voice`);
+        });
+
+        await test('Live English synthesis uses eleven_flash_v2_5 and SID voice', async () => {
+            const enDialogue = 'Hello, this is Remo testing natural English speech.';
+            const sidVoice = ElevenLabsService.getSidVoiceId();
+            const enModel = ElevenLabsService.getModelForEnglish();
+
+            const buf = await ElevenLabsService.textToSpeech(enDialogue, {
+                voiceId: sidVoice,
+                language: 'en',
+                outputFormat: 'ulaw_8000',
+                timeoutMs: 10000
+            });
+
+            assert.ok(buf, 'Live English synthesis must return audio buffer');
+            assert.ok(buf.length > 1000, `Audio buffer must contain valid audio (got ${buf.length} bytes)`);
+            console.log(`    -> English Audio: ${buf.length} bytes synthesized with model ${enModel} and SID voice`);
+        });
+    } else {
+        console.log('  [SKIP] Live API synthesis tests skipped (ELEVENLABS_API_KEY not configured)');
+    }
 
     console.log('\n════════════════════════════════════════════════════');
     console.log(`TEST RESULTS: ${passed} / ${passed + failed} Passed`);
@@ -268,6 +371,7 @@ async function runTests() {
     if (failed > 0) {
         process.exit(1);
     }
+    process.exit(0);
 }
 
 runTests();

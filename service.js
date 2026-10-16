@@ -159,9 +159,9 @@
             <h4 class="footer-col-title">PLATFORM</h4>
             <ul class="footer-links-list">
               <li><a href="/dashboard">Dashboard</a></li>
-              <li><a href="/#hero">Overview</a></li>
-              <li><a href="/#final-cta">Enterprise</a></li>
-              <li><a href="#">Security &amp; Compliance</a></li>
+              <li><a href="/overview">Overview</a></li>
+              <li><a href="/enterprise">Enterprise</a></li>
+              <li><a href="/security-compliance">Security &amp; Privacy</a></li>
               <li><a href="/contact">Contact Us</a></li>
             </ul>
           </div>
