@@ -41,9 +41,9 @@ export default class LatencyTracker {
         console.log(`[LATENCY] Call ${this.callId}: FIRST GREETING DELIVERED in ${greetingDelay}ms total.`);
     }
 
-    startTurn() {
+    startTurn(turnIndex = null) {
         this.currentTurn = {
-            turnIndex: this.turns.length + 1,
+            turnIndex: turnIndex !== null ? turnIndex : (this.turns.length + 1),
             turnStartTime: Date.now(),
             speechEndpointDetectedTime: null,
             vadSilenceDetectedTime: null,
@@ -68,13 +68,17 @@ export default class LatencyTracker {
         };
     }
 
+    cancelTurn() {
+        this.currentTurn = null;
+    }
+
     markSpeechEndpointDetected() {
         if (!this.currentTurn) this.startTurn();
         this.currentTurn.speechEndpointDetectedTime = Date.now();
     }
 
-    markVadSilence(silenceMs = 280) {
-        if (!this.currentTurn) this.startTurn();
+    markVadSilence(silenceMs = 280, turnIndex = null) {
+        if (!this.currentTurn) this.startTurn(turnIndex);
         this.currentTurn.vadSilenceDetectedTime = Date.now();
         this.currentTurn.speechEndpointDetectedTime = this.currentTurn.speechEndpointDetectedTime || Date.now();
         this.currentTurn.vadDurationMs = silenceMs;
@@ -94,6 +98,14 @@ export default class LatencyTracker {
     markDecisionStart() {
         if (!this.currentTurn) this.startTurn();
         this.currentTurn.decisionStartTime = Date.now();
+    }
+
+    markLlmFirstToken() {
+        if (!this.currentTurn) return;
+        this.currentTurn.llmFirstTokenTime = Date.now();
+        if (this.currentTurn.decisionStartTime) {
+            this.currentTurn.llmFirstTokenMs = this.currentTurn.llmFirstTokenTime - this.currentTurn.decisionStartTime;
+        }
     }
 
     markDecisionEnd(type = 'GEMINI_LLM') {
@@ -124,6 +136,9 @@ export default class LatencyTracker {
         if (!this.currentTurn) return;
         if (!this.currentTurn.firstAudioSentTime) {
             this.currentTurn.firstAudioSentTime = Date.now();
+            if (!this.currentTurn.ttsFirstByteTime) {
+                this.currentTurn.ttsFirstByteTime = this.currentTurn.firstAudioSentTime;
+            }
             const endpoint = this.currentTurn.speechEndpointDetectedTime || this.currentTurn.vadSilenceDetectedTime || this.currentTurn.turnStartTime;
             this.currentTurn.endpointToFirstAudioMs = this.currentTurn.firstAudioSentTime - endpoint;
         }
@@ -145,7 +160,7 @@ export default class LatencyTracker {
             `[LATENCY] Call ${this.callId} [Turn ${t.turnIndex}]: ` +
             `VAD=${t.vadDurationMs}ms | ` +
             `STT=${t.sttDurationMs}ms | ` +
-            `Decision=${t.decisionDurationMs}ms (${t.decisionType}) | ` +
+            `Decision=${t.decisionDurationMs}ms (${t.decisionType}${t.llmFirstTokenMs ? `, TTFT: ${t.llmFirstTokenMs}ms` : ''}) | ` +
             `TTS=${t.ttsDurationMs}ms${t.isTtsCached ? ' (CACHED)' : ''} | ` +
             `EndpointToFirstAudio=${t.endpointToFirstAudioMs}ms | ` +
             `TOTAL=${t.totalTurnLatencyMs}ms`
@@ -170,8 +185,12 @@ export default class LatencyTracker {
         const min = count > 0 ? latencies[0] : 0;
         const max = count > 0 ? latencies[count - 1] : 0;
 
-        const fastPathCount = this.turns.filter(t => t.decisionType.includes('INTENT')).length;
-        const llmCount = this.turns.filter(t => t.decisionType.includes('GEMINI')).length;
+        const fastPathCount = this.turns.filter(t => t.decisionType && t.decisionType.includes('INTENT')).length;
+        const llmCount = this.turns.filter(t => t.decisionType && (
+            t.decisionType.includes('LLM') ||
+            t.decisionType.includes('GEMINI') ||
+            t.decisionType.includes('CLAUDE')
+        )).length;
 
         return {
             callId: this.callId,

@@ -42,8 +42,8 @@ export class CampaignService {
 
         const initialConfig = JSON.stringify({
             ai_model: config.ai_model || 'claude-haiku-5-5',
-            voice_id_english: config.voice_id_english || process.env.ELEVENLABS_VOICE_ID_PARI || '06llJPvI62CjqSWOX9Gp',
-            voice_id_telugu: config.voice_id_telugu || process.env.ELEVENLABS_VOICE_ID_CHAITRA || 'oyjIr5XAhIyRjfNq6spl',
+            voice_id_english: config.voice_id_english || process.env.ELEVENLABS_VOICE_ID_SId || '0muxiGNHAVvmM1qWRtyV',
+            voice_id_telugu: config.voice_id_telugu || process.env.ELEVENLABS_VOICE_ID_TELUGU || process.env.ELEVENLABS_VOICE_ID_CHAITRA || process.env.ELEVENLABS_VOICE_ID_SId || '0muxiGNHAVvmM1qWRtyV',
             screening_strictness: config.screening_strictness || 'standard',
             retry_policy: config.retry_policy || { max_attempts: 1, retry_unanswered: false },
             ...config
@@ -201,6 +201,11 @@ export class CampaignService {
         const filePath = path.join(UPLOAD_DIR, safeFilename);
         fs.writeFileSync(filePath, fileBuffer);
 
+        // Clean up previous document file if replacing
+        if (campaign.pdf_path && campaign.pdf_path !== filePath && fs.existsSync(campaign.pdf_path)) {
+            try { fs.unlinkSync(campaign.pdf_path); } catch (e) {}
+        }
+
         let extracted = null;
         let questionPlan = [];
 
@@ -272,13 +277,21 @@ export class CampaignService {
         const processResult = await ExcelService.parseAndValidateUpload(fileObj, originalName, campaign.service || 'recruitment');
         const batchId = processResult.fileId;
 
+        // Clean up previous excel file if replacing
+        if (campaign.excel_path && campaign.excel_path !== processResult.filePath && fs.existsSync(campaign.excel_path)) {
+            try { fs.unlinkSync(campaign.excel_path); } catch (e) {}
+        }
+
+        // Clear any old pending queued items for this campaign
+        await db.run(`DELETE FROM call_queue WHERE campaign_id = ? AND status = 'QUEUED'`, [campaignId]);
+
         // Associate batch and its contacts with this campaign
         const now = utcNow();
         await db.run(`UPDATE batches SET campaign_id = ?, owner_user_id = ?, updated_at = ? WHERE id = ?`, [campaignId, ownerUserId, now, batchId]);
         await db.run(`UPDATE contacts SET campaign_id = ?, owner_user_id = ?, updated_at = ? WHERE batch_id = ?`, [campaignId, ownerUserId, now, batchId]);
 
-        // Update campaign record
-        const status = campaign.status === 'DRAFT' ? 'READY' : campaign.status;
+        // Update campaign record: ready to continue/start calling
+        const status = ['DRAFT', 'COMPLETED', 'ARCHIVED', 'PAUSED'].includes(campaign.status) ? 'READY' : campaign.status;
         await db.run(`
             UPDATE campaigns SET
                 excel_filename = ?, excel_path = ?, batch_id = ?, status = ?,
@@ -449,6 +462,83 @@ export class CampaignService {
         const now = utcNow();
         await db.run(`UPDATE campaigns SET status = 'ARCHIVED', updated_at = ? WHERE id = ?`, [now, campaignId]);
         return { success: true, campaignId, status: 'ARCHIVED', message: `Campaign "${campaign.name}" archived.` };
+    }
+
+    /**
+     * Permanently deletes a campaign and cleans up associated batches, contacts, call queue,
+     * conversations, transcripts, and disk files.
+     */
+    static async deleteCampaign(campaignId, ownerUserId = null) {
+        await ensureCampaignSchema();
+        const campaign = await this.getCampaign(campaignId, ownerUserId);
+        if (!campaign) throw new Error('Campaign not found.');
+
+        // 1. Delete campaign document from disk
+        if (campaign.pdf_path && fs.existsSync(campaign.pdf_path)) {
+            try { fs.unlinkSync(campaign.pdf_path); } catch (e) {
+                console.warn(`[CampaignService] Could not remove pdf file: ${e.message}`);
+            }
+        }
+
+        // 2. Delete campaign excel file from disk
+        if (campaign.excel_path && fs.existsSync(campaign.excel_path)) {
+            try { fs.unlinkSync(campaign.excel_path); } catch (e) {
+                console.warn(`[CampaignService] Could not remove excel file: ${e.message}`);
+            }
+        }
+
+        // 3. Delete files for all batches associated with this campaign
+        try {
+            const batches = await db.all(`
+                SELECT id, original_path FROM batches 
+                WHERE campaign_id = ? OR (id = ? AND ? != '')
+            `, [campaignId, campaign.batch_id || '', campaign.batch_id || '']);
+            for (const b of (batches || [])) {
+                if (b.original_path && fs.existsSync(b.original_path)) {
+                    try { fs.unlinkSync(b.original_path); } catch {}
+                }
+            }
+        } catch (e) {}
+
+        // 4. Remove queued calls
+        await db.run(`
+            DELETE FROM call_queue 
+            WHERE campaign_id = ? OR (batch_id = ? AND batch_id IS NOT NULL AND batch_id != '')
+        `, [campaignId, campaign.batch_id || '']);
+
+        // 5. Remove transcript messages for campaign conversations
+        await db.run(`
+            DELETE FROM transcript_messages 
+            WHERE conversation_id IN (
+                SELECT id FROM conversations WHERE campaign_id = ?
+            )
+        `, [campaignId]);
+
+        // 6. Remove conversations
+        await db.run(`DELETE FROM conversations WHERE campaign_id = ?`, [campaignId]);
+
+        // 7. Remove contacts
+        await db.run(`
+            DELETE FROM contacts 
+            WHERE campaign_id = ? OR (batch_id = ? AND batch_id IS NOT NULL AND batch_id != '')
+        `, [campaignId, campaign.batch_id || '']);
+
+        // 8. Remove batches
+        await db.run(`
+            DELETE FROM batches 
+            WHERE campaign_id = ? OR (id = ? AND id IS NOT NULL AND id != '')
+        `, [campaignId, campaign.batch_id || '']);
+
+        // 9. Remove campaign record itself
+        await db.run(`DELETE FROM campaigns WHERE id = ?`, [campaignId]);
+
+        console.log(`[CampaignService] Permanently deleted campaign "${campaign.name}" (${campaignId}).`);
+
+        return {
+            success: true,
+            campaignId,
+            message: `Campaign "${campaign.name}" and all associated data have been permanently deleted.`
+        };
     }
 }
 

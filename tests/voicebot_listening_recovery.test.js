@@ -149,7 +149,7 @@ await test('a wrong language guess is re-run in the call\'s language', async () 
     process.env.ELEVENLABS_API_KEY = 'test-key';
     ElevenLabsService.speechToText = async (buf, name, lang) => {
         calls.push(lang || null);
-        return lang ? { transcript: 'Zikra', language: lang } : { transcript: 'زِکرَم', language: 'urd' };
+        return lang === 'eng' ? { transcript: 'Zikra', language: lang } : { transcript: 'زِکرَم', language: 'urd' };
     };
     ElevenLabsService.textToSpeech = async () => Buffer.alloc(800);
     GeminiService.generateReply = async () => ({ spoken_response: 'Thanks Zikra.', detected_language: 'en', should_end_call: false, extracted_fields: {}, classification: 'Pending', call_summary: 'x' });
@@ -157,7 +157,7 @@ await test('a wrong language guess is re-run in the call\'s language', async () 
         const s = newSession('t-stt');
         s.callerMulawChunks = [Buffer.alloc(3200, 0x80)];
         await s.processCallerTurn();
-        assert.deepStrictEqual(calls, [null, 'eng'], 'asked once, then re-ran in English');
+        assert.deepStrictEqual(calls, ['en', 'eng'], 'asked once with the session language, then re-ran in English');
         assert.ok(s.conversationHistory.some((m) => m.text === 'Zikra'), 'the corrected words were used');
         assert.ok(!s.conversationHistory.some((m) => /[؀-ۿ]/.test(m.text)), 'the Urdu-script guess was discarded');
         assert.strictEqual(s.isProcessingTurn, false);
@@ -181,7 +181,7 @@ await test('a correct language guess is not re-run (no extra delay)', async () =
         const s = newSession('t-stt-ok');
         s.callerMulawChunks = [Buffer.alloc(3200, 0x80)];
         await s.processCallerTurn();
-        assert.deepStrictEqual(calls, [null]);
+        assert.deepStrictEqual(calls, ['en']);
         s.isClosed = true; clearTimeout(s.activeSpeechTimer);
     } finally {
         ElevenLabsService.speechToText = realStt; ElevenLabsService.textToSpeech = realTts; GeminiService.generateReply = realReply;

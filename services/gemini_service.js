@@ -21,32 +21,21 @@ export default class GeminiService {
         const isValidName = rawName && !rawName.startsWith('Caller') && !rawName.startsWith('Candidate') && !rawName.startsWith('Contact') && !rawName.startsWith('Row');
 
         if (s === 'sales') {
-            // Check if uploaded document provided a specific opening greeting
-            if (ctx.opening_greeting && typeof ctx.opening_greeting === 'string' && ctx.opening_greeting.length > 15) {
-                let docGreeting = ctx.opening_greeting.trim();
-                if (isValidName && !docGreeting.includes(rawName)) {
-                    docGreeting = `Hello, am I speaking with ${rawName}? ` + docGreeting;
-                }
-                return docGreeting;
-            }
-
             const company = ctx.company_name || 'Scorelabs Inc.';
             const product = ctx.product_name || '';
-            const valueProp = Array.isArray(ctx.value_propositions) && ctx.value_propositions.length ? ctx.value_propositions[0] : '';
 
-            // Document-driven custom sales greeting
-            if (product && !product.includes('Scorelabs IT') && !product.includes('Scorelabs AI Voice Automation')) {
-                if (isValidName) {
-                    return `Hello, am I speaking with ${rawName}? Hi ${rawName}, this is Remo calling on behalf of ${company}. We provide ${product}${valueProp ? ` — ${valueProp}` : ''}. I wanted to see if now is a good time for a quick conversation?`;
-                }
-                return `Hello, this is Remo calling on behalf of ${company}. We provide ${product}${valueProp ? ` — ${valueProp}` : ''}. I wanted to see if now is a good time for a quick conversation?`;
-            }
-
-            // Standard verified greeting for Scorelabs Inc.
+            // If customer name is known, start with personal identity confirmation
             if (isValidName) {
-                return `Hello, am I speaking with ${rawName}? Hi ${rawName}, this is Remo calling on behalf of Scorelabs Inc. We help businesses with IT solutions such as custom software development, website and mobile app development, ERP and CRM solutions, software testing, and technical support. I wanted to check whether your company is planning any new software projects or looking for an IT partner. Is now a convenient time for a quick conversation?`;
+                return `Hello, am I speaking with ${rawName}?`;
             }
-            return `Hello, this is Remo calling on behalf of Scorelabs Inc. We help businesses with IT solutions such as custom software development, website and mobile app development, ERP and CRM solutions, software testing, and technical support. I wanted to check whether your company is planning any new software projects or looking for an IT partner. Is now a convenient time for a quick conversation?`;
+
+            // Document-driven custom sales greeting when customer name is not available
+            if (product && !product.includes('Scorelabs IT') && !product.includes('Scorelabs AI Voice Automation')) {
+                return `Hello, this is Remo calling on behalf of ${company} regarding ${product}. Is this a good time to talk for a minute?`;
+            }
+
+            // Standard verified greeting for Scorelabs Inc. when customer name is not available
+            return `Hello, this is Remo calling on behalf of Scorelabs Inc. Is this a good time to talk for a minute?`;
         }
 
         if (s === 'support') {
@@ -139,9 +128,10 @@ export default class GeminiService {
         return 'On Hold';
     }
 
-    static getUniversalFallback(lang = 'en', service = 'recruitment') {
+    static getUniversalFallback(lang = 'en', service = 'recruitment', stage = null) {
         const l = (lang || 'en').toLowerCase();
         const s = (service || 'recruitment').toLowerCase();
+        const st = (stage || '').toUpperCase();
 
         if (s === 'appointment') {
             if (l === 'hi') return "मैं आपकी अपॉइंटमेंट बुक करने में मदद कर सकता हूँ। आपके लिए कौन सा दिन और समय सुविधाजनक रहेगा?";
@@ -156,6 +146,36 @@ export default class GeminiService {
         }
 
         if (s === 'sales') {
+            if (st === 'PERMISSION_CHECK' || st === 'AVAILABILITY') {
+                if (l === 'hi') return "धन्यवाद! मैं बस यह जानना चाहता था कि क्या आप वर्तमान में किसी ऐसी सेवा की तलाश में हैं जिसमें हम मदद कर सकें?";
+                if (l === 'te') return "ధన్యవాదాలు! మేము సహాయపడగల ఏవైనా సేవల కోసం మీరు ప్రస్తుతం చూస్తున్నారా అని తెలుసుకోవాలనుకుంటున్నాను?";
+                return "Thank you! I just wanted to check if you're currently looking for any services that we could help you with?";
+            }
+
+            if (st === 'INTEREST_DISCOVERY' || st === 'SERVICE_INTEREST') {
+                if (l === 'hi') return "बहुत अच्छा! क्या आप थोड़ा बता सकते हैं कि आप किस प्रकार की सेवा की तलाश में हैं?";
+                if (l === 'te') return "చాలా మంచిది! మీరు ఎలాంటి సేవల కోసం చూస్తున్నారో కాస్త చెప్పగలరా?";
+                return "Great! Could you tell me a little about what you're looking for?";
+            }
+
+            if (st === 'QUALIFICATION' || st === 'SERVICE_DISCOVERY') {
+                if (l === 'hi') return "समझ गया। क्या आप अपने प्रोजेक्ट की समय सीमा या मुख्य आवश्यकताओं के बारे में बता सकते हैं?";
+                if (l === 'te') return "అర్థమైంది. మీ ప్రాజెక్ట్ సమయపరిమితి లేదా ముఖ్య అవసరాల గురించి చెప్పగలరా?";
+                return "Understood. Could you share your expected project timeline or key requirements?";
+            }
+
+            if (st === 'CALLBACK_TIME') {
+                if (l === 'hi') return "समझ गया। हमारी टीम के लिए आपसे दोबारा संपर्क करने का कौन सा समय सुविधाजनक रहेगा?";
+                if (l === 'te') return "అర్థమైంది. మా బృందం మిమ్మల్ని మళ్లీ సంప్రదించడానికి ఏ సమయం అనుకూలంగా ఉంటుంది?";
+                return "Understood. When would be a convenient time for our team to follow up?";
+            }
+
+            if (st === 'CLOSING') {
+                if (l === 'hi') return "आपके समय के लिए धन्यवाद। आपका दिन शुभ हो!";
+                if (l === 'te') return "మీ సమయానికి ధన్యవాదాలు. మంచి రోజవుగాక!";
+                return "Thank you for your time. Have a wonderful day!";
+            }
+
             if (l === 'hi') return "मैं स्कोरलैब्स इंक की ओर से बात कर रहा हूँ। हम कस्टम सॉफ्टवेयर, वेब और मोबाइल ऐप, ईआरपी और आईटी सहायता प्रदान करते हैं। क्या आपकी कंपनी किसी नए प्रोजेक्ट पर विचार कर रही है?";
             if (l === 'te') return "నేను స్కోర్‌ల్యాబ్స్ ఇంక్ తరపున మాట్లాడుతున్నాను. మేము కస్టమ్ సాఫ్ట్‌వేర్, వెబ్ మరియు మొబైల్ యాప్ డెవలప్‌మెంట్, ఈఆర్‌పీ మరియు ఐటీ సొల్యూషన్స్ అందిస్తాము. మీ సంస్థ ఏదైనా కొత్త సాఫ్ట్‌వేర్ ప్రాజెక్ట్‌ను పరిశీలిస్తోందా?";
             return "I'm calling on behalf of Scorelabs Inc. We help businesses with custom software, web and mobile apps, ERP and CRM solutions, and QA testing. Is your company planning any software projects or looking for an IT partner?";
@@ -169,7 +189,7 @@ export default class GeminiService {
 
         if (s === 'support') {
             if (l === 'hi') return "मैं स्कोर लैब्स कस्टमर सपोर्ट से बात कर रहा हूँ। क्या आप अपनी समस्या के बारे में विस्तार से बता सकते हैं?";
-            if (l === 'te') return "నేను స్కోర్ ల్యాబ్స్ కస్టమర్ సపోర్ట్ నుండి మాట్లాడుతున్నాను. మీ సమస్య గురించి కాస్త వివరంగా చెప్పగలరా?";
+            if (l === 'te') return "నేను స్కోర్ ల్యాబ్స్ కస్టమర్ సపోర్ట్ నుండి మాట్లాడుతున్నాను. మీ समस्या గురించి కాస్త వివరంగా చెప్పగలరా?";
             return "I'm calling from Score Labs customer support. Could you please share a few more details about the issue you are experiencing so I can assist you?";
         }
 
@@ -190,10 +210,10 @@ export default class GeminiService {
     /**
      * Parses raw model output safely, with recovery for partial/malformed JSON.
      */
-    static parseModelResponse(rawText, lang = 'en', service = 'recruitment') {
+    static parseModelResponse(rawText, lang = 'en', service = 'recruitment', stage = null) {
         if (!rawText || typeof rawText !== 'string' || !rawText.trim()) {
             return {
-                spoken_response: this.getUniversalFallback(lang, service),
+                spoken_response: this.getUniversalFallback(lang, service, stage),
                 detected_language: lang,
                 should_end_call: false,
                 extracted_fields: {},
@@ -215,12 +235,13 @@ export default class GeminiService {
             }
 
             return {
-                spoken_response: parsed.spoken_response ? String(parsed.spoken_response).trim() : this.getUniversalFallback(lang, service),
+                spoken_response: parsed.spoken_response ? String(parsed.spoken_response).trim() : this.getUniversalFallback(lang, service, stage),
                 detected_language: ['en', 'hi', 'te'].includes(parsed.detected_language) ? parsed.detected_language : lang,
                 should_end_call: Boolean(parsed.should_end_call),
                 extracted_fields: cleanedExtracted,
                 classification: parsed.classification || this.defaultClassification(service),
-                call_summary: parsed.call_summary || 'Dialogue processed successfully.'
+                call_summary: parsed.call_summary || 'Dialogue processed successfully.',
+                next_stage: parsed.next_stage || null
             };
         } catch (e) {
             // Resilient regex recovery for broken JSON
@@ -228,14 +249,16 @@ export default class GeminiService {
             const langMatch = rawText.match(/"detected_language"\s*:\s*"([^"]+)"/i);
             const endMatch = rawText.match(/"should_end_call"\s*:\s*(true|false)/i);
             const classMatch = rawText.match(/"classification"\s*:\s*"([^"]+)"/i);
+            const stageMatch = rawText.match(/"next_stage"\s*:\s*"([^"]+)"/i);
 
             return {
-                spoken_response: spokenMatch ? spokenMatch[1].replace(/\\"/g, '"').trim() : this.getUniversalFallback(lang, service),
+                spoken_response: spokenMatch ? spokenMatch[1].replace(/\\"/g, '"').trim() : this.getUniversalFallback(lang, service, stage),
                 detected_language: langMatch && ['en', 'hi', 'te'].includes(langMatch[1]) ? langMatch[1] : lang,
                 should_end_call: endMatch ? endMatch[1].toLowerCase() === 'true' : false,
                 extracted_fields: {},
                 classification: classMatch ? classMatch[1] : this.defaultClassification(service),
-                call_summary: 'Recovered from malformed JSON model response.'
+                call_summary: 'Recovered from malformed JSON model response.',
+                next_stage: stageMatch ? stageMatch[1] : null
             };
         }
     }
@@ -263,7 +286,8 @@ export default class GeminiService {
                 extracted_fields: {},
                 classification: this.defaultClassification(service),
                 call_summary: 'Call initiated. Opening greeting delivered.',
-                model_used: 'deterministic_first_turn'
+                model_used: 'deterministic_first_turn',
+                next_stage: (service === 'sales' && contactInfo.name && !String(contactInfo.name).startsWith('Contact')) ? 'GREETING' : (service === 'sales' ? 'PERMISSION_CHECK' : 'AVAILABILITY')
             };
         }
 
@@ -282,30 +306,61 @@ export default class GeminiService {
         if (service === 'sales') {
             classificationOptions = `"Interested" | "Meeting Requested" | "Email Requested" | "Callback Requested" | "Not Interested" | "Wrong Contact" | "Do Not Call"`;
             const prodName = jdCriteria.product_name || 'IT Solutions & Custom Software';
-            const compName = jdCriteria.company_name || 'Scorelabs Inc.';
+            const compName = jdCriteria.company_name || 'Score Labs';
             const valueProps = Array.isArray(jdCriteria.value_propositions) && jdCriteria.value_propositions.length ? jdCriteria.value_propositions.join('; ') : '';
             const keyFeatures = Array.isArray(jdCriteria.key_features) && jdCriteria.key_features.length ? jdCriteria.key_features.join('; ') : '';
             const pricing = jdCriteria.pricing_summary || '';
-            const cta = jdCriteria.call_to_action || 'schedule a 15-minute introductory discovery session';
+            const cta = jdCriteria.call_to_action || 'schedule a quick 15-minute introductory call';
             const faqs = Array.isArray(jdCriteria.approved_faqs) && jdCriteria.approved_faqs.length ? JSON.stringify(jdCriteria.approved_faqs.slice(0, 4)) : '';
             const objections = Array.isArray(jdCriteria.objections_and_counters) && jdCriteria.objections_and_counters.length ? JSON.stringify(jdCriteria.objections_and_counters.slice(0, 3)) : '';
 
+            const defaultOfferings = "web development, custom software development, and digital solutions";
+            const approvedOfferings = keyFeatures || valueProps || defaultOfferings;
+
             serviceInstructions = `
 ### SALES WORKFLOW (${compName} — Offering: ${prodName}):
-- Product/Service: "${prodName}" by "${compName}".
-${valueProps ? `- Value Propositions: ${valueProps}` : ''}
-${keyFeatures ? `- Key Features: ${keyFeatures}` : ''}
+- Company: "${compName}" | Offering: "${prodName}".
+- Approved Offerings/Features: ${approvedOfferings}.
 ${pricing ? `- Pricing/Plans: ${pricing}` : ''}
 ${cta ? `- Primary Objective / CTA: ${cta}` : ''}
 ${faqs ? `- Approved FAQs from Document: ${faqs}` : ''}
 ${objections ? `- Objection Handling from Document: ${objections}` : ''}
-- STRICT GROUNDING RULES:
-  1. Base all answers EXCLUSIVELY on the verified facts above.
-  2. NEVER invent features, prices, discounts, or promises not in the document.
-  3. If information is not in the document, say: "I don't have that detail right in front of me, but I'll make sure our team confirms and follows up with you."
-  4. Never ask repeatedly about details the prospect already provided.
-  5. Never mention job applications or recruitment.
-  6. Objections: "Have vendor" -> Ask if can share profile for future. "Send info" -> Request business email. "Not interested" -> Polite exit, set should_end_call: true.`;
+
+CONVERSATION FLOW & STAGE PROGRESSION:
+1. GREETING: Remo introduced himself and asked to verify contact's name ("Hello, am I speaking with Priya?").
+   - If contact confirms ("Yes", "Speaking"): Transition to PERMISSION_CHECK: "Hi [Name], this is Remo calling from ${compName}. Is this a good time to talk for a minute?"
+   - If contact says no/wrong person: Apologize politely and end call (should_end_call: true, next_stage: "CLOSING").
+2. PERMISSION_CHECK:
+   - If contact agrees ("yes", "sure", "go ahead"): Transition to INTEREST_DISCOVERY: "Thank you! I just wanted to check if you're currently looking for any services that we could help you with?"
+   - If contact is busy / driving / in a meeting: Politely ask if another time would be better -> next_stage: "CALLBACK_TIME".
+   - If contact asks who is calling or why: Answer briefly in ONE sentence, then ask if it's a good time to speak.
+   - If unclear: Ask for clarification once.
+   - CRITICAL: DO NOT pitch or list services during PERMISSION_CHECK.
+3. INTEREST_DISCOVERY:
+   - If interested ("Yes, we need an app"): Acknowledge warmly ("Absolutely, we can help with that.") and ask what specific requirements they have -> next_stage: "QUALIFICATION".
+   - If unsure or asks what services are offered: Mention a small subset (2-3 services max conversationally): "We can help with services such as ${approvedOfferings.split(';')[0]}. Is there anything specific you're looking for?" -> next_stage: "SERVICE_DISCOVERY".
+   - If not interested ("No, not looking"): Acknowledge politely. Ask if they'd like a brief overview via email, or if they decline, thank them and end politely (should_end_call: true, next_stage: "CLOSING").
+   - If already using another provider: Acknowledge politely without pressure: "Understood! Would you be open to exploring an alternative or keeping our details for future needs?"
+   - If callback requested: Ask for a convenient callback time -> next_stage: "CALLBACK_TIME".
+   - NEVER repeat the same interest question if the caller already answered.
+4. SERVICE_DISCOVERY & QUALIFICATION:
+   - Explain the specific service of interest conversationally using facts from the document above.
+   - Ask ONE question at a time about requirements, timeline, or scope.
+   - Do NOT turn the call into a rigid questionnaire. If customer provided multiple details, remember them and do not ask again.
+5. NEXT_STEP:
+   - Suggest ${cta} or offer to email company info.
+6. CALLBACK_TIME:
+   - If caller gives time/day: Acknowledge, record in extracted_fields.callback_time, thank caller, set should_end_call: true, next_stage: "CLOSING".
+7. CLOSING:
+   - Warm, polite telephone farewell. Set should_end_call: true.
+
+STRICT GROUNDING & TURN-TAKING RULES:
+1. STRICTLY ONE SHORT TURN AT A TIME (1-2 sentences, under 20 words).
+2. Ask NO MORE THAN ONE primary question per turn.
+3. STOP speaking immediately after asking and wait for caller's answer.
+4. Base all information EXCLUSIVELY on the verified document facts above. NEVER invent services, prices, discounts, or guarantees not in the document.
+5. If caller asks something not covered in the document: say "I don't have that detail right in front of me, but our team can follow up with exact information."
+6. NEVER concatenate greeting, permission, interest question, and service list into a single turn!`;
         } else if (service === 'appointment') {
             classificationOptions = `"Appointment Booked" | "Reschedule Requested" | "Cancelled" | "Callback Requested" | "Not Interested" | "Wrong Contact" | "Do Not Call"`;
             const compName = jdCriteria.company_name || contactInfo.company || 'Score Labs';
@@ -368,7 +423,7 @@ ${escalationPolicy ? `- Escalation Policy: ${escalationPolicy}` : ''}
         }
 
         const currentStage = options.currentStage || 'AVAILABILITY';
-        const organizationName = jdCriteria.company_name || 'Scorelabs Inc.';
+        const organizationName = jdCriteria.company_name || (service === 'sales' ? 'Score Labs' : 'Scorelabs Inc.');
 
         // Multi-agent: each agent can have its own name and standing instructions from the account owner.
         const agentName = String(options.agentName || '').trim();
@@ -381,15 +436,15 @@ ${escalationPolicy ? `- Escalation Policy: ${escalationPolicy}` : ''}
             : '';
 
         const systemPrompt = `You are ${agentName || 'Remo'}, a warm, professional, human-like AI Voice Agent representing ${organizationName}.
-Mode: ${service.toUpperCase()} | Stage: ${currentStage} | Contact: ${contactInfo.name || 'Caller'} (${contactInfo.company || organizationName}) | Subject: ${role}${inboundNote}${agentBlock}
+Mode: ${service.toUpperCase()} | Current Stage: ${currentStage} | Contact: ${contactInfo.name || 'Caller'} (${contactInfo.company || organizationName}) | Subject: ${role}${inboundNote}${agentBlock}
 
 RULES:
-1. Speak in natural telephone dialogue: strictly 1-2 short sentences (under 25 words).
-2. Ask ONE question at a time.
-3. Natural acknowledgments ("Got it", "Understood"). Do not repeat the same phrase.
+1. Speak in natural telephone dialogue: strictly 1-2 short sentences (under 20 words).
+2. Ask NO MORE THAN ONE question per turn.
+3. Natural acknowledgments ("Got it", "Understood", "I see"). Do not repeat the same phrase.
 4. Seamlessly match caller language: Telugu in Telugu, Hindi in Hindi, default English.
 5. If caller pauses/thinks: "Sure, take your time."
-6. NEVER repeat questions or the opening pitch. Continue from current stage.
+6. NEVER repeat questions or the opening pitch. If caller agreed to speak (e.g. "Yeah it works for me", "Sure"), warmly acknowledge and advance to INTEREST_DISCOVERY asking about their service needs. If caller already answered or stated their need, incorporate their answer and advance to the next logical stage.
 ${collectedData && Object.keys(collectedData).length > 0 ? `ALREADY COLLECTED (DO NOT RE-ASK): ${JSON.stringify(collectedData)}` : ''}
 ${questionPlan && Array.isArray(questionPlan) ? `QUESTION PLAN: ${questionPlan.slice(0, 5).map((q, idx) => `${idx + 1}. [${q.target_field || q.category}]: "${q.question}"`).join(' | ')}` : ''}
 ${serviceInstructions}
@@ -401,10 +456,11 @@ OUTPUT STRICT JSON ONLY:
   "should_end_call": false | true,
   "extracted_fields": {},
   "classification": ${classificationOptions},
-  "call_summary": "1 sentence summary"
+  "call_summary": "1 sentence summary",
+  "next_stage": "GREETING" | "PERMISSION_CHECK" | "INTEREST_DISCOVERY" | "SERVICE_DISCOVERY" | "QUALIFICATION" | "NEXT_STEP" | "CALLBACK_TIME" | "CLOSING"
 }`;
 
-        const recentHistory = (conversationHistory || []).slice(-14);
+        const recentHistory = (conversationHistory || []).slice(-8);
         const historyLines = recentHistory.map(m => `${m.speaker || 'Unknown'}: ${m.text || ''}`);
         if (callerMessage && (!recentHistory.length || recentHistory[recentHistory.length - 1].text !== callerMessage)) {
             historyLines.push(`Caller: ${callerMessage}`);
@@ -412,32 +468,43 @@ OUTPUT STRICT JSON ONLY:
 
         const userPrompt = `Conversation History:\n${historyLines.join('\n')}\n\nGenerate Remo's next spoken response as pure JSON.`;
 
-        // Execute via LLMService (Claude Haiku primary with Gemini Flash fallback)
-        // FIX-4: Timeout raised to 6500ms — 4000ms was causing spurious "operation aborted"
-        // errors on every turn where Claude took >4s under load, wasting the fallback slot.
+        // Execute via LLMService (Claude Haiku primary with streaming & Gemini Flash fallback)
+        // Optimized 110 maxTokens for < 1s conversational generation without truncation
         try {
-            const llmRes = await LLMService.generate({
-                systemPrompt,
-                messages: [{ role: 'user', content: userPrompt }],
-                maxTokens: 300,
-                jsonMode: true,
-                timeoutMs: 6500
-            });
+            const llmRes = options.onSpokenSentence
+                ? await LLMService.generateStream({
+                    systemPrompt,
+                    messages: [{ role: 'user', content: userPrompt }],
+                    maxTokens: 110,
+                    jsonMode: true,
+                    timeoutMs: 5000,
+                    onSpokenSentence: options.onSpokenSentence,
+                    onToken: options.onToken
+                })
+                : await LLMService.generate({
+                    systemPrompt,
+                    messages: [{ role: 'user', content: userPrompt }],
+                    maxTokens: 110,
+                    jsonMode: true,
+                    timeoutMs: 5000
+                });
 
             if (llmRes && llmRes.text) {
-                const parsed = this.parseModelResponse(llmRes.text, lang, service);
+                const parsed = this.parseModelResponse(llmRes.text, lang, service, currentStage);
                 return {
                     ...parsed,
-                    model_used: `${llmRes.provider}_${llmRes.model}`
+                    model_used: `${llmRes.provider}_${llmRes.model}`,
+                    firstTokenMs: llmRes.firstTokenMs || null,
+                    emittedSentences: llmRes.emittedSentences || []
                 };
             }
         } catch (llmErr) {
             console.warn('[GeminiService] LLMService invocation exception:', llmErr.message);
         }
 
-        // Safe graceful fallback if all networks fail
+        // Safe graceful fallback if all networks fail — stage aware
         return {
-            spoken_response: this.getUniversalFallback(lang, service),
+            spoken_response: this.getUniversalFallback(lang, service, currentStage),
             detected_language: lang,
             should_end_call: false,
             extracted_fields: {},

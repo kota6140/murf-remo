@@ -357,6 +357,13 @@ const AdminClient = {
     });
   },
 
+  async deleteCampaign(id) {
+    if (!id) throw new Error('Campaign ID is required');
+    return this.request(`/api/admin/campaigns/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
+  },
+
   async archiveCampaign(id) {
     if (!id) throw new Error('Campaign ID is required');
     return this.request(`/api/admin/campaigns/${encodeURIComponent(id)}/archive`, {

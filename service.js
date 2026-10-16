@@ -161,7 +161,7 @@
               <li><a href="/dashboard">Dashboard</a></li>
               <li><a href="/overview">Overview</a></li>
               <li><a href="/enterprise">Enterprise</a></li>
-              <li><a href="/security">Security &amp; Compliance</a></li>
+              <li><a href="/security-compliance">Security &amp; Privacy</a></li>
               <li><a href="/contact">Contact Us</a></li>
             </ul>
           </div>

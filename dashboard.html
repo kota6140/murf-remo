@@ -1498,6 +1498,22 @@
           <div id="edit-camp-doc-status-msg" style="font-size:0.72rem; color:#16A34A; margin-top:4px; display:none;"></div>
         </div>
 
+        <!-- Attached Contacts Spreadsheet Area -->
+        <div class="form-group-wrap" style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:12px; margin-top:10px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <label class="form-label-bold" style="margin:0;">Contacts Spreadsheet (.xlsx, .xls, .csv)</label>
+            <span id="edit-camp-excel-badge" class="badge-pill" style="font-size:0.65rem;">NO SHEET</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+            <span id="edit-camp-excel-name" style="font-size:0.8rem; color:#475569; font-family:monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">No contacts sheet attached</span>
+            <div style="display:flex; gap:6px; flex:none;">
+              <input type="file" id="edit-camp-excel-file-input" accept=".xlsx,.xls,.csv" style="display:none;">
+              <button type="button" class="btn-card-secondary" id="btn-edit-camp-replace-excel" style="padding:4px 10px; font-size:0.75rem;">Upload / Replace</button>
+            </div>
+          </div>
+          <div id="edit-camp-excel-status-msg" style="font-size:0.72rem; color:#16A34A; margin-top:4px; display:none;"></div>
+        </div>
+
         <div class="form-group-wrap" id="edit-camp-recruitment-fields">
           <label class="form-label-bold">Target Job Role</label>
           <input type="text" id="edit-camp-role" class="form-input-styled" style="margin-bottom: 8px;">
@@ -1514,11 +1530,89 @@
             </div>
           </div>
         </div>
-        <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+        <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; align-items: center; flex-wrap: wrap;">
           <button type="button" class="btn-card-secondary" id="btn-edit-camp-cancel">Cancel</button>
-          <button type="submit" class="btn-camp-action btn-camp-primary" style="padding: 8px 20px;">Save Changes</button>
+          <button type="submit" class="btn-camp-action btn-camp-primary" style="padding: 8px 18px;">Save Changes</button>
+          <button type="button" class="btn-toolbar btn-toolbar-primary" id="btn-edit-camp-continue" style="padding: 8px 18px; font-weight: 700;">Save & Continue Calling</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- ======================================================================
+       9B. RE-UPLOAD & CONTINUE CAMPAIGN MODAL
+       ====================================================================== -->
+  <div class="modal-backdrop-layer" id="modal-campaign-reupload">
+    <div class="modal-dialog-card" style="max-width: 680px; width: 95%; max-height: 85vh; overflow-y: auto;">
+      <button type="button" class="modal-close-x" id="modal-camp-reupload-close" aria-label="Close modal">×</button>
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+        <span class="badge-pill badge-recruitment" id="reupload-camp-service-badge">Recruitment</span>
+        <h3 class="modal-title-text" style="font-size: 1.2rem; margin: 0;">Re-upload Files & Continue Campaign</h3>
+      </div>
+      <p class="modal-subtitle-text" id="reupload-camp-subtitle" style="margin-bottom: 16px;">
+        Upload a fresh Excel contacts list or updated job/knowledge document to resume automated calling for: <strong id="reupload-camp-name" style="color: #0F172A;">Campaign Name</strong>
+      </p>
+
+      <input type="hidden" id="reupload-camp-id">
+
+      <!-- Section 1: Excel Contacts Sheet -->
+      <div class="form-group-wrap" style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 14px; margin-bottom: 14px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <label class="form-label-bold" style="margin: 0; display: flex; align-items: center; gap: 6px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#15803D" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Candidate / Contact Spreadsheet (.xlsx, .xls, .csv)
+          </label>
+          <span id="reupload-excel-status-badge" class="badge-pill" style="font-size: 0.65rem;">CURRENT</span>
+        </div>
+        <p style="font-size: 0.75rem; color: #64748B; margin-bottom: 8px;" id="reupload-current-excel-desc">
+          Current sheet: None attached
+        </p>
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          <input type="file" id="reupload-excel-input" accept=".xlsx,.xls,.csv" style="display: none;">
+          <button type="button" class="btn-card-secondary" id="btn-reupload-browse-excel" style="padding: 6px 12px; font-size: 0.8rem; display: flex; align-items: center; gap: 5px;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <span>Choose New Contacts Excel</span>
+          </button>
+          <span id="reupload-chosen-excel-name" style="font-size: 0.8rem; color: #334155; font-family: monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px;">No new file selected</span>
+        </div>
+        <div id="reupload-excel-feedback" style="font-size: 0.75rem; margin-top: 6px; display: none;"></div>
+      </div>
+
+      <!-- Section 2: Instructions Document -->
+      <div class="form-group-wrap" style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 14px; margin-bottom: 18px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <label class="form-label-bold" style="margin: 0; display: flex; align-items: center; gap: 6px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            Job Description or Knowledge Document (.pdf, .docx, .doc)
+          </label>
+          <span id="reupload-doc-status-badge" class="badge-pill" style="font-size: 0.65rem;">CURRENT</span>
+        </div>
+        <p style="font-size: 0.75rem; color: #64748B; margin-bottom: 8px;" id="reupload-current-doc-desc">
+          Current document: None attached
+        </p>
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          <input type="file" id="reupload-doc-input" accept=".pdf,.docx,.doc" style="display: none;">
+          <button type="button" class="btn-card-secondary" id="btn-reupload-browse-doc" style="padding: 6px 12px; font-size: 0.8rem; display: flex; align-items: center; gap: 5px;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <span>Choose New Document</span>
+          </button>
+          <span id="reupload-chosen-doc-name" style="font-size: 0.8rem; color: #334155; font-family: monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px;">No new file selected</span>
+        </div>
+        <div id="reupload-doc-feedback" style="font-size: 0.75rem; margin-top: 6px; display: none;"></div>
+      </div>
+
+      <!-- Footer Buttons -->
+      <div style="display: flex; gap: 10px; justify-content: flex-end; align-items: center; flex-wrap: wrap;">
+        <button type="button" class="btn-card-secondary" id="btn-reupload-cancel">Cancel</button>
+        <button type="button" class="btn-toolbar btn-toolbar-neutral" id="btn-reupload-save-ready" style="padding: 9px 16px; font-size: 0.825rem;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          <span>Save Files (Keep Ready)</span>
+        </button>
+        <button type="button" class="btn-toolbar btn-toolbar-primary" id="btn-reupload-and-continue" style="padding: 9px 20px; font-size: 0.825rem; font-weight: 700;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          <span>Upload & Continue Campaign</span>
+        </button>
+      </div>
     </div>
   </div>
 
@@ -2593,12 +2687,69 @@
         const closeEditBtn = document.getElementById('modal-camp-edit-close');
         const cancelEditBtn = document.getElementById('btn-edit-camp-cancel');
         const editForm = document.getElementById('form-edit-campaign');
+        const editContinueBtn = document.getElementById('btn-edit-camp-continue');
         if (closeEditBtn) closeEditBtn.addEventListener('click', closeCampaignEditModal);
         if (cancelEditBtn) cancelEditBtn.addEventListener('click', closeCampaignEditModal);
         if (editForm) {
           editForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            await submitEditCampaignForm();
+            await submitEditCampaignForm(false);
+          });
+        }
+        if (editContinueBtn) {
+          editContinueBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            await submitEditCampaignForm(true);
+          });
+        }
+
+        // Re-upload & Continue Modal Handlers
+        const closeReuploadBtn = document.getElementById('modal-camp-reupload-close');
+        const cancelReuploadBtn = document.getElementById('btn-reupload-cancel');
+        if (closeReuploadBtn) closeReuploadBtn.addEventListener('click', closeCampaignReuploadModal);
+        if (cancelReuploadBtn) cancelReuploadBtn.addEventListener('click', closeCampaignReuploadModal);
+
+        const browseExcelBtn = document.getElementById('btn-reupload-browse-excel');
+        const reuploadExcelInput = document.getElementById('reupload-excel-input');
+        const chosenExcelName = document.getElementById('reupload-chosen-excel-name');
+        if (browseExcelBtn && reuploadExcelInput) {
+          browseExcelBtn.onclick = () => reuploadExcelInput.click();
+          reuploadExcelInput.onchange = () => {
+            if (reuploadExcelInput.files && reuploadExcelInput.files[0]) {
+              chosenExcelName.textContent = reuploadExcelInput.files[0].name;
+            } else {
+              chosenExcelName.textContent = 'No new file selected';
+            }
+          };
+        }
+
+        const browseDocBtn = document.getElementById('btn-reupload-browse-doc');
+        const reuploadDocInput = document.getElementById('reupload-doc-input');
+        const chosenDocName = document.getElementById('reupload-chosen-doc-name');
+        if (browseDocBtn && reuploadDocInput) {
+          browseDocBtn.onclick = () => reuploadDocInput.click();
+          reuploadDocInput.onchange = () => {
+            if (reuploadDocInput.files && reuploadDocInput.files[0]) {
+              chosenDocName.textContent = reuploadDocInput.files[0].name;
+            } else {
+              chosenDocName.textContent = 'No new file selected';
+            }
+          };
+        }
+
+        const saveReadyBtn = document.getElementById('btn-reupload-save-ready');
+        if (saveReadyBtn) {
+          saveReadyBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            await handleReuploadSubmit(false);
+          });
+        }
+
+        const reuploadContinueBtn = document.getElementById('btn-reupload-and-continue');
+        if (reuploadContinueBtn) {
+          reuploadContinueBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            await handleReuploadSubmit(true);
           });
         }
 
@@ -3187,22 +3338,46 @@
 
           const docExt = c.pdf_filename ? c.pdf_filename.split('.').pop().toUpperCase() : '';
           const pdfFileTag = c.pdf_filename
-            ? `<span class="camp-file-tag" title="${c.pdf_filename}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> [${docExt}] ${c.pdf_filename}</span>`
-            : `<span class="camp-file-tag tag-muted"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> No Document</span>`;
+            ? `<div class="camp-file-chip-wrap">
+                <span class="camp-file-tag" title="${c.pdf_filename}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> [${docExt}] ${c.pdf_filename}</span>
+                <button type="button" class="btn-file-chip-action btn-camp-chip-doc" data-camp-id="${c.id}" title="Re-upload or replace document">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  <span>Re-upload</span>
+                </button>
+               </div>`
+            : `<div class="camp-file-chip-wrap">
+                <span class="camp-file-tag tag-muted"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> No Document</span>
+                <button type="button" class="btn-file-chip-action btn-camp-chip-doc" data-camp-id="${c.id}" title="Upload document">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  <span>+ Upload</span>
+                </button>
+               </div>`;
 
           const excelFileTag = c.excel_filename
-            ? `<span class="camp-file-tag tag-excel" title="${c.excel_filename}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${c.excel_filename}</span>`
-            : `<span class="camp-file-tag tag-muted"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> No contacts sheet</span>`;
+            ? `<div class="camp-file-chip-wrap">
+                <span class="camp-file-tag tag-excel" title="${c.excel_filename}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${c.excel_filename}</span>
+                <button type="button" class="btn-file-chip-action btn-camp-chip-excel" data-camp-id="${c.id}" title="Re-upload or replace contacts sheet">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  <span>Re-upload</span>
+                </button>
+               </div>`
+            : `<div class="camp-file-chip-wrap">
+                <span class="camp-file-tag tag-muted"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> No contacts sheet</span>
+                <button type="button" class="btn-file-chip-action btn-camp-chip-excel" data-camp-id="${c.id}" title="Upload contacts sheet">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  <span>+ Upload</span>
+                </button>
+               </div>`;
 
           // Action buttons depending on state
-          const startPauseBtn = (c.status === 'ACTIVE')
+          const startPauseBtn = (c.status === 'ACTIVE' || c.status === 'IN_PROGRESS')
             ? `<button type="button" class="btn-toolbar btn-toolbar-pause btn-camp-pause" data-camp-id="${c.id}" title="Pause Campaign Calling">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
                 <span>Pause</span>
               </button>`
             : `<button type="button" class="btn-toolbar btn-toolbar-primary btn-camp-resume" data-camp-id="${c.id}" title="Start or Resume Campaign Calling">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                <span>${c.status === 'DRAFT' ? 'Start' : 'Resume'}</span>
+                <span>${(c.status === 'DRAFT' || c.status === 'READY') ? 'Start' : 'Resume'}</span>
               </button>`;
 
           return `
@@ -3230,7 +3405,7 @@
               </div>
 
               <!-- Attached Files Strip -->
-              <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+              <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; align-items:center;">
                 ${pdfFileTag}
                 ${excelFileTag}
               </div>
@@ -3267,6 +3442,10 @@
               <!-- Actions Strip (Redesigned Professional Toolbar) -->
               <div class="camp-card-actions-toolbar">
                 ${startPauseBtn}
+                <button type="button" class="btn-toolbar btn-toolbar-accent btn-camp-reupload-btn" data-camp-id="${c.id}" title="Re-upload Excel or Document to continue campaign">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  <span>Re-upload & Continue</span>
+                </button>
                 <button type="button" class="btn-toolbar btn-toolbar-neutral btn-camp-edit" data-camp-id="${c.id}" title="Edit Campaign Parameters">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                   <span>Edit</span>
@@ -3283,7 +3462,7 @@
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                   <span>Download Excel</span>
                 </a>
-                <button type="button" class="btn-toolbar btn-toolbar-danger btn-camp-archive" data-camp-id="${c.id}" title="Delete or Archive Campaign">
+                <button type="button" class="btn-toolbar btn-toolbar-danger btn-camp-delete" data-camp-id="${c.id}" title="Permanently Delete Campaign">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                   <span>Delete</span>
                 </button>
@@ -3347,18 +3526,51 @@
           });
         });
 
-        container.querySelectorAll('.btn-camp-archive').forEach(btn => {
+        // Permanent Delete Campaign
+        container.querySelectorAll('.btn-camp-delete, .btn-camp-archive').forEach(btn => {
           btn.addEventListener('click', async (e) => {
             e.preventDefault();
             const id = btn.getAttribute('data-camp-id');
-            if (!confirm('Are you sure you want to archive this campaign?')) return;
+            const targetCamp = (cachedCampaignsList || []).find(c => c.id === id);
+            const campName = targetCamp ? targetCamp.name : 'this campaign';
+            if (!confirm(`Are you sure you want to permanently delete campaign "${campName}"?\n\nThis will completely delete the campaign, all uploaded files, candidate contacts, and call history from the database. This action cannot be undone.`)) return;
+            btn.disabled = true;
             try {
-              await AdminClient.archiveCampaign(id);
-              showAdminAlert('Campaign archived.', 'info');
+              await AdminClient.deleteCampaign(id);
+              showAdminAlert(`✓ Campaign "${campName}" deleted permanently.`, 'success');
               await loadCampaigns(filter);
+              await loadDashboardStats();
             } catch (err) {
-              showAdminAlert(`Failed to archive: ${err.message}`, 'error');
+              showAdminAlert(`Failed to delete campaign: ${err.message}`, 'error');
+              btn.disabled = false;
             }
+          });
+        });
+
+        // Re-upload Modal Trigger from Action Toolbar
+        container.querySelectorAll('.btn-camp-reupload-btn').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const id = btn.getAttribute('data-camp-id');
+            openCampaignReuploadModal(id);
+          });
+        });
+
+        // Re-upload from Document Chip
+        container.querySelectorAll('.btn-camp-chip-doc').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const id = btn.getAttribute('data-camp-id');
+            openCampaignReuploadModal(id, 'doc');
+          });
+        });
+
+        // Re-upload from Excel Chip
+        container.querySelectorAll('.btn-camp-chip-excel').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const id = btn.getAttribute('data-camp-id');
+            openCampaignReuploadModal(id, 'excel');
           });
         });
 
@@ -3479,6 +3691,61 @@
             };
           }
 
+          // Setup Excel Area in Edit Modal
+          const excelBadge = document.getElementById('edit-camp-excel-badge');
+          const excelName = document.getElementById('edit-camp-excel-name');
+          const replaceExcelBtn = document.getElementById('btn-edit-camp-replace-excel');
+          const excelFileInput = document.getElementById('edit-camp-excel-file-input');
+          const excelStatusMsg = document.getElementById('edit-camp-excel-status-msg');
+
+          if (excelStatusMsg) {
+            excelStatusMsg.style.display = 'none';
+            excelStatusMsg.textContent = '';
+          }
+
+          if (c.excel_filename) {
+            if (excelBadge) {
+              excelBadge.textContent = 'EXCEL';
+              excelBadge.className = 'badge-pill badge-status-completed';
+            }
+            if (excelName) excelName.textContent = `${c.excel_filename} (${c.valid_contacts || 0} valid contacts)`;
+          } else {
+            if (excelBadge) {
+              excelBadge.textContent = 'NO SHEET';
+              excelBadge.className = 'badge-pill';
+            }
+            if (excelName) excelName.textContent = 'No contacts sheet attached';
+          }
+
+          if (replaceExcelBtn && excelFileInput) {
+            replaceExcelBtn.onclick = () => excelFileInput.click();
+            excelFileInput.onchange = async () => {
+              if (excelFileInput.files && excelFileInput.files.length > 0) {
+                const file = excelFileInput.files[0];
+                replaceExcelBtn.disabled = true;
+                replaceExcelBtn.textContent = 'Uploading...';
+                try {
+                  const uploadRes = await AdminClient.uploadCampaignExcel(campaignId, file);
+                  if (excelName) excelName.textContent = `${file.name} (${uploadRes.validRows || 0} valid contacts)`;
+                  if (excelBadge) {
+                    excelBadge.textContent = 'EXCEL';
+                    excelBadge.className = 'badge-pill badge-status-completed';
+                  }
+                  if (excelStatusMsg) {
+                    excelStatusMsg.textContent = `✓ Uploaded ${file.name}: ${uploadRes.validRows || 0} valid contacts parsed. Ready to call!`;
+                    excelStatusMsg.style.display = 'block';
+                  }
+                  await loadCampaigns(activeCampaignFilter);
+                } catch (err) {
+                  alert(`Excel upload failed: ${err.message}`);
+                } finally {
+                  replaceExcelBtn.disabled = false;
+                  replaceExcelBtn.textContent = 'Upload / Replace';
+                }
+              }
+            };
+          }
+
           const recFields = document.getElementById('edit-camp-recruitment-fields');
           if (c.service === 'recruitment') {
             if (recFields) recFields.style.display = 'block';
@@ -3501,7 +3768,7 @@
         if (modal) modal.classList.remove('open');
       }
 
-      async function submitEditCampaignForm() {
+      async function submitEditCampaignForm(continueCalling = false) {
         const id = document.getElementById('edit-camp-id')?.value;
         const name = document.getElementById('edit-camp-name')?.value.trim();
         const description = document.getElementById('edit-camp-desc')?.value.trim();
@@ -3533,11 +3800,166 @@
           }
 
           await AdminClient.updateCampaign(id, updateData);
+
+          if (continueCalling) {
+            try {
+              await AdminClient.startCampaign(id);
+              closeCampaignEditModal();
+              showAdminAlert(`✓ Campaign "${name}" saved and calling initiated sequentially!`, 'success');
+              await loadCampaigns(activeCampaignFilter);
+              await loadDashboardStats();
+              return;
+            } catch (callErr) {
+              closeCampaignEditModal();
+              showAdminAlert(`✓ Campaign updated, but calling could not start: ${callErr.message}`, 'error');
+              await loadCampaigns(activeCampaignFilter);
+              return;
+            }
+          }
+
           closeCampaignEditModal();
           showAdminAlert(`✓ Campaign "${name}" updated successfully!`, 'success');
           await loadCampaigns(activeCampaignFilter);
         } catch (err) {
           alert(`Failed to update campaign: ${err.message}`);
+        }
+      }
+
+      // ----------------------------------------------------------------------
+      // Campaign Re-upload & Continue Modal Controller
+      // ----------------------------------------------------------------------
+      let currentReuploadCamp = null;
+
+      async function openCampaignReuploadModal(campaignId, focusField = null) {
+        const modal = document.getElementById('modal-campaign-reupload');
+        if (!modal) return;
+
+        try {
+          const res = await AdminClient.getCampaign(campaignId);
+          currentReuploadCamp = res.campaign;
+          const c = currentReuploadCamp;
+
+          document.getElementById('reupload-camp-id').value = c.id;
+          document.getElementById('reupload-camp-name').textContent = c.name;
+
+          const sBadge = document.getElementById('reupload-camp-service-badge');
+          if (sBadge) {
+            sBadge.textContent = c.service.charAt(0).toUpperCase() + c.service.slice(1);
+            sBadge.className = `badge-pill ${c.service === 'recruitment' ? 'badge-recruitment' : c.service === 'sales' ? 'badge-sales' : 'badge-support'}`;
+          }
+
+          // Reset inputs and indicators
+          const excelInput = document.getElementById('reupload-excel-input');
+          const docInput = document.getElementById('reupload-doc-input');
+          if (excelInput) excelInput.value = '';
+          if (docInput) docInput.value = '';
+
+          const chosenExcelSpan = document.getElementById('reupload-chosen-excel-name');
+          const chosenDocSpan = document.getElementById('reupload-chosen-doc-name');
+          if (chosenExcelSpan) chosenExcelSpan.textContent = 'No new file selected';
+          if (chosenDocSpan) chosenDocSpan.textContent = 'No new file selected';
+
+          const excelFeedback = document.getElementById('reupload-excel-feedback');
+          const docFeedback = document.getElementById('reupload-doc-feedback');
+          if (excelFeedback) { excelFeedback.style.display = 'none'; excelFeedback.textContent = ''; }
+          if (docFeedback) { docFeedback.style.display = 'none'; docFeedback.textContent = ''; }
+
+          // Current file status text
+          const currExcelDesc = document.getElementById('reupload-current-excel-desc');
+          if (currExcelDesc) {
+            currExcelDesc.textContent = c.excel_filename
+              ? `Current sheet: ${c.excel_filename} (${c.valid_contacts || 0} valid contacts)`
+              : 'Current sheet: None attached';
+          }
+          const currDocDesc = document.getElementById('reupload-current-doc-desc');
+          if (currDocDesc) {
+            currDocDesc.textContent = c.pdf_filename
+              ? `Current document: ${c.pdf_filename}`
+              : 'Current document: None attached';
+          }
+
+          modal.classList.add('open');
+
+          if (focusField === 'excel' && excelInput) {
+            setTimeout(() => excelInput.click(), 100);
+          } else if (focusField === 'doc' && docInput) {
+            setTimeout(() => docInput.click(), 100);
+          }
+        } catch (err) {
+          showAdminAlert(`Failed to load campaign: ${err.message}`, 'error');
+        }
+      }
+
+      function closeCampaignReuploadModal() {
+        const modal = document.getElementById('modal-campaign-reupload');
+        if (modal) modal.classList.remove('open');
+        currentReuploadCamp = null;
+      }
+
+      async function handleReuploadSubmit(continueCampaign = false) {
+        const campId = document.getElementById('reupload-camp-id')?.value;
+        if (!campId) return;
+
+        const excelInput = document.getElementById('reupload-excel-input');
+        const docInput = document.getElementById('reupload-doc-input');
+        const saveReadyBtn = document.getElementById('btn-reupload-save-ready');
+        const continueBtn = document.getElementById('btn-reupload-and-continue');
+
+        const hasNewExcel = excelInput?.files && excelInput.files.length > 0;
+        const hasNewDoc = docInput?.files && docInput.files.length > 0;
+
+        if (!hasNewExcel && !hasNewDoc && !continueCampaign) {
+          alert('Please select a new Excel contacts file or Document to upload.');
+          return;
+        }
+
+        if (saveReadyBtn) saveReadyBtn.disabled = true;
+        if (continueBtn) {
+          continueBtn.disabled = true;
+          continueBtn.textContent = continueCampaign ? 'Uploading & Starting...' : 'Uploading...';
+        }
+
+        try {
+          // 1. Upload new document if selected
+          if (hasNewDoc) {
+            const docFile = docInput.files[0];
+            await AdminClient.uploadCampaignDocument(campId, docFile);
+          }
+
+          // 2. Upload new excel if selected
+          let excelUploadRes = null;
+          if (hasNewExcel) {
+            const excelFile = excelInput.files[0];
+            excelUploadRes = await AdminClient.uploadCampaignExcel(campId, excelFile);
+          }
+
+          // 3. If continueCampaign is requested, trigger startCampaign
+          if (continueCampaign) {
+            await AdminClient.startCampaign(campId);
+            closeCampaignReuploadModal();
+            const contactMsg = excelUploadRes ? ` with ${excelUploadRes.validRows || 0} valid contacts` : '';
+            showAdminAlert(`✓ Campaign resumed${contactMsg}! Sequential calls initiated.`, 'success');
+            await loadCampaigns(activeCampaignFilter);
+            await loadDashboardStats();
+            return;
+          }
+
+          // Otherwise, just keep ready
+          closeCampaignReuploadModal();
+          showAdminAlert(`✓ Campaign files updated successfully. Ready to launch anytime!`, 'success');
+          await loadCampaigns(activeCampaignFilter);
+          await loadDashboardStats();
+        } catch (err) {
+          alert(`Operation failed: ${err.message}`);
+        } finally {
+          if (saveReadyBtn) saveReadyBtn.disabled = false;
+          if (continueBtn) {
+            continueBtn.disabled = false;
+            continueBtn.innerHTML = `
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              <span>Upload & Continue Campaign</span>
+            `;
+          }
         }
       }
 
