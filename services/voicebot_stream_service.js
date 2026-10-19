@@ -2,6 +2,7 @@ import db, { utcNow } from './db.js';
 import ElevenLabsService from './elevenlabs_service.js';
 import GeminiService from './gemini_service.js';
 import IntentService from './intent_service.js';
+import AppointmentState from './appointment_state.js';
 import LatencyTracker from './latency_tracker.js';
 import ConversationMemory from './conversation_memory.js';
 import ScreeningEvaluator from './screening_evaluator.js';
@@ -224,6 +225,8 @@ export class CallSession {
         this.latencyTracker = new LatencyTracker(this.callId);
         this.conversationHistory = [];
         this.collectedData = {};
+        // Appointment calls: which booking detail was asked last and how many times in a row.
+        this.apptTracker = { field: null, count: 0 };
         this.callStatus = 'in-progress';
         this.classification = 'On Hold';
         this.summary = '';
@@ -634,6 +637,29 @@ export class CallSession {
     }
 
     /**
+     * Appointment calls only: after every reply, work out from the collected details which one is
+     * being asked next, so the stage and the "asked too many times" counter never go stale.
+     */
+    syncAppointmentState() {
+        if (this.service !== 'appointment') return;
+        this.apptTracker = AppointmentState.trackAsk(this.apptTracker, this.collectedData);
+        // A caller who will not give a name must not block the booking.
+        if (this.apptTracker.field === 'caller_name' && this.apptTracker.count >= AppointmentState.GIVE_UP_AFTER) {
+            this.collectedData.caller_name = 'Not given';
+            if (this.memory && typeof this.memory.recordFact === 'function') {
+                this.memory.recordFact('caller_name', 'Not given');
+            }
+            this.apptTracker = AppointmentState.trackAsk(this.apptTracker, this.collectedData);
+        }
+        const stage = AppointmentState.stageFor(this.collectedData);
+        if (stage !== this.currentStage) {
+            this.stageHistory.push(this.currentStage);
+            this.currentStage = stage;
+        }
+        if (this.memory) this.memory.currentStage = stage;
+    }
+
+    /**
      * The ElevenLabs voice for this call: the agent's own voice for English/Hindi when it has one,
      * otherwise the default language-based voice (Telugu always keeps its Telugu voice).
      */
@@ -674,6 +700,10 @@ export class CallSession {
             this.currentStage = isNamed ? 'GREETING' : 'PERMISSION_CHECK';
         } else {
             this.currentStage = 'AVAILABILITY';
+        }
+        // The greeting already used the contact's name, so a booking call does not ask for it again.
+        if (this.service === 'appointment' && this.hasRealCallerName() && !this.collectedData.caller_name) {
+            this.collectedData.caller_name = String(this.contact.name).trim();
         }
 
         console.log(`[CallSession] Delivering opening greeting: "${greeting.substring(0, 80)}..."`);
@@ -1192,7 +1222,8 @@ export class CallSession {
         }
 
         // Discard pure non-answer listening murmurs ("hmm", "mhm") while maintaining conversational focus
-        const pureMurmurs = new Set(['hmm', 'hmmm', 'mhm', 'uh-huh', 'uh huh', 'mm', 'mmm']);
+        // "Mm-hmm" loses its hyphen below and becomes "mmhmm", so the joined spellings are listed too.
+        const pureMurmurs = new Set(['hmm', 'hmmm', 'mhm', 'mhmm', 'uh-huh', 'uh huh', 'uhhuh', 'mm', 'mmm', 'mmhmm', 'mm hmm', 'mmhm', 'hm']);
         const cleanedUtterance = transcript.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
         if (pureMurmurs.has(cleanedUtterance) && !this.interruptedWithAnswer) {
             console.log(`[CallSession] Caller murmur acknowledged ("${transcript}"). Maintaining conversational focus.`);
@@ -1265,6 +1296,7 @@ export class CallSession {
                 this.setSessionLanguage(intent.detected_language, `INTENT_FAST_PATH:${intent.reason || 'DIRECT'}`);
                 detectedLanguage = this.detectedLanguage;
             }
+            this.syncAppointmentState();
 
             const spokenResponse = intent.spoken_response;
             const replyTimeSec = Math.floor((Date.now() - this.startTime) / 1000);
@@ -1321,6 +1353,7 @@ export class CallSession {
                     memoryState: this.memory ? this.memory.getStateSummary() : null,
                     detectedLanguage: this.detectedLanguage,
                     currentStage: this.currentStage,
+                    appointmentTracker: this.apptTracker,
                     agentName: this.agent ? this.agent.name : '',
                     agentInstructions: this.agent ? this.agent.instructions : '',
                     direction: this.direction,
@@ -1370,7 +1403,10 @@ export class CallSession {
                 this.setSessionLanguage(reply.detected_language, 'LLM_REPLY');
                 detectedLanguage = this.detectedLanguage;
             }
-            if (reply.next_stage) {
+            if (this.service === 'appointment') {
+                // The stage follows the collected details, not the AI's guess.
+                this.syncAppointmentState();
+            } else if (reply.next_stage) {
                 this.stageHistory.push(this.currentStage);
                 this.currentStage = reply.next_stage;
                 if (this.memory) {

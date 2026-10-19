@@ -1,6 +1,8 @@
+import AppointmentState from './appointment_state.js';
+
 /**
  * services/intent_service.js
- * 
+ *
  * Lightweight, deterministic intent-handling layer for real-time telephone dialogue.
  * Evaluates short caller utterances ("yes", "no", "okay", "repeat that", "can you hear me",
  * "speak in Hindi", objection scripts, etc.) in context of the active service:
@@ -735,7 +737,9 @@ export default class IntentService {
             }
         }
 
-        if (service === 'appointment' && (stage === 'AVAILABILITY' || stage === 'GREETING')) {
+        // Only the very first "yes" (to "is now a good time?") starts the booking questions. Once any detail
+        // is collected, or the call has moved on, a bare "yes" goes to the AI instead of restarting the booking.
+        if (service === 'appointment' && (stage === 'AVAILABILITY' || stage === 'GREETING') && !AppointmentState.hasProgress(context.collectedData)) {
             return {
                 matched: true,
                 spoken_response: this.localize(
@@ -746,7 +750,7 @@ export default class IntentService {
                 ),
                 detected_language: lang,
                 classification: 'Pending',
-                next_stage: 'APPOINTMENT_DETAILS',
+                next_stage: 'PURPOSE',
                 should_end_call: false,
                 reason: 'appointment_availability_yes'
             };
@@ -938,7 +942,9 @@ export default class IntentService {
             }
         }
 
-        if (service === 'appointment' && (stage === 'AVAILABILITY' || stage === 'GREETING')) {
+        // Only the very first question ("is now a good time?") can be answered "no" with a callback offer;
+        // once any booking detail is collected a "no" belongs to the AI (e.g. "no, that's not right").
+        if (service === 'appointment' && (stage === 'AVAILABILITY' || stage === 'GREETING') && !AppointmentState.hasProgress(context.collectedData)) {
             return {
                 matched: true,
                 spoken_response: this.localize(

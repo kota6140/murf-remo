@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import LLMService from './llm_service.js';
+import AppointmentState from './appointment_state.js';
 
 const EXACT_GREETING = "Hey, it's Remo, representing Score Labs.";
 
@@ -134,6 +135,41 @@ export default class GeminiService {
         const st = (stage || '').toUpperCase();
 
         if (s === 'appointment') {
+            // Ask for the detail the call is actually on, not always the day.
+            const byStage = {
+                PURPOSE: [
+                    "I can help you book an appointment. What would you like to book?",
+                    "मैं आपकी अपॉइंटमेंट बुक करने में मदद कर सकता हूँ। आप क्या बुक करना चाहेंगे?",
+                    "నేను మీ అపాయింట్‌మెంట్ బుక్ చేయడంలో సహాయం చేయగలను. మీరు దేని కోసం బుక్ చేయాలనుకుంటున్నారు?"
+                ],
+                PREFERRED_DATE: [
+                    "Sorry, which day would suit you best?",
+                    "माफ़ कीजिए, आपके लिए कौन सा दिन सुविधाजनक रहेगा?",
+                    "క్షమించండి, మీకు ఏ రోజు అనుకూలంగా ఉంటుంది?"
+                ],
+                PREFERRED_TIME: [
+                    "Sorry, what time would work for you?",
+                    "माफ़ कीजिए, आपके लिए कौन सा समय सुविधाजनक रहेगा?",
+                    "క్షమించండి, మీకు ఏ సమయం అనుకూలంగా ఉంటుంది?"
+                ],
+                CONTACT_DETAILS: [
+                    "Sorry, could I have your name for the booking?",
+                    "माफ़ कीजिए, बुकिंग के लिए आपका नाम क्या है?",
+                    "క్షమించండి, బుకింగ్ కోసం మీ పేరు చెప్పగలరా?"
+                ],
+                CONFIRMATION: [
+                    "Sorry, could you confirm those booking details are correct?",
+                    "माफ़ कीजिए, क्या बुकिंग की ये जानकारी सही है?",
+                    "క్షమించండి, ఈ బుకింగ్ వివరాలు సరైనవేనా?"
+                ],
+                CLOSING: [
+                    "Thank you. Our team will confirm your appointment shortly.",
+                    "धन्यवाद। हमारी टीम जल्द ही आपकी अपॉइंटमेंट की पुष्टि करेगी।",
+                    "ధన్యవాదాలు. మా బృందం త్వరలో మీ అపాయింట్‌మెంట్‌ను నిర్ధారిస్తుంది."
+                ]
+            };
+            const pick = byStage[st];
+            if (pick) return l === 'hi' ? pick[1] : (l === 'te' ? pick[2] : pick[0]);
             if (l === 'hi') return "मैं आपकी अपॉइंटमेंट बुक करने में मदद कर सकता हूँ। आपके लिए कौन सा दिन और समय सुविधाजनक रहेगा?";
             if (l === 'te') return "నేను మీ అపాయింట్‌మెంట్ బుక్ చేయడంలో సహాయం చేయగలను. మీకు ఏ రోజు మరియు సమయం అనుకూలంగా ఉంటుంది?";
             return "I can help you book an appointment. Which day and time would suit you best?";
@@ -368,7 +404,12 @@ STRICT GROUNDING & TURN-TAKING RULES:
             serviceInstructions = `
 ### APPOINTMENT SETTING WORKFLOW (${compName}):${knowledge}
 - Goal: book, reschedule or cancel an appointment with ${compName}.
+${AppointmentState.buildPromptBlock(collectedData, options.appointmentTracker)}
 - Collect ONE detail at a time: what the appointment is for, the preferred day, the preferred time, then the caller's name. Never re-ask what is already collected.
+- Every turn, put EVERY booking detail you know (new and earlier ones) in extracted_fields, so nothing is forgotten.
+- If the caller already gave several details in one message, record them all and ask only for what is still missing.
+- If the caller asks who you are or your name, answer in a few words ("I'm Remo from ${compName}") and go straight back to the next missing detail. Do not treat that as their name.
+- The caller's name may already be known from the contact list; if caller_name is under Collected, never ask for it again. Ask for an email at most once, and only after the booking is confirmed.
 - You cannot see a live calendar. Take their preferred slot (offer to note a second choice) and say the team will confirm it by message or call. Never promise a slot is locked in.
 - Before closing, repeat the details back once ("So that's Friday at 4 PM, correct?"). Only after they agree, classify "Appointment Booked".
 - Put what you learn in extracted_fields: appointment_purpose, preferred_date, preferred_time, caller_name, email.
@@ -444,9 +485,11 @@ RULES:
 3. Natural acknowledgments ("Got it", "Understood", "I see"). Do not repeat the same phrase.
 4. Seamlessly match caller language: Telugu in Telugu, Hindi in Hindi, default English.
 5. If caller pauses/thinks: "Sure, take your time."
-6. NEVER repeat questions or the opening pitch. If caller agreed to speak (e.g. "Yeah it works for me", "Sure"), warmly acknowledge and advance to INTEREST_DISCOVERY asking about their service needs. If caller already answered or stated their need, incorporate their answer and advance to the next logical stage.
+${service === 'appointment'
+    ? '6. NEVER repeat questions or the opening pitch. If caller agreed to speak (e.g. "Yeah it works for me", "Sure"), warmly acknowledge and ask for the first missing booking detail. If caller already answered, use their answer and ask for the next missing detail.'
+    : '6. NEVER repeat questions or the opening pitch. If caller agreed to speak (e.g. "Yeah it works for me", "Sure"), warmly acknowledge and advance to INTEREST_DISCOVERY asking about their service needs. If caller already answered or stated their need, incorporate their answer and advance to the next logical stage.'}
 ${collectedData && Object.keys(collectedData).length > 0 ? `ALREADY COLLECTED (DO NOT RE-ASK): ${JSON.stringify(collectedData)}` : ''}
-${questionPlan && Array.isArray(questionPlan) ? `QUESTION PLAN: ${questionPlan.slice(0, 5).map((q, idx) => `${idx + 1}. [${q.target_field || q.category}]: "${q.question}"`).join(' | ')}` : ''}
+${questionPlan && Array.isArray(questionPlan) ? `QUESTION PLAN: ${questionPlan.slice(0, 5).map((q, idx) => `${idx + 1}. [${q.field_to_collect || q.target_field || q.category}]: "${q.text || q.question}"`).join(' | ')}` : ''}
 ${serviceInstructions}
 
 OUTPUT STRICT JSON ONLY:
@@ -457,10 +500,13 @@ OUTPUT STRICT JSON ONLY:
   "extracted_fields": {},
   "classification": ${classificationOptions},
   "call_summary": "1 sentence summary",
-  "next_stage": "GREETING" | "PERMISSION_CHECK" | "INTEREST_DISCOVERY" | "SERVICE_DISCOVERY" | "QUALIFICATION" | "NEXT_STEP" | "CALLBACK_TIME" | "CLOSING"
+  "next_stage": ${service === 'appointment'
+    ? '"PURPOSE" | "PREFERRED_DATE" | "PREFERRED_TIME" | "CONTACT_DETAILS" | "CONFIRMATION" | "CLOSING"'
+    : '"GREETING" | "PERMISSION_CHECK" | "INTEREST_DISCOVERY" | "SERVICE_DISCOVERY" | "QUALIFICATION" | "NEXT_STEP" | "CALLBACK_TIME" | "CLOSING"'}
 }`;
 
-        const recentHistory = (conversationHistory || []).slice(-8);
+        // Booking calls carry their own status block, but a longer window still helps the AI follow the thread.
+        const recentHistory = (conversationHistory || []).slice(service === 'appointment' ? -16 : -8);
         const historyLines = recentHistory.map(m => `${m.speaker || 'Unknown'}: ${m.text || ''}`);
         if (callerMessage && (!recentHistory.length || recentHistory[recentHistory.length - 1].text !== callerMessage)) {
             historyLines.push(`Caller: ${callerMessage}`);
@@ -475,7 +521,7 @@ OUTPUT STRICT JSON ONLY:
                 ? await LLMService.generateStream({
                     systemPrompt,
                     messages: [{ role: 'user', content: userPrompt }],
-                    maxTokens: 110,
+                    maxTokens: service === 'appointment' ? 220 : 110,
                     jsonMode: true,
                     timeoutMs: 5000,
                     onSpokenSentence: options.onSpokenSentence,
@@ -484,7 +530,7 @@ OUTPUT STRICT JSON ONLY:
                 : await LLMService.generate({
                     systemPrompt,
                     messages: [{ role: 'user', content: userPrompt }],
-                    maxTokens: 110,
+                    maxTokens: service === 'appointment' ? 220 : 110,
                     jsonMode: true,
                     timeoutMs: 5000
                 });
