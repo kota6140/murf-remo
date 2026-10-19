@@ -65,9 +65,13 @@ async function main() {
             company: 'Score Labs'
         });
 
-        assert.ok(greeting.startsWith("Hey, it's Remo, representing Score Labs."), 'Must start with exact identity phrase');
-        assert.ok(greeting.includes('Senior React Engineer'), 'Must mention the candidate job role');
-        assert.ok(greeting.includes('Do you have a couple of minutes to talk?'), 'Must ask availability question');
+        // No verified candidate name: Remo introduces itself and asks the availability question in one go.
+        assert.ok(greeting.startsWith('Hi, this is Remo, an AI calling assistant from ScoreLabs Inc.'), 'Must start with the exact identity phrase');
+        assert.ok(greeting.endsWith('Is this a good time to speak for a minute?'), 'Must ask the availability question');
+
+        // With a verified name, the first words only ask who is speaking.
+        const named = GeminiService.getOpeningGreeting('recruitment', { name: 'Priya Sharma' });
+        assert.strictEqual(named, 'Hello, am I speaking with Priya Sharma?');
     });
 
     runTest('Opening greeting executes in < 1ms without external network request', () => {
@@ -94,7 +98,7 @@ async function main() {
 
         const res = IntentService.matchIntent('Yes', context);
         assert.strictEqual(res.matched, true);
-        assert.ok(res.spoken_response.includes('Great') || res.spoken_response.includes('Perfect'), 'Should include natural acknowledgement');
+        assert.ok(/Thank you|Great|Perfect/.test(res.spoken_response), 'Should include natural acknowledgement');
         assert.strictEqual(res.next_stage, 'EXPERIENCE');
         assert.strictEqual(res.should_end_call, false);
     });
@@ -250,7 +254,7 @@ async function main() {
         const salGreeting = GeminiService.getOpeningGreeting('sales', { name: 'Rahul', company: 'FinCorp' });
         const supGreeting = GeminiService.getOpeningGreeting('support', {});
 
-        assert.ok(recGreeting.includes('application for Data Scientist'));
+        assert.ok(recGreeting.includes('ScoreLabs Inc.') && recGreeting.includes('good time'));
         assert.ok(salGreeting.includes('Rahul'), 'Sales greeting should address the contact naturally');
         assert.ok(supGreeting.includes('customer support'));
         assert.notStrictEqual(recGreeting, salGreeting);
@@ -491,6 +495,7 @@ async function main() {
         tracker.markDecisionEnd('INTENT_FAST_PATH');
         tracker.markTtsStart();
         tracker.markTtsEnd(true);
+        tracker.markFirstAudioChunkSent();
         tracker.markAudioDispatched();
 
         // Turn 2: Normal turn
@@ -502,15 +507,28 @@ async function main() {
         tracker.markDecisionEnd('GEMINI_LLM');
         tracker.markTtsStart();
         tracker.markTtsEnd(false);
+        tracker.markFirstAudioChunkSent();
+        tracker.markAudioDispatched();
+
+        // Turn 3: no audio was ever sent (e.g. text-to-speech failed): its latency is unavailable, not 0
+        tracker.startTurn();
+        tracker.markVadSilence(400);
         tracker.markAudioDispatched();
 
         const summary = tracker.getSummary();
-        assert.strictEqual(summary.turnsCount, 2);
+        assert.strictEqual(summary.turnsCount, 3);
+        assert.strictEqual(summary.measuredTurns, 2, 'only turns with real first audio are counted');
         assert.strictEqual(summary.fastPathCount, 1);
         assert.strictEqual(summary.llmCount, 1);
         assert.ok(typeof summary.p50Ms === 'number');
         assert.ok(typeof summary.p95Ms === 'number');
         assert.ok(summary.firstGreetingDelayMs !== null);
+        assert.strictEqual(tracker.turns[2].totalTurnLatencyMs, null, 'unmeasured latency is null, never 0');
+        assert.ok(tracker.turns[0].totalTurnLatencyMs >= 360, 'total includes the silence the caller waited through');
+
+        const empty = new LatencyTracker('call_without_audio').getSummary();
+        assert.strictEqual(empty.p50Ms, null);
+        assert.strictEqual(empty.maxMs, null);
     });
 
     // -------------------------------------------------------------

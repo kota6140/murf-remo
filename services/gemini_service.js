@@ -2,8 +2,7 @@ import 'dotenv/config';
 import LLMService from './llm_service.js';
 import AppointmentState from './appointment_state.js';
 import SalesState from './sales_state.js';
-
-const EXACT_GREETING = "Hey, it's Remo, representing Score Labs.";
+import GreetingScript from './greeting_script.js';
 
 const FALLBACK_TEXT = {
     'en': "I'm sorry, I don't have that information right now, but I'll make sure our team follows up with you directly.",
@@ -94,9 +93,12 @@ export default class GeminiService {
             return `Thank you for calling ${company}, this is Remo. How may I help you today?`;
         }
 
-        // Recruitment
-        const role = ctx.job_title || contactInfo.job_role || contactInfo.role || 'the open position';
-        return `${EXACT_GREETING} I'm calling regarding your application for ${role}. Do you have a couple of minutes to talk?`;
+        // Recruitment: ask for the candidate by name first (only when the name is known and verified); after they
+        // confirm, Remo introduces itself and asks if it is a good time. With no verified name, Remo introduces itself directly.
+        if (isValidName) {
+            return GreetingScript.identityQuestion(rawName);
+        }
+        return GreetingScript.recruitmentIntro();
     }
 
     /**
@@ -128,6 +130,30 @@ export default class GeminiService {
         if (s === 'appointment') return 'Pending';
         if (s === 'receptionist') return 'Enquiry';
         return 'On Hold';
+    }
+
+    /**
+     * The prompt block built from the system's own record of the call: which topics were asked and answered,
+     * the question still open, and what kind of turn the caller just took. Empty when there is nothing to say.
+     */
+    static buildQuestionBlock(qs) {
+        if (!qs || typeof qs !== 'object') return '';
+        const asked = Array.isArray(qs.askedTopics) ? qs.askedTopics : [];
+        const answered = Array.isArray(qs.answeredTopics) ? qs.answeredTopics : [];
+        const lines = ['QUESTION TRACKER (kept by the system; trust it over your own memory):'];
+        if (qs.callStage) lines.push(`- Call phase: ${qs.callStage}`);
+        if (answered.includes('permission')) lines.push('- The caller has already agreed to talk. NEVER ask again whether it is a good time.');
+        if (asked.length) lines.push(`- Topics already asked: ${asked.join(', ')}`);
+        if (answered.length) lines.push(`- Topics already ANSWERED (never ask about them again, not even reworded): ${answered.join(', ')}`);
+        if (qs.openQuestion) lines.push(`- Question currently open: "${qs.openQuestion}"`);
+        if (qs.nextPlanned) lines.push(`- Next planned question not yet asked: "${qs.nextPlanned}"`);
+        if (qs.turnKind === 'clarification') {
+            lines.push('- The caller asked for clarification. Explain the open question in simpler words and stop. Do NOT move to a new topic.');
+        } else if (qs.turnKind === 'continuation') {
+            lines.push('- The caller said something like "go on" or "and then?". Continue naturally from the open question. This is NOT an answer.');
+        }
+        lines.push('- Keep acknowledgements short and varied. Do not begin two replies in a row with the same word ("Of course", "Sure", "Absolutely").');
+        return lines.length > 2 ? lines.join('\n') : '';
     }
 
     static getUniversalFallback(lang = 'en', service = 'recruitment', stage = null) {
@@ -513,6 +539,7 @@ ${service === 'appointment'
     : '6. NEVER repeat questions or the opening pitch. If caller agreed to speak (e.g. "Yeah it works for me", "Sure"), warmly acknowledge and advance to INTEREST_DISCOVERY asking about their service needs. If caller already answered or stated their need, incorporate their answer and advance to the next logical stage.'}
 ${collectedData && Object.keys(collectedData).length > 0 ? `ALREADY COLLECTED (DO NOT RE-ASK): ${JSON.stringify(collectedData)}` : ''}
 ${questionPlan && Array.isArray(questionPlan) ? `QUESTION PLAN: ${questionPlan.slice(0, 5).map((q, idx) => `${idx + 1}. [${q.field_to_collect || q.target_field || q.category}]: "${q.text || q.question}"`).join(' | ')}` : ''}
+${this.buildQuestionBlock(options.questionState)}
 ${serviceInstructions}
 
 OUTPUT STRICT JSON ONLY:

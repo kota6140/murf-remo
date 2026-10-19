@@ -47,24 +47,25 @@ export default class LatencyTracker {
             turnStartTime: Date.now(),
             speechEndpointDetectedTime: null,
             vadSilenceDetectedTime: null,
-            vadDurationMs: 0,
+            // null = not measured. A missing measurement is never reported as 0.
+            vadDurationMs: null,
             sttStartTime: null,
             sttEndTime: null,
-            sttDurationMs: 0,
+            sttDurationMs: null,
             decisionStartTime: null,
             decisionEndTime: null,
-            decisionDurationMs: 0,
+            decisionDurationMs: null,
             decisionType: 'UNKNOWN',
             ttsStartTime: null,
             ttsFirstByteTime: null,
             ttsEndTime: null,
-            ttsDurationMs: 0,
+            ttsDurationMs: null,
             isTtsCached: false,
             firstAudioSentTime: null,
             audioDispatchedTime: null,
             playbackCompletedTime: null,
-            endpointToFirstAudioMs: 0,
-            totalTurnLatencyMs: 0
+            endpointToFirstAudioMs: null,
+            totalTurnLatencyMs: null
         };
     }
 
@@ -128,7 +129,8 @@ export default class LatencyTracker {
     markTtsEnd(isCached = false) {
         if (!this.currentTurn || !this.currentTurn.ttsStartTime) return;
         this.currentTurn.ttsEndTime = Date.now();
-        this.currentTurn.ttsDurationMs = isCached ? 0 : (this.currentTurn.ttsEndTime - this.currentTurn.ttsStartTime);
+        // Audio taken from the cache was not synthesised, so there is no synthesis time to report.
+        this.currentTurn.ttsDurationMs = isCached ? null : (this.currentTurn.ttsEndTime - this.currentTurn.ttsStartTime);
         this.currentTurn.isTtsCached = isCached;
     }
 
@@ -147,27 +149,31 @@ export default class LatencyTracker {
     markAudioDispatched() {
         if (!this.currentTurn) return;
         this.currentTurn.audioDispatchedTime = Date.now();
-        if (!this.currentTurn.firstAudioSentTime) {
-            this.currentTurn.firstAudioSentTime = this.currentTurn.audioDispatchedTime;
-        }
+        // No audio was sent for this turn (text-to-speech failed, or the reply was cancelled): the first-audio
+        // time stays unmeasured instead of being invented from the dispatch time.
 
-        const endpoint = this.currentTurn.speechEndpointDetectedTime || this.currentTurn.vadSilenceDetectedTime || this.currentTurn.turnStartTime;
         const t = this.currentTurn;
+        // From the moment the caller's silence began to the first audio of the reply sent to Plivo.
+        // Only computed when both ends were really measured; otherwise it stays null.
+        if (t.firstAudioSentTime && t.vadSilenceDetectedTime && typeof t.vadDurationMs === 'number') {
+            t.totalTurnLatencyMs = t.vadDurationMs + (t.firstAudioSentTime - t.vadSilenceDetectedTime);
+        }
         t.plivoFirstAudioDeliveryMs = t.endpointToFirstAudioMs;
         t.vadLatencyMs = t.vadDurationMs;
         t.endOfTurnDetectionMs = t.vadDurationMs;
-        t.intentLatencyMs = t.decisionType.includes('INTENT') ? t.decisionDurationMs : 0;
-        t.llmTimeToFirstTokenMs = t.llmFirstTokenMs || 0;
-        t.ttsTimeToFirstAudioMs = t.ttsDurationMs;
+        t.intentLatencyMs = t.decisionType.includes('INTENT') ? t.decisionDurationMs : null;
+        t.llmTimeToFirstTokenMs = typeof t.llmFirstTokenMs === 'number' ? t.llmFirstTokenMs : null;
+        t.ttsTimeToFirstAudioMs = (t.ttsStartTime && t.ttsFirstByteTime && !t.isTtsCached) ? (t.ttsFirstByteTime - t.ttsStartTime) : null;
 
+        const fmt = (v) => (typeof v === 'number' ? `${v}ms` : 'n/a');
         console.log(
             `[LATENCY] Call ${this.callId} [Turn ${t.turnIndex}]: ` +
-            `VAD=${t.vadDurationMs}ms | ` +
-            `STT=${t.sttDurationMs}ms | ` +
-            `Decision=${t.decisionDurationMs}ms (${t.decisionType}${t.llmFirstTokenMs ? `, TTFT: ${t.llmFirstTokenMs}ms` : ''}) | ` +
-            `TTS=${t.ttsDurationMs}ms${t.isTtsCached ? ' (CACHED)' : ''} | ` +
-            `EndpointToFirstAudio=${t.endpointToFirstAudioMs}ms | ` +
-            `TOTAL=${t.totalTurnLatencyMs}ms`
+            `VAD=${fmt(t.vadDurationMs)} | ` +
+            `STT=${fmt(t.sttDurationMs)} | ` +
+            `Decision=${fmt(t.decisionDurationMs)} (${t.decisionType}${typeof t.llmFirstTokenMs === 'number' ? `, TTFT: ${t.llmFirstTokenMs}ms` : ''}) | ` +
+            `TTS=${t.isTtsCached ? 'cached' : fmt(t.ttsDurationMs)}${t.ttsTimeToFirstAudioMs !== null ? ` (first audio ${t.ttsTimeToFirstAudioMs}ms)` : ''} | ` +
+            `EndpointToFirstAudio=${fmt(t.endpointToFirstAudioMs)} | ` +
+            `TOTAL=${fmt(t.totalTurnLatencyMs)}`
         );
 
         // Structured audit record as specified in PART 10
@@ -194,14 +200,17 @@ export default class LatencyTracker {
             : null;
 
         const count = this.turns.length;
+        // Only turns whose total was really measured count toward the statistics.
         const latencies = this.turns
             .map(t => t.totalTurnLatencyMs)
+            .filter(v => typeof v === 'number')
             .sort((a, b) => a - b);
+        const measured = latencies.length;
 
-        const p50 = count > 0 ? latencies[Math.floor(count * 0.5)] : 0;
-        const p95 = count > 0 ? latencies[Math.floor(count * 0.95)] : 0;
-        const min = count > 0 ? latencies[0] : 0;
-        const max = count > 0 ? latencies[count - 1] : 0;
+        const p50 = measured > 0 ? latencies[Math.floor(measured * 0.5)] : null;
+        const p95 = measured > 0 ? latencies[Math.min(measured - 1, Math.floor(measured * 0.95))] : null;
+        const min = measured > 0 ? latencies[0] : null;
+        const max = measured > 0 ? latencies[measured - 1] : null;
 
         const fastPathCount = this.turns.filter(t => t.decisionType && t.decisionType.includes('INTENT')).length;
         const llmCount = this.turns.filter(t => t.decisionType && (
@@ -213,6 +222,7 @@ export default class LatencyTracker {
         return {
             callId: this.callId,
             turnsCount: count,
+            measuredTurns: measured,
             firstGreetingDelayMs: totalGreetingDelay,
             p50Ms: p50,
             p95Ms: p95,
@@ -225,11 +235,12 @@ export default class LatencyTracker {
 
     logFinalSummary() {
         const s = this.getSummary();
+        const fmt = (v) => (typeof v === 'number' ? `${v}ms` : 'n/a');
         console.log(
             `[LATENCY_REPORT] Call ${s.callId} Finalized: ` +
-            `Greeting=${s.firstGreetingDelayMs || 0}ms | ` +
-            `Turns=${s.turnsCount} (FastPath: ${s.fastPathCount}, LLM: ${s.llmCount}) | ` +
-            `p50=${s.p50Ms}ms | p95=${s.p95Ms}ms | Min=${s.minMs}ms | Max=${s.maxMs}ms`
+            `Greeting=${fmt(s.firstGreetingDelayMs)} | ` +
+            `Turns=${s.turnsCount} (measured: ${s.measuredTurns}, FastPath: ${s.fastPathCount}, LLM: ${s.llmCount}) | ` +
+            `p50=${fmt(s.p50Ms)} | p95=${fmt(s.p95Ms)} | Min=${fmt(s.minMs)} | Max=${fmt(s.maxMs)}`
         );
     }
 }

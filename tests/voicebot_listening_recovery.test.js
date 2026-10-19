@@ -6,7 +6,7 @@
  * 1. The "back to listening" step is reliable, and a newer reply is never ended by an older timer
  * 2. A watchdog switches the bot back to listening if that step is ever lost
  * 3. A turn that stays busy too long is released, and a dropped audio stream is logged
- * 4. A wrong speech-to-text language guess is re-run in the call's language
+ * 4. A wrong speech-to-text language label costs no second request (one request per turn)
  * 5. Plivo's status and hangup webhooks find the contact (the live call ID is saved at answer time)
  *
  * Run:  USE_LOCAL_DB=true node tests/voicebot_listening_recovery.test.js
@@ -25,7 +25,7 @@ import assert from 'assert';
 const { default: db, initDb } = await import('../services/db.js');
 const { default: ElevenLabsService } = await import('../services/elevenlabs_service.js');
 const { default: GeminiService } = await import('../services/gemini_service.js');
-const { CallSession, isSupportedCallLanguage, retryLanguageFor } = await import('../services/voicebot_stream_service.js');
+const { CallSession, isSupportedCallLanguage, isUsableCallScript } = await import('../services/voicebot_stream_service.js');
 const { handlePlivoAnswer, handlePlivoStatus, handlePlivoHangup } = await import('../routes/admin.js');
 
 let total = 0;
@@ -53,11 +53,9 @@ console.log('\nVoice call: listening recovery');
 await test('language helpers: only English, Hindi and Telugu are accepted', async () => {
     ['en', 'eng', 'hi', 'hin', 'te', 'tel', 'EN'].forEach((c) => assert.ok(isSupportedCallLanguage(c), c));
     ['lit', 'urd', 'rus', '', null, undefined].forEach((c) => assert.ok(!isSupportedCallLanguage(c), String(c)));
-    assert.strictEqual(retryLanguageFor('en'), 'eng');
-    assert.strictEqual(retryLanguageFor('hi'), 'hin');
-    assert.strictEqual(retryLanguageFor('te'), 'tel');
-    assert.strictEqual(retryLanguageFor('lit'), 'eng');
-    assert.strictEqual(retryLanguageFor(undefined), 'eng');
+    // Words in English, Hindi or Telugu letters are usable; words in other letters (e.g. Urdu) are not.
+    ['Five PM works for me', 'मैं कल आ सकता हूँ', 'నేను రేపు రాగలను', 'Zikra', ''].forEach((t) => assert.ok(isUsableCallScript(t), t));
+    ['زِکرَم', 'Привет'].forEach((t) => assert.ok(!isUsableCallScript(t), t));
 });
 
 await test('after a reply finishes, the bot goes back to listening', async () => {
@@ -141,7 +139,7 @@ await test('ending the call stops the health timer', async () => {
     assert.strictEqual(s.healthTimer, null);
 });
 
-await test('a wrong language guess is re-run in the call\'s language', async () => {
+await test('a wrong language label makes no second request: the words are kept, the call language stays', async () => {
     const realStt = ElevenLabsService.speechToText;
     const realTts = ElevenLabsService.textToSpeech;
     const realReply = GeminiService.generateReply;
@@ -149,7 +147,7 @@ await test('a wrong language guess is re-run in the call\'s language', async () 
     process.env.ELEVENLABS_API_KEY = 'test-key';
     ElevenLabsService.speechToText = async (buf, name, lang) => {
         calls.push(lang || null);
-        return lang === 'eng' ? { transcript: 'Zikra', language: lang } : { transcript: 'زِکرَم', language: 'urd' };
+        return { transcript: 'Zikra', language: 'lit' };   // right words, wrong label
     };
     ElevenLabsService.textToSpeech = async () => Buffer.alloc(800);
     GeminiService.generateReply = async () => ({ spoken_response: 'Thanks Zikra.', detected_language: 'en', should_end_call: false, extracted_fields: {}, classification: 'Pending', call_summary: 'x' });
@@ -157,9 +155,32 @@ await test('a wrong language guess is re-run in the call\'s language', async () 
         const s = newSession('t-stt');
         s.callerMulawChunks = [Buffer.alloc(3200, 0x80)];
         await s.processCallerTurn();
-        assert.deepStrictEqual(calls, ['en', 'eng'], 'asked once with the session language, then re-ran in English');
-        assert.ok(s.conversationHistory.some((m) => m.text === 'Zikra'), 'the corrected words were used');
-        assert.ok(!s.conversationHistory.some((m) => /[؀-ۿ]/.test(m.text)), 'the Urdu-script guess was discarded');
+        assert.deepStrictEqual(calls, ['en'], 'exactly one speech-to-text request for the turn');
+        assert.ok(s.conversationHistory.some((m) => m.text === 'Zikra'), 'the words were kept');
+        assert.strictEqual(s.detectedLanguage, 'en', 'the wrong label did not change the call language');
+        assert.strictEqual(s.isProcessingTurn, false);
+        s.isClosed = true; clearTimeout(s.activeSpeechTimer);
+    } finally {
+        ElevenLabsService.speechToText = realStt; ElevenLabsService.textToSpeech = realTts; GeminiService.generateReply = realReply;
+        process.env.ELEVENLABS_API_KEY = '';
+    }
+});
+
+await test('words returned in another script (Urdu letters) are dropped as unclear audio, still with one request', async () => {
+    const realStt = ElevenLabsService.speechToText;
+    const realTts = ElevenLabsService.textToSpeech;
+    const realReply = GeminiService.generateReply;
+    const calls = [];
+    process.env.ELEVENLABS_API_KEY = 'test-key';
+    ElevenLabsService.speechToText = async (buf, name, lang) => { calls.push(lang || null); return { transcript: 'زِکرَم', language: 'urd' }; };
+    ElevenLabsService.textToSpeech = async () => Buffer.alloc(800);
+    GeminiService.generateReply = async () => ({ spoken_response: 'Should not be asked.', detected_language: 'en', should_end_call: false, extracted_fields: {}, classification: 'Pending', call_summary: 'x' });
+    try {
+        const s = newSession('t-stt-script');
+        s.callerMulawChunks = [Buffer.alloc(3200, 0x80)];
+        await s.processCallerTurn();
+        assert.deepStrictEqual(calls, ['en'], 'no second speech-to-text request');
+        assert.ok(!s.conversationHistory.some((m) => /[؀-ۿ]/.test(m.text)), 'the Urdu-script text never reaches the conversation');
         assert.strictEqual(s.isProcessingTurn, false);
         s.isClosed = true; clearTimeout(s.activeSpeechTimer);
     } finally {

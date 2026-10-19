@@ -283,9 +283,9 @@ async function run() {
     console.log('\n--- Criterion 9 & 10: Service Isolation (Recruitment & Support) ---');
 
     test('Recruitment opening and intent flow are completely preserved', () => {
+        // With no verified candidate name, Remo introduces itself directly (the required recruitment script).
         const recGreeting = GeminiService.getOpeningGreeting('recruitment', { job_role: 'Full Stack Engineer' });
-        assert.ok(recGreeting.includes('Full Stack Engineer'));
-        assert.ok(recGreeting.includes('application'));
+        assert.strictEqual(recGreeting, 'Hi, this is Remo, an AI calling assistant from ScoreLabs Inc. Is this a good time to speak for a minute?');
 
         const recReply = IntentService.matchIntent('Yes, speaking', {
             service: 'recruitment',

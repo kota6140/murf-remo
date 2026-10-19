@@ -39,6 +39,8 @@ services/
   intent_service.js             fast-path replies (yes/no, do-not-call, language switch)
   question_planner.js           question plan per work type
   appointment_state.js          code-side booking state (see below)
+  question_tracker.js           what was asked / answered, duplicate-question guard (see below)
+  greeting_script.js            the exact recruitment opening words (English, Hindi, Telugu)
   agent_service.js              multi-agent: own number, greeting, instructions, voice
   *_service.js                  campaign, call queue, documents, excel, email, etc.
 docs/agent-hari/                agent specification docs (numbered .md files)
@@ -55,6 +57,17 @@ Key rules to keep in mind:
 - The LLM must return valid JSON; every work type has a language-specific fallback line (`getUniversalFallback`).
 - `ConversationStates` and `scheduleSpeechEnd()` handle turn-taking. Be careful when changing them; the recruitment tests cover them.
 - `RECRUITMENT_VAD_SILENCE_MS` (default 1400, valid 500–5000) sets the silence wait for recruitment calls.
+  Right after the greeting ("is this a good time?") a short answer is answered sooner: `RECRUITMENT_VAD_BRIEF_SILENCE_MS` (default 700, valid 400–1400).
+- Reply lifecycle: every caller turn has one response (`beginResponse`). Speech is queued so sentences play in order (`playAiAudio`), a barge-in or a newer response cancels the rest (`cancelActiveResponse`), and the state goes back to `LISTENING` only when the audio has really finished (`completePlayback`, ended by Plivo's `playedStream` checkpoint or by the audio-length timer). Never set `LISTENING` right after `playAiAudio`; use `finishTurn`.
+- `TTS_TIMEOUT_MS` (default 8000) gives up on a text-to-speech request. `PLIVO_PLAYBACK_CHECKPOINTS=off` turns off the Plivo playback checkpoints.
+- Missing latency measurements are `null`, never `0` (`latency_tracker.js`).
+
+## Recruitment opening and repeated questions
+
+- Opening: "Hello, am I speaking with <name>?" (only with a verified name) → after "yes": "Hi, this is Remo, an AI calling assistant from ScoreLabs Inc. Is this a good time to speak for a minute?" → after "yes": the first screening question, never the availability question again. The words live in `services/greeting_script.js`. An agent's own greeting (admin panel) or a campaign document's opening line still wins.
+- `services/question_tracker.js` is the source of truth for what was asked and answered. A question is "asked" when its audio starts, "answered" by a real answer (not "yeah", "what do you mean?" or "and then?"). Questions are compared by topic (`topicOf`), not wording, so a reworded question is the same question. Every recruitment reply goes through `guardReply` before it is spoken (repeated question → next planned question; repeated opener dropped; a bare "Sure." gets the next question). Other work types only log duplicates.
+- A speech-to-text language label is only a hint: the language changes through `LanguageStateMachine` (sustained sentences or an explicit request), never because of "ha", "hmm" or "okay".
+- Tests: `node tests/call_flow_regression.test.js` (mocked speech, AI, voice and phone; set `SKIP_TTS_PRECACHE=1` so loading the call code never calls the paid voice service).
 
 ## Appointment calls: state lives in code
 

@@ -10,6 +10,7 @@ import ScreeningEvaluator from './screening_evaluator.js';
 import AgentService, { ensureAgentSchema } from './agent_service.js';
 import PlivoService from './plivo_service.js';
 import LanguageStateMachine from './language_state_machine.js';
+import QuestionTracker, { stripAlreadySpoken, isAffirmativeMurmur, isAcknowledgement, splitSentences, topicOf, questionPart } from './question_tracker.js';
 
 /**
  * The exact one-way promotional script spoken by Remo on "Get Instant Call".
@@ -181,12 +182,16 @@ export function isSupportedCallLanguage(code) {
     return SUPPORTED_CALL_LANGS.has(String(code || '').toLowerCase());
 }
 
-/** The language to re-run speech-to-text in after a wrong guess: whatever the call has been in so far. */
-export function retryLanguageFor(sessionLanguage) {
-    const l = String(sessionLanguage || 'en').toLowerCase();
-    if (l === 'te' || l === 'tel') return 'tel';
-    if (l === 'hi' || l === 'hin') return 'hin';
-    return 'eng';
+/**
+ * True when most letters of a transcript are in a script Remo speaks (Latin, Devanagari, Telugu).
+ * A wrong language guess can come back in another script (for example a name written in Urdu letters),
+ * which is useless to the conversation.
+ */
+export function isUsableCallScript(transcript) {
+    const letters = [...String(transcript ?? '')].filter(ch => /\p{L}/u.test(ch));
+    if (letters.length === 0) return true;
+    const spoken = letters.filter(ch => /[\p{Script=Latin}\p{Script=Devanagari}\p{Script=Telugu}]/u.test(ch));
+    return spoken.length / letters.length >= 0.6;
 }
 
 // Safety nets so a call can never stay deaf: how long past its audio the "speaking" state may last,
@@ -195,6 +200,13 @@ const SPEECH_GRACE_MS = 2000;
 const MAX_TURN_MS = 20000;
 const HEALTH_CHECK_MS = 5000;
 const QUIET_WARN_MS = 5000;
+// One piece of speech must never keep the bot busy for longer than this (text-to-speech request time).
+const TTS_TIMEOUT_MS = 8000;
+// The same caller words arriving again within this time while a reply is still active are one turn, not two.
+const DUPLICATE_TURN_WINDOW_MS = 4000;
+// Plivo "checkpoint" events tell us when our audio has really finished playing on the phone.
+// Set PLIVO_PLAYBACK_CHECKPOINTS=off to rely on the audio-length timer only.
+const PLAYBACK_CHECKPOINTS = String(process.env.PLIVO_PLAYBACK_CHECKPOINTS || 'on').toLowerCase() !== 'off';
 
 /**
  * Standard Conversation States for Remo voice pipeline.
@@ -300,6 +312,19 @@ export class CallSession {
         // FIX-3: Stage tracking for preventing repeated questions
         this.stageHistory = [];
 
+        // Persistent question record (asked / answered / duplicates), kept in code and not in the AI's memory.
+        this.questions = new QuestionTracker({ callId: this.callId, service: this.service, language: this.detectedLanguage });
+
+        // Response lifecycle: generating -> speech sent -> playback completed. Only one response is active at a time.
+        // Speech is queued so sentences play in order, and a cancelled response never plays another word.
+        this.activeResponse = null;      // { id, turnId, cancelled, phase, spoken: [] }
+        this.responseSeq = 0;
+        this.pendingSpeech = 0;          // pieces of speech queued or still being synthesised
+        this.speechChain = Promise.resolve();
+        this.lastFinalTranscript = { text: '', at: 0 };
+        this.playbackCheckpoint = null;  // name of the Plivo checkpoint sent after the latest speech
+        this.checkpointSeq = 0;
+
         // Synchronous in-memory contact construction: ready IMMEDIATELY with service-appropriate defaults
         let defaultName = 'Customer';
         if (this.service === 'recruitment') defaultName = 'Candidate';
@@ -370,14 +395,26 @@ export class CallSession {
      */
     getSilenceThresholdMs() {
         if (this.service === 'recruitment') {
+            let longMs = 1400; // Default 1,400ms end-of-turn threshold for recruitment answers
             const envVal = process.env.RECRUITMENT_VAD_SILENCE_MS;
             if (envVal) {
                 const parsed = parseInt(envVal, 10);
-                if (!isNaN(parsed) && parsed >= 500 && parsed <= 5000) {
-                    return parsed;
-                }
+                if (!isNaN(parsed) && parsed >= 500 && parsed <= 5000) longMs = parsed;
             }
-            return 1400; // Default 1,400ms end-of-turn threshold for recruitment
+
+            // Right after the greeting or "is this a good time?", the answer is a short "yes" / "of course" /
+            // "no": reply sooner (RECRUITMENT_VAD_BRIEF_SILENCE_MS, default 700ms). A real screening answer
+            // keeps the patient wait, so a thinking pause in the middle of a sentence never cuts the caller off.
+            const waitingForShortAnswer = this.greetingDelivered
+                && ['GREETING', 'AVAILABILITY', 'PERMISSION_CHECK'].includes(this.currentStage)
+                && this.consecutiveSpeechFrames <= 30; // up to ~0.6s of speech so far ("yes", "yes of course")
+            if (waitingForShortAnswer) {
+                let briefMs = 700;
+                const briefEnv = parseInt(process.env.RECRUITMENT_VAD_BRIEF_SILENCE_MS, 10);
+                if (!isNaN(briefEnv) && briefEnv >= 400 && briefEnv <= 1400) briefMs = briefEnv;
+                return Math.min(briefMs, longMs);
+            }
+            return longMs;
         }
 
         if (process.env.VAD_SILENCE_THRESHOLD_MS) {
@@ -443,6 +480,10 @@ export class CallSession {
             campaignContext: this.campaignContext,
             questionPlan: this.questionPlan
         });
+
+        // The call id and work type are final now (the stream's start message can change them).
+        this.questions = new QuestionTracker({ callId: this.callId, service: this.service, language: this.detectedLanguage });
+        this.questions.registerPlan(this.questionPlan);
 
         // Deliver opening greeting immediately
         await this.deliverOpeningGreeting();
@@ -813,9 +854,13 @@ export class CallSession {
             const rawName = (this.contact && this.contact.name) ? String(this.contact.name).trim() : '';
             const isNamed = rawName && !rawName.startsWith('Contact') && !rawName.startsWith('Caller') && !rawName.startsWith('Customer');
             this.currentStage = isNamed ? 'GREETING' : 'PERMISSION_CHECK';
+        } else if (this.service === 'recruitment' && /\bam i speaking with\b/i.test(greeting)) {
+            // "Hello, am I speaking with <name>?": the candidate confirms who they are first, then hears the introduction.
+            this.currentStage = 'GREETING';
         } else {
             this.currentStage = 'AVAILABILITY';
         }
+        this.questions.syncStage(this.currentStage);
         // The greeting already used the contact's name, so a booking call does not ask for it again.
         if (this.service === 'appointment' && this.hasRealCallerName() && !this.collectedData.caller_name) {
             this.collectedData.caller_name = String(this.contact.name).trim();
@@ -853,13 +898,13 @@ export class CallSession {
                 this.latencyTracker.markGreetingDelivered();
                 this.greetingDelivered = true;
                 this.greetingInProgress = false;
-                await this.dispatchAudioBuffer(cachedAudio, greeting);
+                await this.dispatchAudioBuffer(cachedAudio, greeting, this.beginResponse(0));
                 return;
             }
 
             // 2. Synthesize audio via ElevenLabs
             console.log(`[CallSession] Synthesizing opening greeting via ElevenLabs (${this.detectedLanguage})...`);
-            await this.playAiAudio(greeting);
+            await this.playAiAudio(greeting, this.beginResponse(0));
             this.latencyTracker.markGreetingDelivered();
             this.greetingDelivered = true;
             this.greetingInProgress = false;
@@ -890,15 +935,113 @@ export class CallSession {
         this.activeSpeechTimer = setTimeout(() => {
             this.activeSpeechTimer = null;
             if (seq !== this.speechSeq || this.isClosed) return; // newer speech was queued; its own timer decides
-            if (this.isAiSpeaking) {
-                this.isAiSpeaking = false;
-                console.log('[CallSession] AI finished speaking turn. Now listening for caller.');
-                if (this.conversationState === ConversationStates.SPEAKING) {
-                    this.setConversationState(ConversationStates.LISTENING, 'speech_playback_complete');
-                }
-                this.checkAndApplyOverlapAudio();
+            // More speech of the same reply is still being made: the audio so far ending is not the end of the reply.
+            if (this.pendingSpeech > 0 && this.aiSpeechEndTime > 0) {
+                this.scheduleSpeechEnd();
+                return;
             }
-        }, wait);
+            this.completePlayback('timer');
+        }, this.pendingSpeech > 0 ? Math.max(wait, 60) : wait);
+    }
+
+    /**
+     * The reply's audio has finished playing on the phone: the bot may listen again.
+     * @param {'timer'|'plivo_checkpoint'} source how the end was detected
+     */
+    completePlayback(source) {
+        if (this.activeSpeechTimer) { clearTimeout(this.activeSpeechTimer); this.activeSpeechTimer = null; }
+        this.speechSeq++;
+        if (!this.isAiSpeaking || this.isClosed) return;
+        this.isAiSpeaking = false;
+        console.log('[CallSession] AI finished speaking turn. Now listening for caller.');
+        if (this.activeResponse && !this.activeResponse.cancelled) this.activeResponse.phase = 'PLAYBACK_COMPLETED';
+        this.questions.noteResponsePlayed();
+        this.logDiagnostic('playback_completed', { source, responseId: this.activeResponse ? this.activeResponse.id : null });
+        if (this.conversationState === ConversationStates.SPEAKING) {
+            this.setConversationState(ConversationStates.LISTENING, 'speech_playback_complete');
+        }
+        this.checkAndApplyOverlapAudio();
+    }
+
+    /** Plivo reports that the audio before one of our checkpoints has been played. */
+    handlePlaybackCheckpoint(name) {
+        if (!name || name !== this.playbackCheckpoint || this.isClosed) return;
+        if (this.pendingSpeech > 0) return; // more speech of this reply was queued after the checkpoint
+        this.playbackCheckpoint = null;
+        this.completePlayback('plivo_checkpoint');
+    }
+
+    /** Asks Plivo to tell us when everything sent so far has been played. */
+    sendPlaybackCheckpoint() {
+        if (!PLAYBACK_CHECKPOINTS || !this.streamId || !this.ws || this.ws.readyState !== this.ws.OPEN) return;
+        const name = `cp_${this.callId}_${++this.checkpointSeq}`;
+        this.playbackCheckpoint = name;
+        try {
+            this.ws.send(JSON.stringify({ event: 'checkpoint', streamId: this.streamId, name }));
+        } catch (e) {
+            this.playbackCheckpoint = null;
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // Response lifecycle: one active response per call, cancellable, with ordered speech
+    // ------------------------------------------------------------------------------------------
+
+    /** Starts the one response for a caller turn. A response still active from before is cancelled. */
+    beginResponse(turnId = this.currentTurnId) {
+        this.cancelActiveResponse('superseded_by_new_response');
+        const response = { id: ++this.responseSeq, turnId, cancelled: false, phase: 'GENERATING', spoken: [], startedAt: Date.now() };
+        this.activeResponse = response;
+        this.logDiagnostic('response_started', { responseId: response.id, turnId });
+        return response;
+    }
+
+    /** Stops a response so none of its remaining speech plays (caller interrupted, or a newer response started). */
+    cancelActiveResponse(reason) {
+        const r = this.activeResponse;
+        if (!r || r.cancelled || r.phase === 'PLAYBACK_COMPLETED') return;
+        r.cancelled = true;
+        r.phase = 'CANCELLED';
+        this.logDiagnostic('response_cancelled', { responseId: r.id, reason });
+    }
+
+    /**
+     * The caller's turn is fully handled. The turn is released at once, but the bot only goes back to
+     * "listening" when its audio has really finished (completePlayback does that).
+     */
+    finishTurn(reason) {
+        this.isProcessingTurn = false;
+        this.processingSince = 0;
+        const callerIsTalking = this.conversationState === ConversationStates.CANDIDATE_SPEAKING
+            || this.conversationState === ConversationStates.WAITING_FOR_END_OF_TURN;
+        if (this.isAiSpeaking || this.pendingSpeech > 0) {
+            this.logDiagnostic('turn_released_while_audio_playing', { reason });
+        } else if (!callerIsTalking && this.conversationState !== ConversationStates.COMPLETED) {
+            this.setConversationState(ConversationStates.LISTENING, reason);
+        }
+        this.checkAndApplyOverlapAudio();
+    }
+
+    /** The first audio of a piece of speech is going out: any question in it now counts as asked. */
+    noteSpeechStarted(text, response) {
+        if (response && response.phase === 'GENERATING') response.phase = 'SPEAKING';
+        this.questions.setLanguage(this.detectedLanguage);
+        this.questions.syncStage(this.currentStage);
+        const entry = this.questions.noteResponseStarted(text, { turnId: response ? response.turnId : this.currentTurnId });
+        this.logDiagnostic('playback_started', {
+            responseId: response ? response.id : null,
+            questionId: entry ? entry.id : null,
+            topic: entry ? entry.topic : null,
+            text: String(text).slice(0, 120)
+        });
+    }
+
+    /** All queued speech has been sent. Ask Plivo for the real end-of-playback signal and arm the timer fallback. */
+    onSpeechQueueDrained(response) {
+        if (this.isClosed || (response && response.cancelled)) return;
+        if (!this.isAiSpeaking) return;
+        this.sendPlaybackCheckpoint();
+        this.scheduleSpeechEnd();
     }
 
     /** Starts the periodic health check for this call. */
@@ -943,14 +1086,17 @@ export class CallSession {
      * FIX-7: Duration calculation uses correct ulaw_8000 byte rate.
      * ulaw_8000 = 8000 bytes per second (8-bit samples at 8kHz, mono).
      */
-    async dispatchAudioBuffer(audioBuffer, text) {
+    async dispatchAudioBuffer(audioBuffer, text, response = null) {
         if (!audioBuffer || this.isClosed) return;
+        if (response && response.cancelled) return;
 
         try {
             this.isAiSpeaking = true;
             // ulaw_8000: 8000 bytes/sec (8-bit PCM, 8kHz mono)
             const durationMs = Math.round((audioBuffer.length / 8000) * 1000);
-            this.aiSpeechEndTime = Date.now() + durationMs;
+            // Audio queued behind speech that is still playing starts when that speech ends.
+            this.aiSpeechEndTime = Math.max(this.aiSpeechEndTime, Date.now()) + durationMs;
+            if (text) this.noteSpeechStarted(text, response);
 
             const payloadBase64 = audioBuffer.toString('base64');
             if (this.ws.readyState === this.ws.OPEN) {
@@ -1011,6 +1157,9 @@ export class CallSession {
 
             this.isAiSpeaking = false;
             this.detectedLanguage = normalized;
+            // Keep the language state machine and the question record on the same language.
+            if (this.languageStateMachine) this.languageStateMachine.currentLanguage = normalized;
+            if (this.questions) this.questions.setLanguage(normalized);
         }
     }
 
@@ -1018,8 +1167,36 @@ export class CallSession {
      * Synthesizes dialogue text via ElevenLabs with caching and dispatches audio to Plivo.
      * Uses automatic language-aware model and voice selection (Telugu v4 Turbo, Hindi/English Flash v2.5).
      */
-    async playAiAudio(text) {
+    async playAiAudio(text, response = this.activeResponse) {
         if (!text || this.isClosed) return;
+        if (response && response.cancelled) {
+            this.logDiagnostic('speech_skipped', { responseId: response.id, reason: 'response_cancelled', text: String(text).slice(0, 60) });
+            return;
+        }
+
+        // Speech plays strictly in order: a second sentence waits for the first one to finish being sent,
+        // so two pieces of audio can never interleave or play twice.
+        this.pendingSpeech++;
+        const run = async () => {
+            try {
+                if (this.isClosed || (response && response.cancelled)) {
+                    this.logDiagnostic('speech_skipped', { responseId: response ? response.id : null, reason: 'cancelled_while_queued' });
+                    return;
+                }
+                if (response) response.spoken.push(text);
+                await this._synthesizeAndSend(text, response);
+            } finally {
+                this.pendingSpeech = Math.max(0, this.pendingSpeech - 1);
+                if (this.pendingSpeech === 0) this.onSpeechQueueDrained(response);
+            }
+        };
+        const job = this.speechChain.then(run, run);
+        this.speechChain = job.catch(() => {});
+        return job;
+    }
+
+    /** Makes one piece of speech with ElevenLabs and sends it to Plivo (called by playAiAudio, one at a time). */
+    async _synthesizeAndSend(text, response = null) {
         if (this.callMode === 'PROMOTIONAL_DEMO' && this.promoState === 'COMPLETED') {
             console.log('[CallSession] [PROMO] Suppressing additional speech after promo completion.');
             return;
@@ -1053,13 +1230,20 @@ export class CallSession {
             let streamedBytes = 0;
 
             if (!audioBuffer && ElevenLabsService.isConfigured()) {
-                audioBuffer = await ElevenLabsService.textToSpeech(text, {
+                // A request that takes too long is given up on, and audio that arrives after that is dropped.
+                let abandoned = false;
+                let ttsTimer = null;
+                const envTimeout = parseInt(process.env.TTS_TIMEOUT_MS, 10);
+                const ttsTimeoutMs = envTimeout >= 100 ? envTimeout : TTS_TIMEOUT_MS;
+                const ttsRequest = ElevenLabsService.textToSpeech(text, {
                     voiceId,
                     modelId,
                     language: this.detectedLanguage,
                     outputFormat: 'ulaw_8000',
                     onChunk: (chunk) => {
-                        if (!chunk || this.isClosed || !this.ws || this.ws.readyState !== this.ws.OPEN) return;
+                        if (!chunk || abandoned || this.isClosed || !this.ws || this.ws.readyState !== this.ws.OPEN) return;
+                        // The caller interrupted, or a newer reply started: this reply must not play another sound.
+                        if (response && response.cancelled) return;
                         streamedBytes += chunk.length;
                         this.isAiSpeaking = true;
                         this.noteSpeechChunk(chunk.length);
@@ -1068,6 +1252,7 @@ export class CallSession {
                         if (!firstChunkSent) {
                             firstChunkSent = true;
                             this.latencyTracker.markFirstAudioChunkSent();
+                            this.noteSpeechStarted(text, response);
                             console.log(`[CallSession] First audio chunk streamed to Plivo (${chunk.length} bytes)`);
                         }
 
@@ -1088,16 +1273,49 @@ export class CallSession {
                         this.ws.send(JSON.stringify(playMsg));
                     }
                 });
+                try {
+                    audioBuffer = await Promise.race([
+                        ttsRequest,
+                        new Promise((resolve) => {
+                            ttsTimer = setTimeout(() => {
+                                abandoned = true;
+                                console.warn(`[CallSession] Text-to-speech did not answer within ${ttsTimeoutMs}ms. Giving up on this piece of speech.`);
+                                this.logDiagnostic('tts_timeout', { responseId: response ? response.id : null, text: String(text).slice(0, 60) });
+                                resolve(null);
+                            }, ttsTimeoutMs);
+                        })
+                    ]);
+                } finally {
+                    if (ttsTimer) clearTimeout(ttsTimer);
+                }
+                // The request failed on its own (no audio, nothing was sent) or was abandoned.
+                ttsRequest.catch(() => {});
             }
 
             this.latencyTracker.markTtsEnd(isCached);
 
-            if (!audioBuffer) {
+            this.logDiagnostic('tts_completed', {
+                responseId: response ? response.id : null,
+                cached: isCached,
+                audioStarted: firstChunkSent,
+                cancelled: Boolean(response && response.cancelled),
+                bytes: audioBuffer ? audioBuffer.length : streamedBytes
+            });
+
+            if (response && response.cancelled) {
+                // Interrupted while the speech was being made: whatever was already sent was cleared by the barge-in.
+                return;
+            }
+
+            if (!audioBuffer && !firstChunkSent) {
                 console.warn('[CallSession] ElevenLabs TTS unavailable; simulating turn timing.');
                 const wordCount = text.split(/\s+/).length;
                 const simDurationMs = Math.max(wordCount * 320, 1400);
                 this.isAiSpeaking = true;
-                this.aiSpeechEndTime = Date.now() + simDurationMs;
+                this.aiSpeechEndTime = Math.max(this.aiSpeechEndTime, Date.now()) + simDurationMs;
+                // Nothing was heard when a configured voice failed, so that question has not really been asked.
+                if (!ElevenLabsService.isConfigured()) this.noteSpeechStarted(text, response);
+                else this.logDiagnostic('speech_unavailable', { responseId: response ? response.id : null, text: String(text).slice(0, 60) });
                 this.scheduleSpeechEnd();
                 return;
             }
@@ -1112,7 +1330,7 @@ export class CallSession {
             } else {
                 // If loaded from RAM cache, dispatch complete buffer instantly
                 this.latencyTracker.markFirstAudioChunkSent();
-                await this.dispatchAudioBuffer(audioBuffer, text);
+                await this.dispatchAudioBuffer(audioBuffer, text, response);
             }
 
         } catch (e) {
@@ -1177,6 +1395,10 @@ export class CallSession {
                     }
                     this.speechSeq++;
                     this.aiSpeechEndTime = 0; // the cut-off audio no longer counts toward the next reply
+
+                    // Stop the rest of this reply for good: queued sentences are skipped and audio still being made is dropped.
+                    this.cancelActiveResponse('barge_in');
+                    this.playbackCheckpoint = null;
 
                     this.isAiSpeaking = false;
                     this.interruptedWithAnswer = true;
@@ -1323,26 +1545,27 @@ export class CallSession {
 
         let transcript = '';
         let detectedLanguage = this.detectedLanguage || 'en';
+        let sttLanguageHint = null;
 
         try {
             if (ElevenLabsService.isConfigured()) {
                 this.latencyTracker.markSttStart();
+                // One speech-to-text request per turn. The request already asks for the language the call has been
+                // in, so sending the same audio again with the same language would only add 1-2 seconds of delay.
                 let sttResult = await ElevenLabsService.speechToText(wavBuffer, 'caller_turn.wav', this.detectedLanguage);
-                // A wrong language guess ("Five PM" as Lithuanian, a name written in Urdu script) gives a useless transcript.
-                // Re-run once in the language the call has been in; this only costs time when the guess was wrong.
                 if (sttResult.transcript && !isSupportedCallLanguage(sttResult.language)) {
-                    const retryLang = retryLanguageFor(this.detectedLanguage);
-                    console.log(`[CallSession] Speech-to-text guessed "${sttResult.language}", which is not English, Hindi or Telugu. Re-running as ${retryLang}.`);
-                    const again = await ElevenLabsService.speechToText(wavBuffer, 'caller_turn.wav', retryLang);
-                    sttResult = again && again.transcript
-                        ? { transcript: again.transcript, language: retryLang }
-                        : { transcript: sttResult.transcript, language: retryLang };
+                    // The label is a wrong guess ("lit", "urd"). Keep the words if they are in a script we speak
+                    // (English, Hindi, Telugu); drop them as unclear audio if they are not (e.g. Urdu letters).
+                    const usable = isUsableCallScript(sttResult.transcript);
+                    console.log(`[CallSession] Speech-to-text labelled this turn "${sttResult.language}", which is not English, Hindi or Telugu. ${usable ? 'Keeping the words and the call language.' : 'The words are in another script, so the turn is treated as unclear audio.'}`);
+                    this.logDiagnostic('stt_language_label_unsupported', { turnId, label: sttResult.language, kept: usable });
+                    sttResult = { transcript: usable ? sttResult.transcript : '', language: this.detectedLanguage };
                 }
                 transcript = (sttResult.transcript || '').trim();
-                if (sttResult.language) {
-                    this.setSessionLanguage(sttResult.language, 'STT_DETECTION');
-                    detectedLanguage = this.detectedLanguage;
-                }
+                // The label speech-to-text puts on a turn is only a hint. A lone "ha", "hmm" or "okay" is often
+                // labelled Hindi or Telugu, so the language is decided by the language state machine below
+                // (sustained sentences or an explicit request), never by one word.
+                sttLanguageHint = sttResult.language || null;
                 this.latencyTracker.markSttEnd(transcript.length);
             }
         } catch (e) {
@@ -1388,11 +1611,10 @@ export class CallSession {
 
                 this.setConversationState(ConversationStates.SPEAKING, 'speaking_clarification');
                 this.logDiagnostic('remo_started_speaking', { turnId, text: clarification, isClarification: true });
-                await this.playAiAudio(clarification);
+                const clarifyResponse = this.beginResponse(turnId);
+                await this.playAiAudio(clarification, clarifyResponse);
                 this.latencyTracker.markAudioDispatched();
-                this.isProcessingTurn = false;
-                this.setConversationState(ConversationStates.LISTENING, 'clarification_requested');
-                this.checkAndApplyOverlapAudio();
+                this.finishTurn('clarification_requested');
                 return;
             }
 
@@ -1405,15 +1627,40 @@ export class CallSession {
             return;
         }
 
+        // The same words arriving again while the reply to them is still active are one turn, not two
+        // (a transcript finalised twice, or an echo of the caller's last words): never answer them twice.
+        {
+            const normalized = transcript.toLowerCase().replace(/\s+/g, ' ').trim();
+            const previous = this.lastFinalTranscript;
+            const replyStillActive = Boolean(this.activeResponse)
+                && !this.activeResponse.cancelled
+                && this.activeResponse.phase !== 'PLAYBACK_COMPLETED';
+            if (normalized && normalized === previous.text && Date.now() - previous.at < DUPLICATE_TURN_WINDOW_MS && (replyStillActive || this.isAiSpeaking)) {
+                console.log(`[CallSession] Duplicate turn ignored ("${transcript}"): the reply to it is still active.`);
+                this.logDiagnostic('duplicate_turn_ignored', { turnId, transcript, responseId: this.activeResponse ? this.activeResponse.id : null });
+                this.latencyTracker.cancelTurn();
+                this.finishTurn('duplicate_turn_ignored');
+                return;
+            }
+            this.lastFinalTranscript = { text: normalized, at: Date.now() };
+        }
+
         // Evaluate language through intelligent state machine
         // Prevents switching on short words ("haan", "achha", "sare", "avunu", "okay") or code-switching
-        const langEval = this.languageStateMachine.evaluateTurn(transcript, detectedLanguage);
+        const langEval = this.languageStateMachine.evaluateTurn(transcript, sttLanguageHint || detectedLanguage);
         if (langEval.shouldSwitch && langEval.targetLanguage !== this.detectedLanguage) {
             this.setSessionLanguage(langEval.targetLanguage, langEval.reason);
             detectedLanguage = this.detectedLanguage;
         } else {
             detectedLanguage = this.detectedLanguage;
         }
+        this.logDiagnostic('language_evaluated', {
+            turnId,
+            sttHint: sttLanguageHint,
+            sessionLanguage: this.detectedLanguage,
+            switched: Boolean(langEval.shouldSwitch),
+            reason: langEval.reason
+        });
 
         console.log(`[CallSession] Caller said: "${transcript}" (Lang: ${detectedLanguage}, TurnId: ${turnId})`);
 
@@ -1441,11 +1688,10 @@ export class CallSession {
 
             this.setConversationState(ConversationStates.SPEAKING, 'thinking_pause_ack');
             this.logDiagnostic('remo_started_speaking', { turnId, text: pauseAck, reason: 'thinking_pause' });
-            await this.playAiAudio(pauseAck);
+            const pauseResponse = this.beginResponse(turnId);
+            await this.playAiAudio(pauseAck, pauseResponse);
             this.latencyTracker.markAudioDispatched();
-            this.isProcessingTurn = false;
-            this.setConversationState(ConversationStates.LISTENING, 'thinking_pause_ack_done');
-            this.checkAndApplyOverlapAudio();
+            this.finishTurn('thinking_pause_ack_done');
             return;
         }
 
@@ -1453,13 +1699,37 @@ export class CallSession {
         // "Mm-hmm" loses its hyphen below and becomes "mmhmm", so the joined spellings are listed too.
         const pureMurmurs = new Set(['hmm', 'hmmm', 'mhm', 'mhmm', 'uh-huh', 'uh huh', 'uhhuh', 'mm', 'mmm', 'mmhmm', 'mm hmm', 'mmhm', 'hm']);
         const cleanedUtterance = transcript.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
-        if (pureMurmurs.has(cleanedUtterance) && !this.interruptedWithAnswer) {
+        // Right after "is this a good time?", "uh-huh" means yes; it is read in context, not thrown away.
+        const waitingForAvailability = ['GREETING', 'AVAILABILITY', 'PERMISSION_CHECK'].includes(this.currentStage);
+        const affirmativeMurmur = waitingForAvailability && isAffirmativeMurmur(transcript);
+        if (pureMurmurs.has(cleanedUtterance) && !this.interruptedWithAnswer && !affirmativeMurmur) {
             console.log(`[CallSession] Caller murmur acknowledged ("${transcript}"). Maintaining conversational focus.`);
             this.isProcessingTurn = false;
             this.setConversationState(ConversationStates.LISTENING, 'murmur_ignored');
             this.checkAndApplyOverlapAudio();
             return;
         }
+
+        // Persistent question record: what kind of turn is this, and did it answer the open question?
+        this.questions.setTurn(turnId);
+        this.questions.setLanguage(this.detectedLanguage);
+        this.questions.syncStage(this.currentStage);
+        if (!this.questions.plan.length && Array.isArray(this.questionPlan) && this.questionPlan.length) {
+            this.questions.registerPlan(this.questionPlan);
+        }
+        const openQuestion = { id: this.questions.currentQuestionId, text: this.questions.currentQuestionText };
+        const turnKind = this.questions.noteCallerTurn(transcript, { turnId });
+        this.logDiagnostic('caller_turn_classified', {
+            turnId,
+            transcript,
+            language: this.detectedLanguage,
+            stage: this.currentStage,
+            callStage: this.questions.callStage,
+            kind: turnKind,
+            openQuestionId: openQuestion.id,
+            openQuestion: String(openQuestion.text || '').slice(0, 100),
+            answeredQuestionIds: [...this.questions.answeredQuestionIds]
+        });
 
         // Add caller turn to conversation history & memory with associated question
         const elapsedSec = Math.floor((Date.now() - this.startTime) / 1000);
@@ -1498,10 +1768,13 @@ export class CallSession {
             history: this.conversationHistory,
             questionPlan: this.questionPlan,
             campaignContext: this.campaignContext,
-            memory: this.memory
+            memory: this.memory,
+            questions: this.questions,
+            turnKind
         };
 
-        const intent = IntentService.matchIntent(transcript, intentContext);
+        // "uh-huh" after the availability question is read as "yes"; the real words stay in the transcript.
+        const intent = IntentService.matchIntent(affirmativeMurmur ? 'yes' : transcript, intentContext);
 
         if (intent.matched) {
             this.latencyTracker.markDecisionEnd(`INTENT_FAST_PATH:${intent.reason || 'DIRECT'}`);
@@ -1528,7 +1801,26 @@ export class CallSession {
             this.syncAppointmentState();
             this.syncSalesState();
 
-            const spokenResponse = intent.spoken_response;
+            // Recruitment: a fast-path question that repeats an asked topic is swapped for the next planned one.
+            let spokenResponse = intent.spoken_response;
+            if (this.service === 'recruitment') {
+                const guarded = this.questions.guardReply(spokenResponse, {
+                    clarification: turnKind === 'clarification',
+                    shouldEnd: Boolean(intent.should_end_call),
+                    isFieldKnown: (f) => this.collectedData[f] !== undefined && this.collectedData[f] !== null && String(this.collectedData[f]).trim() !== ''
+                });
+                if (guarded.changed) {
+                    spokenResponse = guarded.text;
+                    this.logDiagnostic('reply_adjusted', { turnId, source: 'INTENT_FAST_PATH', notes: guarded.notes });
+                }
+            }
+            this.logDiagnostic('response_selected', {
+                turnId,
+                source: 'INTENT_FAST_PATH',
+                reason: intent.reason || 'DIRECT',
+                kind: this.classifyReply(spokenResponse, intent.should_end_call),
+                text: String(spokenResponse).slice(0, 120)
+            });
             const replyTimeSec = Math.floor((Date.now() - this.startTime) / 1000);
             const replyTimeStr = `${String(Math.floor(replyTimeSec / 60)).padStart(2, '0')}:${String(replyTimeSec % 60).padStart(2, '0')}`;
 
@@ -1555,18 +1847,16 @@ export class CallSession {
 
             this.setConversationState(ConversationStates.SPEAKING, 'intent_fast_path');
             this.logDiagnostic('remo_started_speaking', { turnId, text: spokenResponse, source: 'INTENT_FAST_PATH' });
-            await this.playAiAudio(spokenResponse);
+            const fastResponse = this.beginResponse(turnId);
+            await this.playAiAudio(spokenResponse, fastResponse);
             this.latencyTracker.markAudioDispatched();
 
-            this.isProcessingTurn = false;
-            this.setConversationState(ConversationStates.LISTENING, 'intent_turn_completed');
-            this.checkAndApplyOverlapAudio();
+            this.finishTurn('intent_turn_completed');
 
             if (intent.should_end_call) {
                 this.callStatus = 'COMPLETED';
                 this.setConversationState(ConversationStates.COMPLETED, 'intent_call_completed');
-                const hangupDelay = Math.max((spokenResponse.split(/\s+/).length * 320) + 1200, 2500);
-                setTimeout(() => this.endCall(), hangupDelay);
+                this.hangUpAfterSpeech(spokenResponse, 1200, 2500);
             }
 
             return;
@@ -1576,8 +1866,11 @@ export class CallSession {
         // STEP 2: LLM (Claude Haiku primary / Gemini fallback) FOR COMPLEX/AMBIGUOUS RESPONSES
         // -------------------------------------------------------------
         this.setConversationState(ConversationStates.GENERATING_RESPONSE, 'llm_start');
+        const response = this.beginResponse(turnId);
         try {
             let firstSentenceDispatched = false;
+            const earlySpoken = [];            // sentences already sent to speech while the AI was still writing
+            this.logDiagnostic('llm_generation_started', { turnId, responseId: response.id, turnKind });
 
             const reply = await GeminiService.generateReply(
                 this.service,
@@ -1596,17 +1889,28 @@ export class CallSession {
                     agentName: this.agent ? this.agent.name : '',
                     agentInstructions: this.agent ? this.agent.instructions : '',
                     direction: this.direction,
+                    questionState: this.buildQuestionState(turnKind),
                     onToken: (token, ttftMs) => {
                         this.latencyTracker.markLlmFirstToken();
                     },
                     onSpokenSentence: async (sentence, isFirst, isFinal) => {
-                        if (isFirst && !firstSentenceDispatched && turnId === this.currentTurnId && !this.isClosed) {
+                        if (isFirst && !firstSentenceDispatched && turnId === this.currentTurnId && !this.isClosed && !response.cancelled) {
+                            // Hold back anything the caller would hear twice: the same opener as last time, or a
+                            // question that repeats an earlier topic. The finished reply is checked before it plays.
+                            const repeatsOpener = this.questions.wouldRepeatOpener(sentence);
+                            const repeatsQuestion = this.service === 'recruitment' && sentence.includes('?')
+                                && this.questions.checkQuestion(sentence, { clarification: turnKind === 'clarification', dryRun: true }).duplicate;
+                            if (repeatsOpener || repeatsQuestion) {
+                                this.logDiagnostic('early_phrase_held_back', { turnId, reason: repeatsOpener ? 'repeated_opener' : 'duplicate_question', text: sentence.slice(0, 80) });
+                                return;
+                            }
                             firstSentenceDispatched = true;
+                            earlySpoken.push(sentence);
                             this.latencyTracker.markDecisionEnd('LLM_STREAM');
                             console.log(`[CallSession] Early spoken phrase extracted. Streaming to TTS: "${sentence.slice(0, 50)}..."`);
                             this.setConversationState(ConversationStates.SPEAKING, 'llm_early_phrase');
                             this.logDiagnostic('remo_started_speaking', { turnId, text: sentence, source: 'LLM_EARLY_STREAM' });
-                            await this.playAiAudio(sentence);
+                            await this.playAiAudio(sentence, response);
                         }
                     }
                 }
@@ -1615,13 +1919,21 @@ export class CallSession {
             if (!firstSentenceDispatched) {
                 this.latencyTracker.markDecisionEnd('LLM');
             }
+            this.logDiagnostic('llm_generation_completed', { turnId, responseId: response.id, model: reply.model_used || null, streamedEarly: firstSentenceDispatched });
 
             // FIX-6: Check if we've been superseded by a newer turn
             if (turnId !== this.currentTurnId) {
                 console.log(`[CallSession] LLM response for turn ${turnId} discarded (superseded by turn ${this.currentTurnId}).`);
+                this.cancelActiveResponse('turn_superseded');
                 this.isProcessingTurn = false;
                 this.setConversationState(ConversationStates.LISTENING, 'turn_superseded');
                 this.checkAndApplyOverlapAudio();
+                return;
+            }
+
+            // The call ended while the AI was writing: nothing more is said and no state changes.
+            if (this.isClosed) {
+                this.logDiagnostic('reply_dropped_call_closed', { turnId, responseId: response.id });
                 return;
             }
 
@@ -1658,10 +1970,45 @@ export class CallSession {
             }
             this.syncSalesState();
 
-            const spokenResponse = reply.spoken_response;
+            // The caller interrupted while the AI was writing: none of this reply may be spoken.
+            if (response.cancelled) {
+                this.logDiagnostic('reply_dropped_response_cancelled', { turnId, responseId: response.id });
+                this.finishTurn('response_cancelled');
+                return;
+            }
+
+            let spokenResponse = reply.spoken_response;
+            let endAfterReply = Boolean(reply.should_end_call);
+            if (spokenResponse) {
+                // One last check before the caller hears it: no repeated question, no repeated opener, never a bare "Sure."
+                const guarded = this.questions.guardReply(spokenResponse, {
+                    clarification: turnKind === 'clarification',
+                    shouldEnd: endAfterReply,
+                    enforceQuestions: this.service === 'recruitment',
+                    isFieldKnown: (f) => this.collectedData[f] !== undefined && this.collectedData[f] !== null && String(this.collectedData[f]).trim() !== ''
+                });
+                if (guarded.changed) {
+                    this.logDiagnostic('reply_adjusted', { turnId, source: 'LLM', notes: guarded.notes, replacedWith: guarded.replacedWith || null });
+                    spokenResponse = guarded.text;
+                    const planned = guarded.replacedWith ? this.questions.plan.find(p => p.id === guarded.replacedWith) : null;
+                    if (planned && planned.stage) this.currentStage = planned.stage;
+                    // Every planned question has been asked and nothing is left to ask: the screening is complete.
+                    if (guarded.exhausted && this.service === 'recruitment' && !/\?/.test(spokenResponse)) {
+                        spokenResponse = `${spokenResponse} ${this.screeningClosingLine()}`.trim();
+                        endAfterReply = true;
+                    }
+                }
+                this.logDiagnostic('response_selected', {
+                    turnId,
+                    source: 'LLM',
+                    kind: this.classifyReply(spokenResponse, endAfterReply),
+                    questionTopic: topicOf(questionPart(spokenResponse)),
+                    text: String(spokenResponse).slice(0, 120)
+                });
+            }
             if (!spokenResponse) {
                 console.warn('[CallSession] LLM returned empty spoken_response. Using stage-aware universal fallback.');
-                const fallback = GeminiService.getUniversalFallback(this.detectedLanguage, this.service, this.currentStage);
+                const fallback = this.recoveryLine();
                 const replyTimeSec = Math.floor((Date.now() - this.startTime) / 1000);
                 const replyTimeStr = `${String(Math.floor(replyTimeSec / 60)).padStart(2, '0')}:${String(replyTimeSec % 60).padStart(2, '0')}`;
                 this.conversationHistory.push({ speaker: 'REMO', text: fallback, time: replyTimeStr });
@@ -1671,11 +2018,9 @@ export class CallSession {
                 this.logDiagnostic('next_question_generated', { turnId, question: fallback, source: 'LLM_FALLBACK' });
                 this.setConversationState(ConversationStates.SPEAKING, 'llm_fallback');
                 this.logDiagnostic('remo_started_speaking', { turnId, text: fallback, source: 'LLM_FALLBACK' });
-                await this.playAiAudio(fallback);
+                await this.playAiAudio(fallback, response);
                 this.latencyTracker.markAudioDispatched();
-                this.isProcessingTurn = false;
-                this.setConversationState(ConversationStates.LISTENING, 'llm_fallback_finished');
-                this.checkAndApplyOverlapAudio();
+                this.finishTurn('llm_fallback_finished');
                 return;
             }
 
@@ -1705,37 +2050,30 @@ export class CallSession {
             this.setConversationState(ConversationStates.SPEAKING, 'llm_speaking');
             this.logDiagnostic('remo_started_speaking', { turnId, text: spokenResponse, source: 'LLM' });
 
-            // Safe streaming: Play only the remaining sentences if an early phrase was already dispatched
+            // Safe streaming: play only what has not been spoken yet. The sentence(s) already sent while the AI
+            // was still writing are removed from the final text by meaning (not by exact characters), so an
+            // acknowledgement such as "Of course." is never heard twice, even if the final text was worded
+            // slightly differently or came from the backup AI after the first one failed part-way.
             if (firstSentenceDispatched) {
-                let remainder = spokenResponse;
-                if (Array.isArray(reply.emittedSentences) && reply.emittedSentences.length > 0) {
-                    for (const em of reply.emittedSentences) {
-                        if (em && remainder.startsWith(em)) {
-                            remainder = remainder.slice(em.length).trim();
-                        } else if (em) {
-                            remainder = remainder.replace(em, '').trim();
-                        }
-                    }
-                }
-                if (remainder && remainder.length > 3 && turnId === this.currentTurnId && !this.isClosed) {
+                const remainder = stripAlreadySpoken(spokenResponse, earlySpoken);
+                if (remainder && remainder.length > 3 && turnId === this.currentTurnId && !this.isClosed && !response.cancelled) {
                     console.log(`[CallSession] Streaming remainder sentence to TTS: "${remainder.slice(0, 50)}..."`);
-                    await this.playAiAudio(remainder);
+                    await this.playAiAudio(remainder, response);
+                } else if (!remainder) {
+                    this.logDiagnostic('remainder_deduplicated', { turnId, responseId: response.id, early: earlySpoken });
                 }
             } else {
-                await this.playAiAudio(spokenResponse);
+                await this.playAiAudio(spokenResponse, response);
             }
             this.latencyTracker.markAudioDispatched();
 
-            // FIX-1: Only NOW clear the processing lock
-            this.isProcessingTurn = false;
-            this.setConversationState(ConversationStates.LISTENING, 'llm_turn_completed');
-            this.checkAndApplyOverlapAudio();
+            // FIX-1: Only NOW clear the processing lock (the state goes back to LISTENING when the audio has really finished)
+            this.finishTurn('llm_turn_completed');
 
-            if (reply.should_end_call) {
+            if (endAfterReply) {
                 this.callStatus = 'COMPLETED';
                 this.setConversationState(ConversationStates.COMPLETED, 'llm_call_completed');
-                const hangupDelay = Math.max((spokenResponse.split(/\s+/).length * 320) + 1400, 2800);
-                setTimeout(() => this.endCall(), hangupDelay);
+                this.hangUpAfterSpeech(spokenResponse, 1400, 2800);
             }
 
         } catch (genErr) {
@@ -1745,13 +2083,16 @@ export class CallSession {
             // FIX-5: Always record audio dispatched even on error, so TOTAL latency is correct
             // Deliver a stage-specific recovery phrase so caller isn't left in silence or restarted
             try {
-                const recoveryPhrase = GeminiService.getUniversalFallback(this.detectedLanguage, this.service, this.currentStage);
-                const replyTimeSec = Math.floor((Date.now() - this.startTime) / 1000);
-                const replyTimeStr = `${String(Math.floor(replyTimeSec / 60)).padStart(2, '0')}:${String(replyTimeSec % 60).padStart(2, '0')}`;
-                this.conversationHistory.push({ speaker: 'REMO', text: recoveryPhrase, time: replyTimeStr });
-                this.setConversationState(ConversationStates.SPEAKING, 'recovery_phrase');
-                this.logDiagnostic('remo_started_speaking', { turnId, text: recoveryPhrase, source: 'RECOVERY' });
-                await this.playAiAudio(recoveryPhrase);
+                // Only when the caller has heard nothing of this reply yet, and the reply was not cancelled or the call closed.
+                if (response.spoken.length === 0 && !response.cancelled && !this.isClosed) {
+                    const recoveryPhrase = this.recoveryLine();
+                    const replyTimeSec = Math.floor((Date.now() - this.startTime) / 1000);
+                    const replyTimeStr = `${String(Math.floor(replyTimeSec / 60)).padStart(2, '0')}:${String(replyTimeSec % 60).padStart(2, '0')}`;
+                    this.conversationHistory.push({ speaker: 'REMO', text: recoveryPhrase, time: replyTimeStr });
+                    this.setConversationState(ConversationStates.SPEAKING, 'recovery_phrase');
+                    this.logDiagnostic('remo_started_speaking', { turnId, text: recoveryPhrase, source: 'RECOVERY' });
+                    await this.playAiAudio(recoveryPhrase, response);
+                }
                 this.latencyTracker.markAudioDispatched();
             } catch (recoveryErr) {
                 console.error('[CallSession] Recovery phrase also failed:', recoveryErr.message);
@@ -1759,10 +2100,60 @@ export class CallSession {
             }
 
             // FIX-1: Clear processing lock after recovery
-            this.isProcessingTurn = false;
-            this.setConversationState(ConversationStates.LISTENING, 'recovery_turn_finished');
-            this.checkAndApplyOverlapAudio();
+            this.finishTurn('recovery_turn_finished');
         }
+    }
+
+    /**
+     * What Remo says when the AI could not produce a reply. A recruitment call asks the caller to say it
+     * once more (it never replays the opening pitch or jumps to another question); other work types keep
+     * their stage-aware fallback line.
+     */
+    recoveryLine() {
+        if (this.service === 'recruitment') {
+            if (this.detectedLanguage === 'hi') return 'माफ़ कीजिए, मैं ठीक से सुन नहीं पाया। क्या आप एक बार फिर बता सकते हैं?';
+            if (this.detectedLanguage === 'te') return 'క్షమించండి, నాకు సరిగా వినిపించలేదు. దయచేసి మరొకసారి చెప్పగలరా?';
+            return "Sorry, I didn't catch that. Could you please say it once more?";
+        }
+        return GeminiService.getUniversalFallback(this.detectedLanguage, this.service, this.currentStage);
+    }
+
+    /** Ends the call a little after the closing words have finished playing (not after a guess at their length). */
+    hangUpAfterSpeech(spokenText, paddingMs, minimumMs) {
+        const wordsMs = String(spokenText || '').split(/\s+/).length * 320 + paddingMs;
+        const audioLeftMs = Math.max(0, this.aiSpeechEndTime - Date.now()) + 1200;
+        setTimeout(() => this.endCall(), Math.max(wordsMs, audioLeftMs, minimumMs));
+    }
+
+    /** What the question record knows, for the AI's prompt. */
+    buildQuestionState(turnKind = 'answer') {
+        const q = this.questions;
+        const isFieldKnown = (f) => this.collectedData[f] !== undefined && this.collectedData[f] !== null && String(this.collectedData[f]).trim() !== '';
+        const next = q.nextUnanswered({ isFieldKnown });
+        return {
+            callStage: q.callStage,
+            askedTopics: [...new Set(q.entries.filter(e => e.started && e.topic).map(e => e.topic))],
+            answeredTopics: [...new Set(q.entries.filter(e => e.answered && e.topic).map(e => e.topic))],
+            openQuestion: q.pendingQuestionId ? q.currentQuestionText : '',
+            nextPlanned: next ? next.text : '',
+            turnKind
+        };
+    }
+
+    /** acknowledgement | screening_question | clarification | ending | statement (for the diagnostic log). */
+    classifyReply(text, shouldEnd = false) {
+        if (shouldEnd) return 'ending';
+        const sentences = splitSentences(text);
+        if (sentences.some(s => s.includes('?'))) return 'screening_question';
+        if (sentences.length && sentences.every(isAcknowledgement)) return 'acknowledgement';
+        return 'statement';
+    }
+
+    /** The line that closes a screening once every planned question has been asked. */
+    screeningClosingLine() {
+        if (this.detectedLanguage === 'te') return 'మీ సమయానికి ధన్యవాదాలు. మా బృందం మీ ప్రొఫైల్‌ను సమీక్షించి మిమ్మల్ని సంప్రదిస్తుంది. మంచి రోజు గడపండి!';
+        if (this.detectedLanguage === 'hi') return 'आपके समय के लिए धन्यवाद। हमारी टीम आपकी प्रोफ़ाइल देखकर आपसे संपर्क करेगी। आपका दिन शुभ हो!';
+        return 'Thank you for your time. Our team will review your profile and get back to you. Have a great day!';
     }
 
     /**
@@ -1771,6 +2162,10 @@ export class CallSession {
     async endCall() {
         if (this.isClosed) return;
         this.isClosed = true;
+        // No further speech after the line is gone: cancel the reply in progress and drop the queue.
+        this.cancelActiveResponse('call_ended');
+        this.playbackCheckpoint = null;
+        this.isAiSpeaking = false;
         this.setConversationState(ConversationStates.COMPLETED, 'call_ended');
 
         if (this.promoPlaybackTimer) {
@@ -2085,6 +2480,11 @@ export function handleVoicebotWebsocket(ws, request) {
                     const chunk = Buffer.from(payload, 'base64');
                     await session.handleInboundAudio(chunk);
                 }
+            } else if (event === 'playedStream') {
+                // Plivo: everything we sent before the named checkpoint has been played to the caller.
+                session.handlePlaybackCheckpoint(msg.name || (msg.playedStream && msg.playedStream.name));
+            } else if (event === 'clearedAudio') {
+                session.logDiagnostic('plivo_cleared_audio', {});
             } else if (event === 'stop') {
                 console.log(`[VoicebotStream] Plivo stream stopped for CallId: ${session.callId}`);
                 await session.endCall();
@@ -2116,6 +2516,9 @@ export async function precacheStandardGreetings() {
     if (!ElevenLabsService.isConfigured()) return;
     try {
         ElevenLabsService.validateConfiguration();
+        // Tests set SKIP_TTS_PRECACHE=1 so loading this file never calls the paid voice service
+        // (the configuration check above still runs, because other code relies on what it sets).
+        if (process.env.SKIP_TTS_PRECACHE === '1') return;
         // Sequential pre-warm (concurrency = 1) to respect ElevenLabs rate limits
         console.log('[VoicebotStream] Pre-warming standard opening greetings and fast-path responses in TTS cache...');
         const prewarmPhrases = [

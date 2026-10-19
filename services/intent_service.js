@@ -1,4 +1,6 @@
 import AppointmentState from './appointment_state.js';
+import GreetingScript from './greeting_script.js';
+import { isYesNoQuestion, topicOf, questionPart } from './question_tracker.js';
 
 /**
  * services/intent_service.js
@@ -13,6 +15,7 @@ import AppointmentState from './appointment_state.js';
 
 const AFFIRMATIVE_TERMS = new Set([
     'yes', 'yeah', 'yep', 'yup', 'sure', 'correct', 'right', 'ok', 'okay', 'fine',
+    'of course', 'certainly', 'by all means', 'yes please', 'please go ahead',
     'definitely', 'absolutely', 'alright', 'all right', 'agree', 'speaking', 'yes speaking',
     'go ahead', 'go for it', 'why not', 'sure thing', 'fine with me', 'works for me', 'it works for me',
     'yeah it works for me', 'that works', 'that works for me', 'this works', 'works fine',
@@ -387,6 +390,36 @@ export default class IntentService {
         }
 
         // -------------------------------------------------------------
+        // 4b. RECRUITMENT: "who is this?" and "and then?" / "please continue"
+        // -------------------------------------------------------------
+        if (service === 'recruitment') {
+            const questions = context.questions || null;
+            const opening = stage === 'GREETING' || stage === 'AVAILABILITY' || stage === 'PERMISSION_CHECK';
+            if (opening && /\b(who is this|who is calling|who are you|whos this|who is speaking|which company|what company|where are you calling from|kaun bol raha)\b/.test(clean)) {
+                return {
+                    matched: true,
+                    spoken_response: GreetingScript.whoIsCalling(currentLang),
+                    detected_language: currentLang,
+                    next_stage: 'AVAILABILITY',
+                    should_end_call: false,
+                    reason: 'recruitment_identity_inquiry'
+                };
+            }
+            if (context.turnKind === 'continuation') {
+                const open = questions && questions.pendingQuestionId ? questions.currentQuestionText : '';
+                return {
+                    matched: true,
+                    spoken_response: open && currentLang === 'en'
+                        ? `Sure. ${open}`
+                        : this.localize('Sure, please go ahead.', 'जी, कृपया बताइए।', 'తప్పకుండా, చెప్పండి.', currentLang),
+                    detected_language: currentLang,
+                    should_end_call: false,
+                    reason: 'recruitment_continue'
+                };
+            }
+        }
+
+        // -------------------------------------------------------------
         // 5. LANGUAGE SWITCH REQUESTS
         // -------------------------------------------------------------
         if (words.length <= 6) {
@@ -542,7 +575,8 @@ export default class IntentService {
                 clean.startsWith('yes') || clean.startsWith('yeah') || clean.startsWith('yep') || clean.startsWith('yup') ||
                 clean.startsWith('sure') || clean.startsWith('ok') || clean.startsWith('okay') || clean.startsWith('fine') ||
                 clean.startsWith('alright') || clean.startsWith('haan') || clean.startsWith('ha ') || clean.startsWith('avunu') ||
-                clean.startsWith('sare') || clean.startsWith('alage') || clean.startsWith('bilkul')
+                clean.startsWith('sare') || clean.startsWith('alage') || clean.startsWith('bilkul') ||
+                clean.startsWith('of course') || clean.startsWith('certainly') || clean.startsWith('by all means')
             );
             const isAffirmativeKeywordMatch = (words.length <= 5) && (
                 clean.includes('works for me') || clean.includes('work for me') || clean.includes('that works') || clean.includes('this works') ||
@@ -700,22 +734,58 @@ export default class IntentService {
         }
 
         if (service === 'recruitment') {
-            // Check if there is a tailored question plan from the campaign
+            const questions = context.questions || null;
+            const collected = context.collectedData || {};
+            const isFieldKnown = (f) => collected[f] !== undefined && collected[f] !== null && String(collected[f]).trim() !== '';
+
+            // "Of course" / "sure" after a request such as "could you tell me about your experience?" is consent to
+            // answer, not the answer: invite the answer instead of moving on to a different question.
+            const openQuestion = questions && questions.pendingQuestionId ? questions.currentQuestionText : '';
+            if (stage !== 'GREETING' && stage !== 'AVAILABILITY' && stage !== 'PERMISSION_CHECK' && openQuestion && !isYesNoQuestion(openQuestion)) {
+                return {
+                    matched: true,
+                    spoken_response: this.localize(
+                        'Please go ahead, I am listening.',
+                        'जी, कृपया बताइए, मैं सुन रहा हूँ।',
+                        'దయచేసి చెప్పండి, నేను వింటున్నాను.',
+                        lang
+                    ),
+                    detected_language: lang,
+                    should_end_call: false,
+                    reason: 'recruitment_yes_to_open_question'
+                };
+            }
+
+            // The next planned question that has not been asked. The availability question is never asked again.
             let plannedNext = null;
-            if (memory && typeof memory.getNextPlannedQuestion === 'function' && Array.isArray(questionPlan)) {
-                plannedNext = memory.getNextPlannedQuestion(questionPlan);
+            if (questions && questions.plan.length) {
+                plannedNext = questions.nextUnanswered({ isFieldKnown });
+            } else if (memory && typeof memory.getNextPlannedQuestion === 'function' && Array.isArray(questionPlan)) {
+                const withoutAvailability = questionPlan.filter(q => q && q.field_to_collect !== 'is_available' && q.stage !== 'AVAILABILITY');
+                plannedNext = memory.getNextPlannedQuestion(withoutAvailability);
             }
 
             switch (stage) {
-                case 'AVAILABILITY':
                 case 'GREETING':
-                    const nextQText = (plannedNext && plannedNext.text)
-                        ? plannedNext.text
-                        : `Great, thank you! I'm calling about the ${role} position. Could you briefly share your total years of hands-on experience in this field?`;
+                    // "Hello, am I speaking with <name>?" -> "Yes": now Remo introduces itself and asks if it is a good time.
+                    return {
+                        matched: true,
+                        spoken_response: GreetingScript.recruitmentIntro(lang),
+                        detected_language: lang,
+                        extracted_fields: { identity_confirmed: 'Yes' },
+                        classification: 'On Hold',
+                        next_stage: 'AVAILABILITY',
+                        should_end_call: false,
+                        reason: 'recruitment_greeting_yes'
+                    };
+
+                case 'AVAILABILITY': {
+                    // Consent given: go straight to the first screening question, once.
+                    const firstQuestion = (plannedNext && plannedNext.text) ? plannedNext.text : GreetingScript.firstScreeningQuestion('en');
                     return {
                         matched: true,
                         spoken_response: this.localize(
-                            nextQText,
+                            `Thank you. ${firstQuestion}`,
                             `बहुत बढ़िया, धन्यवाद! मैं ${role} पद के संबंध में बात कर रहा हूँ। क्या आप इस क्षेत्र में अपने कुल वर्षों के अनुभव के बारे में बता सकते हैं?`,
                             `చాలా సంతోషం, ధన్యవాదాలు! నేను ${role} రోల్ గురించి మాట్లాడుతున్నాను. ఈ ఫీల్డ్‌లో మీ మొత్తం అనుభవం ఎన్ని సంవత్సరాలు?`,
                             lang
@@ -727,6 +797,7 @@ export default class IntentService {
                         should_end_call: false,
                         reason: 'recruitment_availability_yes'
                     };
+                }
 
                 case 'EXPERIENCE':
                     return {
@@ -761,6 +832,33 @@ export default class IntentService {
                     };
 
                 default:
+                    // With a question plan, "yes" to a yes/no question moves to the next planned question,
+                    // or closes the screening when every planned question has been asked.
+                    if (questions && questions.plan.length) {
+                        if (plannedNext && plannedNext.text) {
+                            return {
+                                matched: true,
+                                spoken_response: this.localize(`Great, thank you. ${plannedNext.text}`, `बहुत बढ़िया, धन्यवाद। ${plannedNext.text}`, `చాలా మంచిది, ధన్యవాదాలు. ${plannedNext.text}`, lang),
+                                detected_language: lang,
+                                next_stage: plannedNext.stage || 'SCREENING',
+                                should_end_call: false,
+                                reason: 'recruitment_yes_next_planned'
+                            };
+                        }
+                        return {
+                            matched: true,
+                            spoken_response: this.localize(
+                                'Thank you for your time. Our team will review your profile and get back to you. Have a great day!',
+                                'आपके समय के लिए धन्यवाद। हमारी टीम आपकी प्रोफ़ाइल देखकर आपसे संपर्क करेगी। आपका दिन शुभ हो!',
+                                'మీ సమయానికి ధన్యవాదాలు. మా బృందం మీ ప్రొఫైల్‌ను సమీక్షించి మిమ్మల్ని సంప్రదిస్తుంది. మంచి రోజు గడపండి!',
+                                lang
+                            ),
+                            detected_language: lang,
+                            next_stage: 'CLOSING',
+                            should_end_call: true,
+                            reason: 'recruitment_screening_complete'
+                        };
+                    }
                     return {
                         matched: true,
                         spoken_response: this.localize(
@@ -931,9 +1029,27 @@ export default class IntentService {
         }
 
         if (service === 'recruitment') {
+            const questions = context.questions || null;
             switch (stage) {
-                case 'AVAILABILITY':
                 case 'GREETING':
+                    // "Hello, am I speaking with <name>?" -> "No": wrong person.
+                    return {
+                        matched: true,
+                        spoken_response: this.localize(
+                            "I apologize for the mix-up. Thank you for your time, and have a good day.",
+                            "असुविधा के लिए माफ़ी चाहता हूँ। आपके समय के लिए धन्यवाद, और आपका दिन शुभ हो।",
+                            "పొరపాటుకు క్షమించండి. మీ సమయానికి ధన్యవాదాలు, మంచి రోజవుగాక.",
+                            lang
+                        ),
+                        detected_language: lang,
+                        classification: 'Wrong Contact',
+                        next_stage: 'CLOSING',
+                        extracted_fields: { call_outcome: 'Wrong Contact' },
+                        should_end_call: true,
+                        reason: 'recruitment_wrong_person'
+                    };
+
+                case 'AVAILABILITY':
                     return {
                         matched: true,
                         spoken_response: this.localize(
@@ -969,6 +1085,39 @@ export default class IntentService {
                     };
 
                 default:
+                    // With a question plan, "no" is the answer to the open question; move to the next planned
+                    // question (never back to one already asked), or close the screening when none is left.
+                    if (questions && questions.plan.length) {
+                        const collected = context.collectedData || {};
+                        const known = (f) => collected[f] !== undefined && collected[f] !== null && String(collected[f]).trim() !== '';
+                        const pending = questions.pendingQuestionId ? questions.currentQuestionText : '';
+                        const next = topicOf(questionPart(pending)) === 'candidate_questions' ? null : questions.nextUnanswered({ isFieldKnown: known });
+                        if (next && next.text) {
+                            return {
+                                matched: true,
+                                spoken_response: this.localize(`Understood. ${next.text}`, `समझ गया। ${next.text}`, `అర్థమైంది. ${next.text}`, lang),
+                                detected_language: lang,
+                                classification: 'On Hold',
+                                next_stage: next.stage || 'SCREENING',
+                                should_end_call: false,
+                                reason: 'recruitment_no_next_planned'
+                            };
+                        }
+                        return {
+                            matched: true,
+                            spoken_response: this.localize(
+                                'Thank you for your time. Our team will review your profile and get back to you. Have a great day!',
+                                'आपके समय के लिए धन्यवाद। हमारी टीम आपकी प्रोफ़ाइल देखकर आपसे संपर्क करेगी। आपका दिन शुभ हो!',
+                                'మీ సమయానికి ధన్యవాదాలు. మా బృందం మీ ప్రొఫైల్‌ను సమీక్షించి మిమ్మల్ని సంప్రదిస్తుంది. మంచి రోజు గడపండి!',
+                                lang
+                            ),
+                            detected_language: lang,
+                            classification: 'On Hold',
+                            next_stage: 'CLOSING',
+                            should_end_call: true,
+                            reason: 'recruitment_screening_complete'
+                        };
+                    }
                     return {
                         matched: true,
                         spoken_response: this.localize(

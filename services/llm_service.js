@@ -294,6 +294,7 @@ export class LLMService {
     }) {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
+        let streamTimer = null;
 
         const claudeMessages = messages.map(m => ({
             role: m.role === 'assistant' || m.role === 'model' ? 'assistant' : 'user',
@@ -340,6 +341,8 @@ export class LLMService {
                 throw new Error(`Claude HTTP ${res.status}: ${errText.slice(0, 150)}`);
             }
 
+            // The reply stream gets its own deadline: a stream that stalls must never keep the call waiting forever.
+            streamTimer = setTimeout(() => controller.abort(), timeoutMs);
             const reader = res.body.getReader();
             const decoder = new TextDecoder();
             let sseBuffer = '';
@@ -417,6 +420,7 @@ export class LLMService {
             };
         } finally {
             clearTimeout(timer);
+            if (streamTimer) clearTimeout(streamTimer);
         }
     }
 

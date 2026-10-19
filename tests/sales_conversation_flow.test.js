@@ -247,9 +247,9 @@ async function runScenarios() {
 
     // Scenario 10: Recruitment and Customer Support calls still work as before
     await test('Scenario 10: Recruitment and Support workflows remain unaffected and functional', () => {
+        // Recruitment opens by asking for the candidate by name; the introduction follows once they confirm.
         const recGreeting = GeminiService.getOpeningGreeting('recruitment', { job_role: 'Cloud Architect', name: 'Anil' });
-        assert.ok(recGreeting.includes('Cloud Architect'));
-        assert.ok(recGreeting.includes('application'));
+        assert.strictEqual(recGreeting, 'Hello, am I speaking with Anil?');
 
         const supGreeting = GeminiService.getOpeningGreeting('support', { name: 'Kavita' });
         assert.ok(supGreeting.includes('Kavita'));
