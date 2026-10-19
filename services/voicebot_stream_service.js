@@ -3,6 +3,7 @@ import ElevenLabsService from './elevenlabs_service.js';
 import GeminiService from './gemini_service.js';
 import IntentService from './intent_service.js';
 import AppointmentState from './appointment_state.js';
+import SalesState from './sales_state.js';
 import LatencyTracker from './latency_tracker.js';
 import ConversationMemory from './conversation_memory.js';
 import ScreeningEvaluator from './screening_evaluator.js';
@@ -243,6 +244,8 @@ export class CallSession {
         this.collectedData = {};
         // Appointment calls: which booking detail was asked last and how many times in a row.
         this.apptTracker = { field: null, count: 0 };
+        // Sales calls: which discovery detail was asked last and how many times in a row.
+        this.salesTracker = { field: null, count: 0 };
         this.callStatus = 'in-progress';
         this.classification = 'On Hold';
         this.summary = '';
@@ -750,6 +753,15 @@ export class CallSession {
             this.currentStage = stage;
         }
         if (this.memory) this.memory.currentStage = stage;
+    }
+
+    /**
+     * Sales calls only: after every reply, count how many times in a row the same discovery detail
+     * has gone unanswered, so the prompt can tell the AI to stop repeating the question.
+     */
+    syncSalesState() {
+        if (this.service !== 'sales') return;
+        this.salesTracker = SalesState.trackTurn(this.salesTracker, this.collectedData, this.currentStage);
     }
 
     /**
@@ -1511,6 +1523,7 @@ export class CallSession {
                 detectedLanguage = this.detectedLanguage;
             }
             this.syncAppointmentState();
+            this.syncSalesState();
 
             const spokenResponse = intent.spoken_response;
             const replyTimeSec = Math.floor((Date.now() - this.startTime) / 1000);
@@ -1576,6 +1589,7 @@ export class CallSession {
                     detectedLanguage: this.detectedLanguage,
                     currentStage: this.currentStage,
                     appointmentTracker: this.apptTracker,
+                    salesTracker: this.salesTracker,
                     agentName: this.agent ? this.agent.name : '',
                     agentInstructions: this.agent ? this.agent.instructions : '',
                     direction: this.direction,
@@ -1639,6 +1653,7 @@ export class CallSession {
                     this.memory.currentStage = reply.next_stage;
                 }
             }
+            this.syncSalesState();
 
             const spokenResponse = reply.spoken_response;
             if (!spokenResponse) {

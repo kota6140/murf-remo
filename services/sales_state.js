@@ -127,6 +127,18 @@ export function trackAsk(tracker, collected = {}) {
     return { field, count: 1 };
 }
 
+/** Stages before the discovery questions begin; asks are not counted while the call is still in them. */
+const PRE_DISCOVERY_STAGES = ['GREETING', 'PERMISSION_CHECK', 'CALLBACK_TIME', 'CLOSING'];
+
+/**
+ * trackAsk for a live call: the counter only runs once the call is in the discovery questions,
+ * so "is this a good time?" turns are never counted as repeats of the service question.
+ */
+export function trackTurn(tracker, collected = {}, currentStage = 'GREETING') {
+    if (PRE_DISCOVERY_STAGES.includes(String(currentStage || '').toUpperCase())) return { field: null, count: 0 };
+    return trackAsk(tracker, collected);
+}
+
 /**
  * Builds the strict code-grounded instructions block injected into the LLM system prompt.
  */
@@ -160,6 +172,10 @@ export function buildPromptBlock(collected = {}, tracker = { field: null, count:
         lines.push(`- Follow-up preference recorded: "${collected.followup_preference}". Close the call politely.`);
     }
 
+    if (collected.customer_called_out_repetition) {
+        lines.push('- The customer said they already told you something. Apologise in a few words, do NOT repeat any earlier question, and move on to the next topic.');
+    }
+
     if (tracker && tracker.field && tracker.count >= REPHRASE_AFTER) {
         lines.push(`- Note: The customer did not give a detailed answer to "${tracker.field}". DO NOT repeat the question. Accept what they said and move immediately to the next stage.`);
     }
@@ -176,5 +192,6 @@ export default {
     stageFor,
     hasServiceProgress,
     trackAsk,
+    trackTurn,
     buildPromptBlock
 };

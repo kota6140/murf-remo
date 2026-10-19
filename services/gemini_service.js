@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import LLMService from './llm_service.js';
 import AppointmentState from './appointment_state.js';
+import SalesState from './sales_state.js';
 
 const EXACT_GREETING = "Hey, it's Remo, representing Score Labs.";
 
@@ -361,6 +362,8 @@ ${pricing ? `- Pricing/Plans: ${pricing}` : ''}
 ${cta ? `- Primary Objective / CTA: ${cta}` : ''}
 ${faqs ? `- Approved FAQs from Document: ${faqs}` : ''}
 ${objections ? `- Objection Handling from Document: ${objections}` : ''}
+
+${SalesState.buildPromptBlock(collectedData, options.salesTracker)}
 
 CONVERSATION FLOW & STAGE PROGRESSION:
 1. GREETING: Remo introduced himself and asked to verify contact's name ("Hello, am I speaking with Priya?").
