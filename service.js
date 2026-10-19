@@ -141,7 +141,7 @@
             <h4 class="footer-col-title">CAPABILITIES</h4>
             <ul class="footer-links-list">
               <li><a href="/how-it-works">How It Works</a></li>
-              <li><a href="/#industries">Industries</a></li>
+              <li><a href="/industries">Industries</a></li>
             </ul>
           </div>
 
@@ -892,9 +892,59 @@
     receptionist: sceneReceptionist
   };
 
+  /* ---------------------------------------------------------------- auth nav */
+  // Same as the homepage: for a signed-in visitor, Login / Create Account become Dashboard / Logout.
+  async function setupAuthNav() {
+    const login = $('#nav-signin-btn');
+    const signup = $('#nav-signup-btn');
+    if (!login || !signup) return;
+
+    let user = null;
+    try {
+      const res = await fetch('/api/auth/me', { headers: { Accept: 'application/json' }, credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        user = data.success ? data.user : null;
+      }
+    } catch (e) {
+      return;
+    }
+    if (!user) return;
+
+    const destination = user.profileCompleted ? '/dashboard' : '/onboarding';
+    const logout = async (e) => {
+      e.preventDefault();
+      try {
+        await fetch('/api/auth/logout', { method: 'POST', headers: { Accept: 'application/json' }, credentials: 'include' });
+      } catch (err) { /* leave anyway */ }
+      window.location.href = '/signin';
+    };
+    const swap = (loginEl, signupEl) => {
+      loginEl.href = destination;
+      loginEl.innerHTML = '<span>Dashboard</span>';
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-secondary btn-sm';
+      btn.innerHTML = '<span>Logout</span>';
+      btn.addEventListener('click', logout);
+      signupEl.replaceWith(btn);
+      return btn;
+    };
+
+    swap(login, signup).id = 'nav-logout-btn';
+    login.id = 'nav-dashboard-btn';
+
+    // The same two buttons in the phone menu
+    const cta = $('.mobile-nav-cta');
+    if (cta) {
+      const links = cta.querySelectorAll('a');
+      if (links.length >= 2) swap(links[0], links[1]);
+    }
+  }
+
   /* ------------------------------------------------------------------- go */
   document.title = document.title || `${current.name} | TakeRemo`;
   buildShell();
+  setupAuthNav();
   wireDemoForm();
   watchScroll();
   watchHeaderTheme();

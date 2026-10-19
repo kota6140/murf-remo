@@ -4971,7 +4971,7 @@ a {
 
 /* 1. Nav Brand Logo */
 .nav-brand-logo-img {
-  height: 62px;
+  height: 54px;
   width: auto;
   max-width: 320px;
   object-fit: contain;
@@ -5555,7 +5555,7 @@ a {
   }
 
   .nav-brand-logo-img {
-    height: 46px;
+    height: 40px;
     width: auto;
     max-width: 220px;
   }

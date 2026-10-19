@@ -111,13 +111,14 @@ function createMockWs() {
             process.env.RECRUITMENT_VAD_SILENCE_MS = oldVal;
         });
 
-        await test('Sales and Support services maintain fast-path threshold (~220ms)', () => {
+        await test('Sales and Support keep a short wait for brief replies (350ms) and a longer one for long speech (450ms)', () => {
             const ws = createMockWs();
-            const salesSession = new CallSession(ws, { service: 'sales' });
-            assert.strictEqual(salesSession.getSilenceThresholdMs(), 220);
-
-            const supportSession = new CallSession(ws, { service: 'support' });
-            assert.strictEqual(supportSession.getSilenceThresholdMs(), 220);
+            for (const service of ['sales', 'support']) {
+                const session = new CallSession(ws, { service });
+                assert.strictEqual(session.getSilenceThresholdMs(), 350, `${service}: brief reply`);
+                session.consecutiveSpeechFrames = 16;
+                assert.strictEqual(session.getSilenceThresholdMs(), 450, `${service}: sustained speech`);
+            }
         });
     });
 
