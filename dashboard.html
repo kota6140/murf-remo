@@ -960,6 +960,14 @@
                 </tbody>
               </table>
             </div>
+
+            <div class="admin-pagination">
+              <span id="convs-page-info">Showing page 1</span>
+              <div class="pagination-btns">
+                <button type="button" class="btn-page" id="convs-prev-btn" disabled>Previous</button>
+                <button type="button" class="btn-page" id="convs-next-btn" disabled>Next</button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1858,7 +1866,7 @@
         } else if (viewName === 'agents') {
           loadMyAgents();
         } else if (viewName === 'conversations') {
-          loadConversations();
+          loadConversations(1);
         } else if (viewName === 'calls') {
           loadCalls(1);
         }
@@ -4323,19 +4331,47 @@
       // ======================================================================
       // 10. CONVERSATIONS & TRANSCRIPTS CONTROLLER
       // ======================================================================
-      async function loadConversations() {
+      let currentConvsPage = 1;
+      let totalConvsPages = 1;
+
+      function updateConvsPager(pagination, shown) {
+        const total = pagination ? (pagination.totalCount ?? pagination.total ?? shown) : shown;
+        totalConvsPages = pagination ? (pagination.totalPages || 1) : 1;
+        const pageInfo = document.getElementById('convs-page-info');
+        if (pageInfo) {
+          pageInfo.textContent = total === 0
+            ? 'No conversations'
+            : `Showing page ${currentConvsPage} of ${totalConvsPages} (${total} total)`;
+        }
+        const prevBtn = document.getElementById('convs-prev-btn');
+        const nextBtn = document.getElementById('convs-next-btn');
+        if (prevBtn) prevBtn.disabled = currentConvsPage <= 1;
+        if (nextBtn) nextBtn.disabled = currentConvsPage >= totalConvsPages;
+      }
+
+      async function loadConversations(page = 1) {
         const tbody = document.getElementById('conversations-table-body');
         if (!tbody) return;
 
         const service = document.getElementById('convs-service-select')?.value || '';
         const status = document.getElementById('convs-status-select')?.value || '';
         const search = document.getElementById('convs-search-input')?.value.trim() || '';
+        // Filter and search handlers pass an Event; anything that is not a page number means page 1.
+        currentConvsPage = Number.isInteger(page) && page > 0 ? page : 1;
 
         tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 28px; color: #94A3B8;"><span class="auth-spinner" style="margin-right: 8px;"></span> Loading conversations...</td></tr>`;
 
         try {
-          const res = await AdminClient.getConversations({ service, status, search });
+          const res = await AdminClient.getConversations({ service, status, search, page: currentConvsPage });
           const convs = res.data || [];
+
+          // The last page can disappear (e.g. after the filter changed); step back to the new last page.
+          const pages = res.pagination ? (res.pagination.totalPages || 1) : 1;
+          if (convs.length === 0 && currentConvsPage > pages) {
+            return loadConversations(pages);
+          }
+
+          updateConvsPager(res.pagination, convs.length);
 
           if (convs.length === 0) {
             tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 28px; color: #94A3B8;">No conversations found matching criteria.</td></tr>`;
@@ -4409,14 +4445,27 @@
       if (convsSearchInput) {
         convsSearchInput.addEventListener('input', () => {
           clearTimeout(convsSearchTimer);
-          convsSearchTimer = setTimeout(loadConversations, 300);
+          convsSearchTimer = setTimeout(() => loadConversations(1), 300);
         });
       }
       const convsServiceSelect = document.getElementById('convs-service-select');
-      if (convsServiceSelect) convsServiceSelect.addEventListener('change', loadConversations);
+      if (convsServiceSelect) convsServiceSelect.addEventListener('change', () => loadConversations(1));
 
       const convsStatusSelect = document.getElementById('convs-status-select');
-      if (convsStatusSelect) convsStatusSelect.addEventListener('change', loadConversations);
+      if (convsStatusSelect) convsStatusSelect.addEventListener('change', () => loadConversations(1));
+
+      const convsPrevBtn = document.getElementById('convs-prev-btn');
+      if (convsPrevBtn) {
+        convsPrevBtn.addEventListener('click', () => {
+          if (currentConvsPage > 1) loadConversations(currentConvsPage - 1);
+        });
+      }
+      const convsNextBtn = document.getElementById('convs-next-btn');
+      if (convsNextBtn) {
+        convsNextBtn.addEventListener('click', () => {
+          if (currentConvsPage < totalConvsPages) loadConversations(currentConvsPage + 1);
+        });
+      }
 
       // Open Conversation Modal
       const convModal = document.getElementById('conversation-detail-modal');
