@@ -96,6 +96,7 @@ export default class IntentService {
         if (clean.includes('do not call') || clean.includes('dont call') || clean.includes('remove my number') || clean.includes('stop calling') || clean.includes('delete my number')) {
             return {
                 matched: true,
+                intent: 'DO_NOT_CALL',
                 spoken_response: this.localize(
                     "Understood, I have recorded your request not to be contacted again. Have a great day.",
                     "समझ गया, मैंने दोबारा संपर्क न करने का आपका अनुरोध दर्ज कर लिया है। आपका दिन शुभ हो।",
@@ -104,8 +105,9 @@ export default class IntentService {
                 ),
                 detected_language: currentLang,
                 should_end_call: true,
+                next_stage: 'CLOSING',
                 classification: (service === 'sales' || service === 'appointment') ? 'Do Not Call' : (service === 'receptionist' ? 'Callback Requested' : 'Rejected'),
-                extracted_fields: { preferred_next_step: 'none', call_outcome: 'Do Not Call' },
+                extracted_fields: { preferred_next_step: 'none', call_outcome: 'Do Not Call', opt_out: true },
                 reason: 'do_not_call'
             };
         }
@@ -131,11 +133,34 @@ export default class IntentService {
         }
 
         // -------------------------------------------------------------
+        // 2.5 EXPLICIT DO NOT CALL / OPT OUT
+        // -------------------------------------------------------------
+        if (clean.includes('do not call') || clean.includes('dont call') || clean.includes('remove my number') || clean.includes('stop calling') || clean.includes('never call') || clean.includes('remove me')) {
+            return {
+                matched: true,
+                intent: 'DO_NOT_CALL',
+                spoken_response: this.localize(
+                    "I have recorded your request and removed your number from our contact list. You will not receive any further calls. Have a good day.",
+                    "मैंने आपका अनुरोध दर्ज कर लिया है और आपका नंबर हमारी सूची से हटा दिया है। आपको आगे कोई कॉल नहीं आएगी। आपका दिन शुभ हो।",
+                    "నేను మీ అభ్యర్థనను నమోదు చేసాను మరియు మా లిస్ట్ నుండి మీ నంబర్‌ను తొలగించాను. ఇకపై మీకు కాల్స్ రావు. మంచి రోజవుగాక.",
+                    currentLang
+                ),
+                detected_language: currentLang,
+                should_end_call: true,
+                next_stage: 'CLOSING',
+                classification: 'Do Not Call',
+                extracted_fields: { preferred_next_step: 'none', call_outcome: 'Do Not Call', opt_out: true },
+                reason: 'do_not_call_opt_out'
+            };
+        }
+
+        // -------------------------------------------------------------
         // 3. EXPLICIT DECLINE / NOT INTERESTED
         // -------------------------------------------------------------
         if (clean.includes('not interested') || clean.includes('no interest') || clean.includes('not looking') || clean.includes('phone rakho') || clean.includes('cut the call')) {
             return {
                 matched: true,
+                intent: 'NOT_INTERESTED',
                 spoken_response: this.localize(
                     "I understand. Thank you for your time. Have a great day.",
                     "मैं समझता हूँ। आपके समय के लिए धन्यवाद। आपका दिन शुभ हो।",
@@ -144,6 +169,7 @@ export default class IntentService {
                 ),
                 detected_language: currentLang,
                 should_end_call: true,
+                next_stage: 'CLOSING',
                 classification: (service === 'sales' || service === 'appointment') ? 'Not Interested' : (service === 'recruitment' ? 'Rejected' : (service === 'receptionist' ? 'Query Answered' : 'RESOLVED')),
                 extracted_fields: { preferred_next_step: 'none', call_outcome: 'Not Interested', candidate_interest: 'Declined' },
                 reason: 'not_interested'
@@ -322,6 +348,7 @@ export default class IntentService {
             if (clean.includes('busy') || clean.includes('in a meeting') || clean.includes('driving') || clean.includes('call later')) {
                 return {
                     matched: true,
+                    intent: 'BUSY',
                     spoken_response: this.localize(
                         "I completely understand. Would another time be better for a quick call, or would you prefer not to receive another call?",
                         "मैं पूरी तरह समझता हूँ। क्या किसी अन्य समय बात करना बेहतर रहेगा, या आप दोबारा कॉल प्राप्त नहीं करना चाहेंगे?",
@@ -531,8 +558,11 @@ export default class IntentService {
             const isYes = !hasNegative && (isKnownAffirmativePhrase || isShortAffirmativePrefix || isAffirmativeKeywordMatch);
 
             const isKnownNegativePhrase = NEGATIVE_TERMS.has(clean) || words.every(w => NEGATIVE_TERMS.has(w));
-            const isShortNegativePrefix = (words.length <= 3) && (clean.startsWith('no ') || clean === 'no');
-            const isNegativeKeywordMatch = (words.length <= 4) && (clean.includes('not right now') || clean.includes('not now'));
+            const isShortNegativePrefix = (words.length <= 5) && (clean.startsWith('no ') || clean === 'no');
+            const isNegativeKeywordMatch = (words.length <= 6) && (
+                clean.includes('not right now') || clean.includes('not now') || clean.includes('not at the moment') ||
+                clean.includes('not really') || clean.includes('not currently') || clean.includes('not yet')
+            );
 
             const isNo = isKnownNegativePhrase || isShortNegativePrefix || isNegativeKeywordMatch;
 
@@ -827,8 +857,12 @@ export default class IntentService {
                     };
 
                 case 'INTEREST_DISCOVERY':
+                case 'SERVICE_DISCOVERY':
+                case 'SERVICE_INTEREST':
+                case 'discovery':
                     return {
                         matched: true,
+                        intent: 'NEGATIVE_TO_CURRENT_QUESTION',
                         spoken_response: this.localize(
                             "I completely understand. Thank you so much for your time today, and have a wonderful day!",
                             "मैं समझता हूँ। आज आपके समय के लिए बहुत-बहुत धन्यवाद, और आपका दिन शुभ हो!",

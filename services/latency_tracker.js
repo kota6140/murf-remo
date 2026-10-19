@@ -152,10 +152,14 @@ export default class LatencyTracker {
         }
 
         const endpoint = this.currentTurn.speechEndpointDetectedTime || this.currentTurn.vadSilenceDetectedTime || this.currentTurn.turnStartTime;
-        this.currentTurn.endpointToFirstAudioMs = this.currentTurn.firstAudioSentTime - endpoint;
-        this.currentTurn.totalTurnLatencyMs = this.currentTurn.audioDispatchedTime - endpoint;
-
         const t = this.currentTurn;
+        t.plivoFirstAudioDeliveryMs = t.endpointToFirstAudioMs;
+        t.vadLatencyMs = t.vadDurationMs;
+        t.endOfTurnDetectionMs = t.vadDurationMs;
+        t.intentLatencyMs = t.decisionType.includes('INTENT') ? t.decisionDurationMs : 0;
+        t.llmTimeToFirstTokenMs = t.llmFirstTokenMs || 0;
+        t.ttsTimeToFirstAudioMs = t.ttsDurationMs;
+
         console.log(
             `[LATENCY] Call ${this.callId} [Turn ${t.turnIndex}]: ` +
             `VAD=${t.vadDurationMs}ms | ` +
@@ -165,6 +169,20 @@ export default class LatencyTracker {
             `EndpointToFirstAudio=${t.endpointToFirstAudioMs}ms | ` +
             `TOTAL=${t.totalTurnLatencyMs}ms`
         );
+
+        // Structured audit record as specified in PART 10
+        console.log(`[LATENCY_STRUCTURED] ${JSON.stringify({
+            callId: this.callId,
+            turnId: t.turnIndex,
+            decisionType: t.decisionType,
+            vadLatencyMs: t.vadLatencyMs,
+            sttLatencyMs: t.sttDurationMs,
+            decisionLatencyMs: t.decisionDurationMs,
+            llmTimeToFirstTokenMs: t.llmTimeToFirstTokenMs,
+            ttsTimeToFirstAudioMs: t.ttsTimeToFirstAudioMs,
+            endpointToFirstAudioMs: t.endpointToFirstAudioMs,
+            totalTurnLatencyMs: t.totalTurnLatencyMs
+        })}`);
 
         this.turns.push({ ...this.currentTurn });
         this.currentTurn = null;

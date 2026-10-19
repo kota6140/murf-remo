@@ -194,6 +194,43 @@ Return ONLY a valid JSON object matching this schema:
             next_action: "Recruiter manual review"
         };
     }
+
+    /**
+     * Maps caller answer variation to corresponding screening question field and evaluates completeness.
+     * @param {string} field - Field to evaluate (e.g. RELEVANT_EXPERIENCE, TECHNICAL_SKILLS)
+     * @param {string} answerText - Caller spoken answer
+     * @returns {{ status: string, field: string, extractedValue: string }}
+     */
+    static evaluateAnswer(field = '', answerText = '') {
+        const text = String(answerText || '').trim();
+        if (!text) {
+            return { status: 'UNANSWERED', field, extractedValue: null };
+        }
+
+        const normField = field.toUpperCase();
+        if (normField === 'RELEVANT_EXPERIENCE' || normField === 'EXPERIENCE') {
+            const expMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:years?|yrs?)/i) || text.match(/(?:around|about|have)\s+(\w+)\s+years?/i);
+            return {
+                status: 'ANSWERED',
+                field: 'relevant_experience',
+                extractedValue: expMatch ? expMatch[0] : text
+            };
+        }
+
+        if (normField === 'TECHNICAL_SKILLS' || normField === 'SKILLS') {
+            return {
+                status: 'ANSWERED',
+                field: 'technical_skills',
+                extractedValue: text
+            };
+        }
+
+        return {
+            status: 'ANSWERED',
+            field: field.toLowerCase(),
+            extractedValue: text
+        };
+    }
 }
 
 export default ScreeningEvaluator;

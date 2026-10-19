@@ -9,6 +9,7 @@ import ConversationMemory from './conversation_memory.js';
 import ScreeningEvaluator from './screening_evaluator.js';
 import AgentService, { ensureAgentSchema } from './agent_service.js';
 import PlivoService from './plivo_service.js';
+import LanguageStateMachine from './language_state_machine.js';
 
 /**
  * The exact one-way promotional script spoken by Remo on "Get Instant Call".
@@ -251,6 +252,7 @@ export class CallSession {
         this.summary = '';
         this.currentStage = 'AVAILABILITY';
         this.detectedLanguage = 'en';
+        this.languageStateMachine = new LanguageStateMachine(this.detectedLanguage);
 
         // Conversation state machine
         this.conversationState = ConversationStates.IDLE;
@@ -360,8 +362,11 @@ export class CallSession {
 
     /**
      * Returns configurable end-of-turn silence threshold in milliseconds.
-     * Recruitment uses RECRUITMENT_VAD_SILENCE_MS (default 1,400ms) to allow natural pauses.
-     * Sales / Support maintain ultra-low latency (~220ms - 280ms) for brief affirmations.
+     * Dynamic adaptation:
+     * - Recruitment: Allows generous thinking pauses (default 1,400ms or RECRUITMENT_VAD_SILENCE_MS).
+     * - Sales / Support / Appointment:
+     *     - Brief acknowledgments (<= 15 speech frames, ~300ms speech): 350ms silence for ultra-low latency.
+     *     - Sustained explanations (> 15 speech frames): 450-500ms silence so callers are never interrupted during natural pauses.
      */
     getSilenceThresholdMs() {
         if (this.service === 'recruitment') {
@@ -381,7 +386,12 @@ export class CallSession {
                 return parsed;
             }
         }
-        return 220; // Default fast-path for sales / support
+
+        // Adaptive natural pause tolerance for telephone conversation
+        if (this.consecutiveSpeechFrames > 15) {
+            return 450; // Allow caller to pause mid-sentence naturally without being cut off
+        }
+        return 350; // Snappy turn turnaround for brief affirmations
     }
 
     /**
@@ -1395,21 +1405,14 @@ export class CallSession {
             return;
         }
 
-        // Normalize 3-letter language codes from ElevenLabs Scribe to standard 2-letter codes
-        const hasTeluguChars = /[\u0C00-\u0C7F]/.test(transcript);
-        const teluguWords = /\b(avunu|kaadu|sare|alaage|alage|cheppandi|namaskaram|meeru|nenu|telugu|undi|ledu|eppudu)\b/i.test(transcript);
-        const hasHindiChars = /[\u0900-\u097F]/.test(transcript);
-        const hindiWords = /\b(haan|nahi|theek|kahiye|namaste|aap|main|hindi|baat|karo|bataiye|samjha|shukriya)\b/i.test(transcript);
-
-        if (hasTeluguChars || teluguWords || detectedLanguage === 'tel') {
-            this.setSessionLanguage('te', 'TELUGU_TRANSCRIPT_SCRIPT');
-            detectedLanguage = 'te';
-        } else if (hasHindiChars || hindiWords || detectedLanguage === 'hin') {
-            this.setSessionLanguage('hi', 'HINDI_TRANSCRIPT_SCRIPT');
-            detectedLanguage = 'hi';
-        } else if (detectedLanguage === 'eng') {
-            this.setSessionLanguage('en', 'ENGLISH_STT_NORMALIZE');
-            detectedLanguage = 'en';
+        // Evaluate language through intelligent state machine
+        // Prevents switching on short words ("haan", "achha", "sare", "avunu", "okay") or code-switching
+        const langEval = this.languageStateMachine.evaluateTurn(transcript, detectedLanguage);
+        if (langEval.shouldSwitch && langEval.targetLanguage !== this.detectedLanguage) {
+            this.setSessionLanguage(langEval.targetLanguage, langEval.reason);
+            detectedLanguage = this.detectedLanguage;
+        } else {
+            detectedLanguage = this.detectedLanguage;
         }
 
         console.log(`[CallSession] Caller said: "${transcript}" (Lang: ${detectedLanguage}, TurnId: ${turnId})`);
@@ -1702,13 +1705,19 @@ export class CallSession {
             this.setConversationState(ConversationStates.SPEAKING, 'llm_speaking');
             this.logDiagnostic('remo_started_speaking', { turnId, text: spokenResponse, source: 'LLM' });
 
-            // FIX-1: Play remaining or full LLM response BEFORE clearing isProcessingTurn
+            // Safe streaming: Play only the remaining sentences if an early phrase was already dispatched
             if (firstSentenceDispatched) {
-                const emitted = (reply.emittedSentences && reply.emittedSentences.length > 0)
-                    ? reply.emittedSentences[0]
-                    : '';
-                const remainder = spokenResponse.replace(emitted, '').trim();
-                if (remainder && remainder.length > 5 && turnId === this.currentTurnId && !this.isClosed) {
+                let remainder = spokenResponse;
+                if (Array.isArray(reply.emittedSentences) && reply.emittedSentences.length > 0) {
+                    for (const em of reply.emittedSentences) {
+                        if (em && remainder.startsWith(em)) {
+                            remainder = remainder.slice(em.length).trim();
+                        } else if (em) {
+                            remainder = remainder.replace(em, '').trim();
+                        }
+                    }
+                }
+                if (remainder && remainder.length > 3 && turnId === this.currentTurnId && !this.isClosed) {
                     console.log(`[CallSession] Streaming remainder sentence to TTS: "${remainder.slice(0, 50)}..."`);
                     await this.playAiAudio(remainder);
                 }
