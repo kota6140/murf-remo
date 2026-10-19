@@ -857,6 +857,24 @@
                   <p style="font-size: 0.72rem; color: #94A3B8; margin-top: 8px;">Supports .xlsx, .xls, and .csv formats
                   </p>
                 </div>
+
+                <!-- Document for these calls (same as step 4 of the Create Campaign popup) -->
+                <div class="form-group-wrap" id="qc-doc-wrap" style="margin-top: 16px;">
+                  <label class="form-label-bold" id="qc-label-pdf-upload">Upload Job Description Document (.pdf, .docx, .doc) (Required)</label>
+                  <div class="upload-dropzone" id="qc-pdf-dropzone" style="padding: 20px; border-width: 1.5px; cursor: pointer; position: relative;">
+                    <input type="file" id="qc-pdf-file-input" accept=".pdf,.docx,.doc" aria-label="Upload PDF or Word Document">
+                    <div style="display: flex; align-items: center; justify-content: center; gap: 12px;">
+                      <span style="font-size: 1.6rem;">📄</span>
+                      <div style="text-align: left; flex: 1;">
+                        <div style="font-weight: 700; font-size: 0.85rem; color: #0F172A;" id="qc-pdf-status-text">Click to choose or drop PDF or Word document (.docx, .doc)</div>
+                        <div style="font-size: 0.72rem; color: #64748B;" id="qc-pdf-sub-text">Extracts job title, core requirements, screening questions and notice period</div>
+                      </div>
+                      <button type="button" class="btn-card-secondary" id="qc-btn-remove-staged-pdf" style="display: none; padding: 4px 10px; font-size: 0.75rem; color: #DC2626; z-index: 2;" title="Remove this document">✕ Remove</button>
+                    </div>
+                  </div>
+                  <!-- Extracted knowledge preview: copied from the popup's preview the first time a document is read -->
+                  <div id="qc-preview-host"></div>
+                </div>
               </div>
 
               <!-- Right: Staged File Preview & Launch Box -->
@@ -2519,6 +2537,10 @@
       let stagedCreateExcelFile = null;
       let stagedExtractedData = null;
       let stagedQuestionPlan = null;
+      // Quick launch (Upload Excel -> Start Calling) document
+      let qcDocFile = null;
+      let qcDocExtracted = null;
+      let qcDocPlan = null;
       let cachedCampaignsList = [];
 
       const serviceDefaults = {
@@ -2569,6 +2591,9 @@
           btn.classList.add('active');
           selectedCampaignService = btn.getAttribute('data-service') || 'recruitment';
           updateCampaignPreview();
+          // A document is read for one work type, so a new tab starts without one.
+          resetQuickDocument();
+          updateQuickDocLabels(selectedCampaignService);
         });
       });
 
@@ -2647,6 +2672,211 @@
         }
       }
 
+      // ----------------------------------------------------------------------
+      // Quick launch document (same as step 4 of the Create Campaign popup)
+      // ----------------------------------------------------------------------
+      const qcEl = (id) => document.getElementById('qc-' + id);
+      const QC_DOC_TEXT = {
+        recruitment: ['Upload Job Description Document (.pdf, .docx, .doc) (Required)', 'Extracts job title, core requirements, screening questions and notice period'],
+        sales: ['Upload Product Guide & Sales Document (.pdf, .docx, .doc)', 'Extracts product features, pricing, value propositions, objection handling & custom questions'],
+        appointment: ['Upload Business Info & Booking Rules Document (.pdf, .docx, .doc)', 'Extracts services, working hours, location, booking rules and FAQs'],
+        receptionist: ['Upload Front-Desk Info & FAQ Document (.pdf, .docx, .doc)', 'Extracts what the front desk may answer: services, hours, departments, FAQs and message policy'],
+        support: ['Upload Support SOP & FAQ Document (.pdf, .docx, .doc)', 'Extracts product procedures, troubleshooting steps, FAQs, and escalation policies']
+      };
+      const QC_DOC_IDLE_TEXT = 'Click to choose or drop PDF or Word document (.docx, .doc)';
+
+      function updateQuickDocLabels(service) {
+        const text = QC_DOC_TEXT[service] || QC_DOC_TEXT.support;
+        const label = qcEl('label-pdf-upload');
+        const sub = qcEl('pdf-sub-text');
+        if (label) label.textContent = text[0];
+        if (sub) sub.textContent = text[1];
+      }
+
+      // The preview is a copy of the popup's, so both always show the same fields. Its ids get a "qc-" prefix.
+      function ensureQuickPreview() {
+        if (qcEl('camp-extracted-preview')) return;
+        const source = document.getElementById('camp-extracted-preview');
+        const host = qcEl('preview-host');
+        if (!source || !host) return;
+        const copy = source.cloneNode(true);
+        [copy, ...copy.querySelectorAll('[id]')].forEach(el => { if (el.id) el.id = 'qc-' + el.id; });
+        copy.style.display = 'none';
+        host.appendChild(copy);
+      }
+
+      function resetQuickDocument() {
+        const input = qcEl('pdf-file-input');
+        const status = qcEl('pdf-status-text');
+        const removeBtn = qcEl('btn-remove-staged-pdf');
+        const preview = qcEl('camp-extracted-preview');
+        const questions = qcEl('camp-generated-questions');
+        if (input) input.value = '';
+        if (status) status.textContent = QC_DOC_IDLE_TEXT;
+        if (removeBtn) removeBtn.style.display = 'none';
+        if (preview) preview.style.display = 'none';
+        if (questions) questions.innerHTML = '';
+        qcDocFile = null;
+        qcDocExtracted = null;
+        qcDocPlan = null;
+      }
+
+      function fillQuickDocFields(service, d) {
+        const set = (id, v) => { const el = qcEl(id); if (el) el.value = v || ''; };
+        if (service === 'appointment' || service === 'receptionist') {
+          const p = service === 'appointment' ? 'appt' : 'recep';
+          set(`edit-${p}-company`, d.company_name);
+          set(`edit-${p}-services`, (d.services_offered || []).join(', '));
+          set(`edit-${p}-hours`, d.working_hours);
+          set(service === 'appointment' ? 'edit-appt-rules' : 'edit-recep-policy', service === 'appointment' ? d.booking_rules : d.message_policy);
+        } else if (service === 'recruitment') {
+          set('edit-jd-role', d.job_title);
+          set('edit-jd-skills', (d.required_skills || []).join(', '));
+          set('edit-jd-exp', d.min_experience_years || '');
+          set('edit-jd-notice', d.max_notice_period_days ? `${d.max_notice_period_days} days` : (d.notice_period_description || '30 days'));
+          set('edit-jd-location', d.work_arrangement);
+        } else if (service === 'sales') {
+          set('edit-sales-product', d.product_name);
+          set('edit-sales-company', d.company_name);
+          set('edit-sales-value', (d.value_propositions || []).join('; '));
+          set('edit-sales-pricing', d.pricing_summary);
+          set('edit-sales-cta', d.desired_outcome);
+        } else if (service === 'support') {
+          set('edit-support-product', d.product_name);
+          set('edit-support-topics', (d.supported_topics || []).join(', '));
+          set('edit-support-escalation', d.escalation_policy);
+        }
+      }
+
+      // Copies the admin's edits in the preview into the extracted data (same rules as the popup).
+      function collectQuickDocEdits(service, d) {
+        const get = (id) => (qcEl(id)?.value || '').trim();
+        const list = (v, sep) => v.split(sep).map(s => s.trim()).filter(Boolean);
+        if (service === 'recruitment') {
+          if (get('edit-jd-role')) d.job_title = get('edit-jd-role');
+          if (get('edit-jd-skills')) d.required_skills = list(get('edit-jd-skills'), ',');
+          const exp = parseInt(get('edit-jd-exp'), 10);
+          if (!isNaN(exp)) d.min_experience_years = exp;
+          if (get('edit-jd-location')) d.work_arrangement = get('edit-jd-location');
+          if (get('edit-jd-notice')) d.notice_period_description = get('edit-jd-notice');
+        } else if (service === 'sales') {
+          if (get('edit-sales-product')) d.product_name = get('edit-sales-product');
+          if (get('edit-sales-company')) d.company_name = get('edit-sales-company');
+          if (get('edit-sales-value')) d.value_propositions = list(get('edit-sales-value'), ';');
+          if (get('edit-sales-pricing')) d.pricing_summary = get('edit-sales-pricing');
+          if (get('edit-sales-cta')) d.desired_outcome = get('edit-sales-cta');
+        } else if (service === 'support') {
+          if (get('edit-support-product')) d.product_name = get('edit-support-product');
+          if (get('edit-support-topics')) d.supported_topics = list(get('edit-support-topics'), ',');
+          if (get('edit-support-escalation')) d.escalation_policy = get('edit-support-escalation');
+        } else if (service === 'appointment' || service === 'receptionist') {
+          const p = service === 'appointment' ? 'appt' : 'recep';
+          if (get(`edit-${p}-company`)) d.company_name = get(`edit-${p}-company`);
+          if (get(`edit-${p}-services`)) d.services_offered = list(get(`edit-${p}-services`), ',');
+          if (get(`edit-${p}-hours`)) d.working_hours = get(`edit-${p}-hours`);
+          if (service === 'appointment' && get('edit-appt-rules')) d.booking_rules = get('edit-appt-rules');
+          if (service === 'receptionist' && get('edit-recep-policy')) d.message_policy = get('edit-recep-policy');
+        }
+        return d;
+      }
+
+      async function handleQuickDocSelection(file) {
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (!['pdf', 'docx', 'doc'].includes(ext)) {
+          alert('Please select a valid PDF or Word document (.pdf, .docx, .doc)');
+          return;
+        }
+        const service = selectedCampaignService;
+        const status = qcEl('pdf-status-text');
+        const removeBtn = qcEl('btn-remove-staged-pdf');
+        const alertBox = document.getElementById('campaign-status-alert');
+        ensureQuickPreview();
+
+        if (status) {
+          status.innerHTML = `<span class="auth-spinner" style="width:12px;height:12px;margin-right:6px;"></span> Extracting instructions & custom questions from ${ext.toUpperCase()} document...`;
+        }
+
+        try {
+          const res = await AdminClient.previewCampaignDocument(file, service);
+          // The tab may have changed while the document was being read.
+          if (service !== selectedCampaignService) return;
+          qcDocFile = file;
+          qcDocExtracted = res.extractedData || {};
+          qcDocPlan = res.questionPlan || [];
+
+          if (status) {
+            status.innerHTML = `<span style="color:#16A34A;font-weight:700;">✓ ${file.name}</span> (${(file.size / 1024).toFixed(1)} KB — Extracted & Ready)`;
+          }
+          if (removeBtn) removeBtn.style.display = 'inline-block';
+          const badge = qcEl('camp-extracted-doctype-badge');
+          if (badge) badge.textContent = ext.toUpperCase();
+
+          ['recruitment', 'sales', 'support', 'appointment', 'receptionist'].forEach(s => {
+            const box = qcEl(`preview-fields-${s}`);
+            if (box) box.style.display = s === service ? 'block' : 'none';
+          });
+          fillQuickDocFields(service, qcDocExtracted);
+
+          const questions = qcEl('camp-generated-questions');
+          if (questions) {
+            questions.innerHTML = qcDocPlan.length === 0
+              ? `<div style="color:#94A3B8; font-size:0.75rem;">No questions generated.</div>`
+              : qcDocPlan.map((q, idx) => `
+                <div class="question-plan-item" style="padding:6px 10px; background:#FFFFFF; border:1px solid #E2E8F0; border-radius:6px; margin-bottom:6px; font-size:0.75rem; display:flex; gap:8px; align-items:flex-start;">
+                  <span class="badge-pill" style="font-size:0.65rem; background:#EFF6FF; color:#2563EB; font-weight:700; flex:none;">${q.stage || 'Q' + (idx + 1)}</span>
+                  <span style="color:#0F172A; flex:1;">${q.text}</span>
+                </div>`).join('');
+          }
+          const preview = qcEl('camp-extracted-preview');
+          if (preview) preview.style.display = 'block';
+          if (alertBox) alertBox.style.display = 'none';
+        } catch (err) {
+          if (status) status.textContent = QC_DOC_IDLE_TEXT;
+          if (removeBtn) removeBtn.style.display = 'none';
+          if (alertBox) {
+            alertBox.className = 'admin-alert-banner error';
+            alertBox.textContent = `Document Analysis Error: ${err.message}`;
+            alertBox.style.display = 'flex';
+          }
+        }
+      }
+
+      (function setupQuickDocDropzone() {
+        const dropzone = qcEl('pdf-dropzone');
+        const input = qcEl('pdf-file-input');
+        const removeBtn = qcEl('btn-remove-staged-pdf');
+        if (!dropzone || !input) return;
+        updateQuickDocLabels(selectedCampaignService);
+
+        dropzone.addEventListener('click', (e) => {
+          if (e.target !== input && e.target !== removeBtn) input.click();
+        });
+        if (removeBtn) {
+          removeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            resetQuickDocument();
+          });
+        }
+        ['dragenter', 'dragover'].forEach(name => dropzone.addEventListener(name, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dropzone.style.borderColor = '#2563EB';
+        }));
+        ['dragleave', 'drop'].forEach(name => dropzone.addEventListener(name, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dropzone.style.borderColor = '';
+        }));
+        dropzone.addEventListener('drop', async (e) => {
+          const files = e.dataTransfer.files;
+          if (files && files.length > 0) await handleQuickDocSelection(files[0]);
+        });
+        input.addEventListener('change', async () => {
+          if (input.files && input.files.length > 0) await handleQuickDocSelection(input.files[0]);
+        });
+      })();
+
       // Start Calling Button
       const startCampaignBtn = document.getElementById('btn-start-campaign');
       if (startCampaignBtn) {
@@ -2654,11 +2884,29 @@
           e.preventDefault();
           const alertBox = document.getElementById('campaign-status-alert');
 
+          // Recruitment screening needs its Job Description; the other work types can start without a document.
+          if (selectedCampaignService === 'recruitment' && !qcDocExtracted) {
+            if (alertBox) {
+              alertBox.className = 'admin-alert-banner error';
+              alertBox.textContent = 'A Job Description PDF is required for recruitment screening campaigns.';
+              alertBox.style.display = 'flex';
+            }
+            return;
+          }
+
           startCampaignBtn.disabled = true;
           startCampaignBtn.innerHTML = `<span class="auth-spinner"></span> <span>Initiating AI Telephony...</span>`;
 
           try {
-            const res = await AdminClient.startCalling(selectedCampaignService, stagedFileId, getSelectedAgentId());
+            // A document read on this page goes with the sheet, so the calls use its facts and question plan.
+            const documentInfo = qcDocExtracted
+              ? {
+                  filename: qcDocFile ? qcDocFile.name : 'document',
+                  extractedData: collectQuickDocEdits(selectedCampaignService, qcDocExtracted),
+                  questionPlan: qcDocPlan || []
+                }
+              : null;
+            const res = await AdminClient.startCalling(selectedCampaignService, stagedFileId, getSelectedAgentId(), documentInfo);
 
             if (alertBox) {
               alertBox.className = 'admin-alert-banner success';

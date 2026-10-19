@@ -111,7 +111,7 @@ const AdminClient = {
    * Generic Campaign Start for any service
    * POST /api/admin/{service}/start
    */
-  async startCalling(service, fileId = 'temp-file-id', agentId = '') {
+  async startCalling(service, fileId = 'temp-file-id', agentId = '', documentInfo = null) {
     const validServices = ['recruitment', 'sales', 'support', 'appointment', 'receptionist'];
     const s = String(service || '').toLowerCase();
     if (!validServices.includes(s)) {
@@ -120,7 +120,7 @@ const AdminClient = {
 
     return this.request(`/api/admin/${s}/start`, {
       method: 'POST',
-      body: JSON.stringify({ fileId, agentId })
+      body: JSON.stringify(documentInfo ? { fileId, agentId, document: documentInfo } : { fileId, agentId })
     });
   },
 

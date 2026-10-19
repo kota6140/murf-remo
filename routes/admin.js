@@ -199,7 +199,26 @@ router.post('/:service/start', serviceFor, wrap(async (req, res) => {
     // Remember which agent (number + behaviour) this sheet's calls use before the queue starts dialling.
     const agent = await pickAgent(req, req.serviceName);
     await AgentService.stampBatch(batch.id, agent);
+
+    // A document uploaded next to the sheet (Campaigns page) is attached before dialling, so the calls use it.
+    const doc = req.body && req.body.document;
+    let docCampaignId = null;
+    if (doc && doc.extractedData && typeof doc.extractedData === 'object') {
+        const attached = await CampaignService.attachQuickLaunchDocument({
+            batchId: batch.id,
+            service: req.serviceName,
+            filename: doc.filename,
+            extractedData: doc.extractedData,
+            questionPlan: doc.questionPlan,
+            ownerUserId: req.user.id
+        });
+        docCampaignId = attached.campaignId;
+    }
+
     const result = await SERVICES[req.serviceName].startCallingCampaign(batch.id);
+    if (docCampaignId) {
+        await db.run("UPDATE campaigns SET status = 'IN_PROGRESS', updated_at = ? WHERE id = ?", [utcNow(), docCampaignId]);
+    }
     res.json({ success: true, ...result, agent: agent ? { id: agent.id, name: agent.name, phoneNumber: agent.phone_number } : null });
 }));
 

@@ -319,6 +319,46 @@ export class CampaignService {
     }
 
     /**
+     * Campaigns page quick launch (upload a sheet, then Start Calling): gives the sheet a campaign that holds
+     * the uploaded document's facts and question plan, so the calls on that sheet use the document.
+     * If the sheet already belongs to a campaign, that campaign's document is replaced.
+     */
+    static async attachQuickLaunchDocument({ batchId, service, filename, extractedData, questionPlan, ownerUserId = null }) {
+        await ensureCampaignSchema();
+        const batch = await db.get('SELECT * FROM batches WHERE id = ?', [batchId]);
+        if (!batch) throw new Error('That contact sheet was not found. Upload it again.');
+
+        const now = utcNow();
+        const plan = Array.isArray(questionPlan) ? questionPlan : [];
+        const docName = String(filename || 'document').slice(0, 255);
+
+        if (batch.campaign_id) {
+            await db.run(
+                'UPDATE campaigns SET pdf_filename = ?, extracted_data = ?, question_plan = ?, updated_at = ? WHERE id = ?',
+                [docName, JSON.stringify(extractedData), JSON.stringify(plan), now, batch.campaign_id]);
+            return { campaignId: batch.campaign_id };
+        }
+
+        const campaign = await this.createCampaign({
+            name: `Quick launch - ${batch.filename}`,
+            service,
+            description: 'Started from the Campaigns page with an uploaded document.',
+            extracted_data: extractedData,
+            question_plan: plan,
+            ownerUserId
+        });
+        await db.run(`
+            UPDATE campaigns SET
+                pdf_filename = ?, excel_filename = ?, batch_id = ?, status = 'READY',
+                total_contacts = ?, valid_contacts = ?, invalid_contacts = ?, pending_calls = ?, updated_at = ?
+            WHERE id = ?
+        `, [docName, batch.filename, batchId, batch.total_rows || 0, batch.valid_rows || 0, batch.invalid_rows || 0, batch.valid_rows || 0, now, campaign.id]);
+        await db.run('UPDATE batches SET campaign_id = ?, updated_at = ? WHERE id = ?', [campaign.id, now, batchId]);
+        await db.run('UPDATE contacts SET campaign_id = ?, updated_at = ? WHERE batch_id = ?', [campaign.id, now, batchId]);
+        return { campaignId: campaign.id };
+    }
+
+    /**
      * Starts or resumes calling for a campaign.
      */
     static async startCampaign(campaignId, ownerUserId = null) {
