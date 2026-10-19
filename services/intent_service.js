@@ -507,12 +507,17 @@ export default class IntentService {
                 /\b(ledu|kadu|vaddu)\b/.test(clean)
             );
 
-            const isYes = !hasNegative && (
-                AFFIRMATIVE_TERMS.has(clean) ||
+            // Fast-path yes/no is strictly for brief affirmative/negative acknowledgments (e.g. "yes", "sure", "ok", "works for me").
+            // Substantive candidate/prospect answers (> 3 words) must NEVER be hijacked as a bare yes/no,
+            // e.g. "Yes, I have worked with React, Next.js and Node.js..." contains substantive technical skills.
+            const isKnownAffirmativePhrase = AFFIRMATIVE_TERMS.has(clean) || words.every(w => AFFIRMATIVE_TERMS.has(w));
+            const isShortAffirmativePrefix = (words.length <= 3) && (
                 clean.startsWith('yes') || clean.startsWith('yeah') || clean.startsWith('yep') || clean.startsWith('yup') ||
                 clean.startsWith('sure') || clean.startsWith('ok') || clean.startsWith('okay') || clean.startsWith('fine') ||
                 clean.startsWith('alright') || clean.startsWith('haan') || clean.startsWith('ha ') || clean.startsWith('avunu') ||
-                clean.startsWith('sare') || clean.startsWith('alage') || clean.startsWith('bilkul') ||
+                clean.startsWith('sare') || clean.startsWith('alage') || clean.startsWith('bilkul')
+            );
+            const isAffirmativeKeywordMatch = (words.length <= 5) && (
                 clean.includes('works for me') || clean.includes('work for me') || clean.includes('that works') || clean.includes('this works') ||
                 clean.includes('sounds good') || clean.includes('sounds great') || clean.includes('sounds fine') ||
                 clean.includes('have time') || clean.includes('am free') || clean.includes('im free') ||
@@ -520,11 +525,16 @@ export default class IntentService {
                 clean.includes('i can talk') || clean.includes('go ahead') || clean.includes('go for it') || clean.includes('why not') ||
                 clean.includes('fine with me') || clean.includes('sure thing') || clean.includes('lets talk') || clean.includes('we can talk') ||
                 clean.includes('you can speak') || clean.includes('tell me') || clean.includes('boliye') || clean.includes('cheppandi') ||
-                clean.includes('kudurutundi') || clean.includes('kudarutundi') || clean.includes('parvaledu') || clean.includes('samayam undi') || clean.includes('time undi') ||
-                words.every(w => AFFIRMATIVE_TERMS.has(w))
+                clean.includes('kudurutundi') || clean.includes('kudarutundi') || clean.includes('parvaledu') || clean.includes('samayam undi') || clean.includes('time undi')
             );
 
-            const isNo = NEGATIVE_TERMS.has(clean) || clean.startsWith('no ') || clean === 'no' || clean.includes('not right now') || clean.includes('not now') || words.every(w => NEGATIVE_TERMS.has(w));
+            const isYes = !hasNegative && (isKnownAffirmativePhrase || isShortAffirmativePrefix || isAffirmativeKeywordMatch);
+
+            const isKnownNegativePhrase = NEGATIVE_TERMS.has(clean) || words.every(w => NEGATIVE_TERMS.has(w));
+            const isShortNegativePrefix = (words.length <= 3) && (clean.startsWith('no ') || clean === 'no');
+            const isNegativeKeywordMatch = (words.length <= 4) && (clean.includes('not right now') || clean.includes('not now'));
+
+            const isNo = isKnownNegativePhrase || isShortNegativePrefix || isNegativeKeywordMatch;
 
             // -------------------------------------------------------------
             // 9. CONTEXT-AWARE YES
