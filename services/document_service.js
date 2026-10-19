@@ -240,9 +240,9 @@ ${text.slice(0, 10000)}
 Extract sales positioning, approved product/service claims, pricing, target audience, approved FAQs, and objection handling from the document below into strict JSON.
 
 Rules:
-1. Extract the EXACT product or service name described in the document (do NOT default to Scorelabs unless the document is specifically about Scorelabs).
+1. Extract the product or service name. If multiple services or IT solutions are offered, list them clearly in product_name.
 2. Extract the company/organization name providing this product or service.
-3. Extract value propositions and key features directly from the document text.
+3. Extract value propositions and key features / services offered directly from the document text. Be comprehensive with all services mentioned.
 4. Extract pricing models, subscription tiers, or cost structure if mentioned (or "Custom quote" if not specified).
 5. Extract objection handling: what objections might prospects raise according to this document and what are the factual counters?
 6. Extract approved FAQs: question & answer pairs grounded in the document.
@@ -250,26 +250,25 @@ Rules:
 
 Return ONLY a valid JSON object matching this schema:
 {
-  "product_name": "CloudFleet Enterprise Fleet Management",
-  "company_name": "FleetScale Technologies",
-  "target_audience": "Logistics managers, operations directors, and transport fleets",
-  "opening_greeting": "Hi, this is Remo calling on behalf of FleetScale Technologies. We help logistics companies cut fuel costs and track vehicle maintenance in real time. Do you have a brief moment to talk about your fleet operations?",
+  "product_name": "IT Solutions (Custom Software, Web & Mobile Apps, ERP/CRM, QA Testing)",
+  "company_name": "Scorelabs Inc.",
+  "target_audience": "Businesses seeking specialized software or IT solutions",
+  "opening_greeting": "Hello, this is Remo calling on behalf of Scorelabs Inc. We help businesses with IT solutions. Is now a convenient time for a brief conversation?",
   "value_propositions": [
-    "Real-time GPS tracking and fuel consumption monitoring",
-    "Predictive engine maintenance alerts reducing downtime by 35%"
+    "Software tailored to business workflows and requirements"
   ],
   "key_features": [
-    "Plug-and-play OBD-II telematics devices",
-    "Automated driver route optimization and compliance logs"
+    "Custom Software Development",
+    "Website and Mobile App Development"
   ],
-  "pricing_summary": "Starts at $29 per vehicle per month with annual contract",
+  "pricing_summary": "Custom quote based on scope and timeline",
   "approved_faqs": [
-    { "question": "Does it support refrigerated trailers?", "answer": "Yes, we have specialized temperature and humidity wireless sensors." }
+    { "question": "What is your pricing?", "answer": "Pricing depends on project scope, technical requirements, and timeline." }
   ],
   "objections_and_counters": [
-    { "objection": "We already use GPS tracking", "counter": "Most fleets use basic GPS; our platform integrates predictive maintenance and fuel telemetry that typically saves an additional 15%." }
+    { "objection": "We already have an IT vendor", "counter": "We would be glad to be considered for future projects or additional support." }
   ],
-  "call_to_action": "Schedule a 15-minute live platform demonstration"
+  "call_to_action": "Schedule a 15-minute live conversation with our team"
 }
 
 Document Text:
@@ -280,9 +279,9 @@ ${text.slice(0, 10000)}
         const llmRes = await LLMService.generate({
             systemPrompt: 'You extract sales product and enablement material into factual JSON. Extract only what is in the document.',
             messages: [{ role: 'user', content: prompt }],
-            maxTokens: 1400,
+            maxTokens: 2500,
             jsonMode: true,
-            timeoutMs: 12000
+            timeoutMs: 20000
         });
 
         const extracted = llmRes.parsedJson || this._fallbackSalesHeuristic(text, filename);
@@ -484,7 +483,14 @@ ${text.slice(0, 10000)}
         const outcomeMatch = text.match(/(?:Outcome|CTA|Call to Action|Goal)\s*[:\-]\s*([^\n\r]+)/i);
         const pricingMatch = text.match(/(?:Pricing|Price|Cost|Plans?)\s*[:\-]\s*([^\n\r]+)/i);
 
-        const prodName = prodMatch ? prodMatch[1].trim() : (cleanName || "Scorelabs IT & Software Solutions");
+        // Extract any bullet points or services from text if available
+        const extractedServices = [];
+        const serviceLines = text.match(/(?:(?:Custom Software|Website|Mobile App|ERP|CRM|QA|Software Testing|Technical Support|Digital Marketing)[^\n\r]+)/gi);
+        if (serviceLines && serviceLines.length > 0) {
+            extractedServices.push(...serviceLines.slice(0, 6).map(s => s.trim()));
+        }
+
+        const prodName = prodMatch ? prodMatch[1].trim() : (cleanName || "IT & Software Solutions");
         const compName = compMatch ? compMatch[1].trim() : "Scorelabs Inc.";
         const cta = outcomeMatch ? outcomeMatch[1].trim() : "Schedule a brief exploratory discovery session with our technical team";
 
@@ -492,9 +498,9 @@ ${text.slice(0, 10000)}
             product_name: prodName,
             company_name: compName,
             target_audience: "Businesses seeking specialized solutions",
-            opening_greeting: `Hello, this is Remo calling on behalf of ${compName} regarding ${prodName}. Is now a convenient time for a brief conversation?`,
+            opening_greeting: `Hello, this is Remo calling on behalf of ${compName}. We help businesses with IT solutions. Is now a convenient time for a brief conversation?`,
             value_propositions: ["Custom solutions tailored to operational requirements"],
-            key_features: ["Cloud-enabled platform capabilities"],
+            key_features: extractedServices.length > 0 ? extractedServices : ["Custom Software Development", "Website & Mobile App Development", "ERP & CRM Solutions"],
             pricing_summary: pricingMatch ? pricingMatch[1].trim() : "Custom quote based on scope and timeline",
             approved_faqs: [],
             objections_and_counters: [],

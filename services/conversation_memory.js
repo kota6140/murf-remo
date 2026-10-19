@@ -97,11 +97,15 @@ export class ConversationMemory {
     /**
      * Checks if a question or its semantic equivalent has already been asked.
      */
+    /**
+     * Checks if a question or its semantic equivalent has already been asked.
+     */
     hasAskedQuestion(questionId, questionText = '') {
         if (!questionId && !questionText) return false;
         return this.questionsAsked.some(q => 
             (questionId && q.id === questionId) ||
-            (questionText && this._textSimilarity(q.text, questionText) > 0.8)
+            (questionText && this._textSimilarity(q.text, questionText) > 0.75) ||
+            (questionText && this.isSemanticallyDuplicateQuestion(q.text, questionText))
         );
     }
 
@@ -111,6 +115,33 @@ export class ConversationMemory {
 
     isQuestionAnswered(questionId) {
         return this.questionsAnswered.some(q => q.id === questionId);
+    }
+
+    /**
+     * Determines whether two questions are asking for the exact same information
+     * (e.g. project requirements, service needed, tech stack, follow-up).
+     */
+    isSemanticallyDuplicateQuestion(q1 = '', q2 = '') {
+        if (!q1 || !q2) return false;
+        const s1 = q1.toLowerCase().trim();
+        const s2 = q2.toLowerCase().trim();
+        if (s1 === s2) return true;
+
+        const isDiscovery = q => /what you(?:'re| are) looking for|main requirements|explain your project|goal of your|tell me more about the project|project requirements|what you need/i.test(q);
+        const isServiceNeed = q => /service or project you(?:'re| are) currently looking for|looking for any services that we could help/i.test(q);
+        const isTechStack = q => /technical preferences|recommend the best approach|what technology|tech stack|programming language/i.test(q);
+        const isAdditional = q => /anything else you(?:'d| would) like us to know|anything else to add/i.test(q);
+        const isFollowup = q => /send you some information|discuss your requirements with our team|company information/i.test(q);
+        const isPermission = q => /good time to talk|talk for a minute|convenient time/i.test(q);
+
+        if (isDiscovery(s1) && isDiscovery(s2)) return true;
+        if (isServiceNeed(s1) && isServiceNeed(s2)) return true;
+        if (isTechStack(s1) && isTechStack(s2)) return true;
+        if (isAdditional(s1) && isAdditional(s2)) return true;
+        if (isFollowup(s1) && isFollowup(s2)) return true;
+        if (isPermission(s1) && isPermission(s2)) return true;
+
+        return false;
     }
 
     /**
@@ -230,6 +261,13 @@ export class ConversationMemory {
      */
     _extractInlineFacts(questionId, answer) {
         const clean = (answer || '').trim();
+        const lower = clean.toLowerCase();
+
+        // Check if customer called out repetition ("I already told you", "I just told you")
+        if (/already told|just told|already said|just said|i told you/i.test(lower)) {
+            this.factsCollected.customer_called_out_repetition = true;
+        }
+
         // Notice period pattern: "30 days", "immediate", "1 month"
         if (questionId?.includes('notice') || /notice|join/i.test(clean)) {
             const daysMatch = clean.match(/(\d+)\s*days?/i);
@@ -253,23 +291,56 @@ export class ConversationMemory {
             this.factsCollected.email = emailMatch[0];
         }
 
-        // Service Needed pattern
-        if (/website|web dev|mobile app|software|erp|crm|testing|cloud|devops|digital/i.test(clean)) {
-            const sMatch = clean.match(/\b(website(?: development)?|mobile app(?: development)?|custom software|erp|crm|software testing|cloud solutions?)\b/i);
-            if (sMatch) {
-                this.factsCollected.service_needed = sMatch[0];
+        // Service Needed pattern (Sales)
+        const sMatch = clean.match(/\b(website(?: development)?|web(?: development| dev)?|mobile app(?:lication)?(?: development)?|custom software|software development|erp|crm|software testing|cloud solutions?|digital marketing|billing(?: or invoicing)? system|invoicing system|invoice system|automating business processes|process automation|automation)\b/i);
+        if (sMatch) {
+            this.factsCollected.service_needed = sMatch[0];
+        }
+
+        // Detailed requirements from compound response
+        // e.g. "I need an invoicing system with billing, payments, and subscription support"
+        if (/billing|payments?|subscriptions?|invoic|e-commerce|checkout|portal|dashboard/i.test(clean)) {
+            const reqs = [];
+            if (/billing/i.test(clean)) reqs.push('billing');
+            if (/payments?/i.test(clean)) reqs.push('payments');
+            if (/subscriptions?/i.test(clean)) reqs.push('subscriptions');
+            if (/invoic/i.test(clean)) reqs.push('invoicing');
+            if (/e-commerce/i.test(clean)) reqs.push('e-commerce');
+            if (reqs.length > 0) {
+                this.factsCollected.key_requirements = reqs;
+                if (!this.factsCollected.project_description) {
+                    this.factsCollected.project_description = clean;
+                }
             }
         }
 
-        // Project timeline pattern
-        const timelineMatch = clean.match(/\b(urgent|asap|immediately|next month|within \d+ (?:weeks?|months?)|in \d+ (?:weeks?|months?))\b/i);
+        // Technical preferences (or non-technical indicators)
+        if (/react|angular|vue|next\.?js|node|python|django|flask|flutter|react native|aws|azure|sql|postgres|mongodb/i.test(clean)) {
+            this.factsCollected.tech_preference = clean;
+        } else if (/don'?t know|not technical|no idea|not sure|you (?:can )?decide|whatever you recommend|recommend the best|team can recommend/i.test(clean)) {
+            this.factsCollected.tech_preference = 'Team recommendation';
+            this.factsCollected.is_non_technical = true;
+        }
+
+        // Project timeline pattern (including unusual timelines like "thousand years")
+        const timelineMatch = clean.match(/\b(urgent|asap|immediately|next month|within \d+ (?:weeks?|months?)|in \d+ (?:weeks?|months?|years?)|in a thousand years|\d+ years?)\b/i);
         if (timelineMatch) {
             this.factsCollected.project_timeline = timelineMatch[0];
+            this.factsCollected.timeline = timelineMatch[0];
         }
 
         // Callback time pattern
         if (/tomorrow|monday|tuesday|wednesday|thursday|friday|pm|am|\d+\s*(?:am|pm|o'clock)/i.test(clean)) {
             this.factsCollected.callback_time = clean;
+        }
+
+        // Follow-up preference
+        if (/no[,.]?\s*(?:i don'?t want|not interested|no information|don'?t send)/i.test(clean)) {
+            this.factsCollected.followup_preference = 'declined';
+        } else if (/email|mail|send (?:me )?(?:information|details|profile)/i.test(clean)) {
+            this.factsCollected.followup_preference = 'email';
+        } else if (/discuss|call|meeting|talk with team/i.test(clean)) {
+            this.factsCollected.followup_preference = 'meeting';
         }
     }
 
@@ -279,6 +350,8 @@ export class ConversationMemory {
         if (field === 'business_email' && this.factsCollected.business_email !== undefined) return true;
         if (field === 'service_needed' && this.factsCollected.service_needed !== undefined) return true;
         if (field === 'project_timeline' && this.factsCollected.project_timeline !== undefined) return true;
+        if (field === 'tech_preference' && this.factsCollected.tech_preference !== undefined) return true;
+        if (field === 'project_description' && this.factsCollected.project_description !== undefined) return true;
         return false;
     }
 

@@ -1,16 +1,82 @@
 import 'dotenv/config';
 import crypto from 'crypto';
+import dns from 'dns';
+import { spawn } from 'child_process';
+
+try {
+    dns.setDefaultResultOrder('ipv4first');
+} catch (_) {}
 
 /**
  * services/elevenlabs_service.js
  * Integration with ElevenLabs Voice AI:
  * - Text-to-Speech (TTS): hyper-realistic multilingual speech generation
  * - Speech-to-Text (STT): Scribe model transcription for caller speech
+ * - High-Resilience Fallback: Automatic fallback TTS & Gemini STT if ElevenLabs quota is exhausted
  * - Webhook Signature Verification (HMAC SHA-256)
  */
 
 const ttsAudioCache = new Map();
 const MAX_CACHE_SIZE = 150;
+
+function splitTextForTts(text, maxLen = 140) {
+    if (!text || typeof text !== 'string') return [];
+    const sentences = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [text];
+    const chunks = [];
+    let current = '';
+
+    for (const s of sentences) {
+        const trimmed = s.trim();
+        if (!trimmed) continue;
+        if ((current + ' ' + trimmed).trim().length <= maxLen) {
+            current = (current + ' ' + trimmed).trim();
+        } else {
+            if (current) chunks.push(current);
+            if (trimmed.length <= maxLen) {
+                current = trimmed;
+            } else {
+                const words = trimmed.split(/\s+/);
+                current = '';
+                for (const w of words) {
+                    if ((current + ' ' + w).trim().length <= maxLen) {
+                        current = (current + ' ' + w).trim();
+                    } else {
+                        if (current) chunks.push(current);
+                        current = w;
+                    }
+                }
+            }
+        }
+    }
+    if (current) chunks.push(current);
+    return chunks.length > 0 ? chunks : [text.slice(0, maxLen)];
+}
+
+function convertMp3ToUlaw8k(mp3Buffer) {
+    return new Promise((resolve) => {
+        try {
+            const ffmpeg = spawn('ffmpeg', ['-loglevel', 'error', '-i', 'pipe:0', '-ar', '8000', '-ac', '1', '-f', 'mulaw', 'pipe:1']);
+            const bufs = [];
+            ffmpeg.stdout.on('data', d => bufs.push(d));
+            ffmpeg.on('error', (err) => {
+                console.error('[ElevenLabsService] ffmpeg spawn error:', err.message);
+                resolve(null);
+            });
+            ffmpeg.on('close', code => {
+                if (code === 0 && bufs.length > 0) {
+                    resolve(Buffer.concat(bufs));
+                } else {
+                    resolve(null);
+                }
+            });
+            ffmpeg.stdin.write(mp3Buffer);
+            ffmpeg.stdin.end();
+        } catch (e) {
+            console.error('[ElevenLabsService] convertMp3ToUlaw8k exception:', e.message);
+            resolve(null);
+        }
+    });
+}
 
 function getCacheKey(text, voiceId, modelId, outputFormat) {
     return `${voiceId}_${modelId}_${outputFormat}_${String(text || '').trim().toLowerCase()}`;
@@ -414,6 +480,68 @@ export default class ElevenLabsService {
             }
         }
 
+        console.warn(`[ElevenLabsService] ElevenLabs TTS unavailable (HTTP ${res.status || 'timeout'}). Invoking high-resilience fallback TTS engine...`);
+        const fallbackBuffer = await this._synthesizeWithEmergencyFallback(text, {
+            ...options,
+            language
+        });
+        if (fallbackBuffer) {
+            this.precacheAudio(text, fallbackBuffer, { voiceId, modelId: primaryModel, outputFormat });
+            return fallbackBuffer;
+        }
+
+        return null;
+    }
+
+    /**
+     * Resilient fallback TTS: Uses Google TTS translated to 8000Hz mono mulaw via ffmpeg
+     * when ElevenLabs quota is exhausted, rate-limited, or unavailable.
+     */
+    static async _synthesizeWithEmergencyFallback(text, options = {}) {
+        if (!text || !text.trim()) return null;
+        const rawLang = options.language || 'en';
+        const lang = this.detectLanguageFromText(text, rawLang);
+        const ttsLang = (lang === 'te' ? 'te' : (lang === 'hi' ? 'hi' : 'en'));
+
+        try {
+            console.log(`[ElevenLabsService] Synthesizing speech via emergency fallback TTS (${ttsLang})...`);
+            const chunks = splitTextForTts(text, 140);
+            const audioParts = [];
+
+            for (const chunkText of chunks) {
+                const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(chunkText)}&tl=${ttsLang}&client=tw-ob`;
+                const res = await fetch(url, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+                    }
+                });
+                if (!res.ok) {
+                    console.warn(`[ElevenLabsService] Fallback TTS chunk error HTTP ${res.status}`);
+                    continue;
+                }
+                const mp3Buf = Buffer.from(await res.arrayBuffer());
+                const ulawBuf = await convertMp3ToUlaw8k(mp3Buf);
+                if (ulawBuf && ulawBuf.length > 0) {
+                    audioParts.push(ulawBuf);
+                    if (typeof options.onChunk === 'function') {
+                        // Stream in standard 640-byte frames (80ms at 8kHz)
+                        const FRAME_SIZE = 640;
+                        for (let offset = 0; offset < ulawBuf.length; offset += FRAME_SIZE) {
+                            const frame = ulawBuf.subarray(offset, Math.min(offset + FRAME_SIZE, ulawBuf.length));
+                            try { options.onChunk(frame); } catch (_) {}
+                        }
+                    }
+                }
+            }
+
+            if (audioParts.length > 0) {
+                const fullBuffer = Buffer.concat(audioParts);
+                console.log(`[ElevenLabsService] Fallback TTS complete: ${fullBuffer.length} bytes (~${Math.round((fullBuffer.length / 8000) * 1000)}ms audio)`);
+                return fullBuffer;
+            }
+        } catch (err) {
+            console.error('[ElevenLabsService] Emergency fallback TTS error:', err.message);
+        }
         return null;
     }
 
@@ -421,7 +549,12 @@ export default class ElevenLabsService {
      * Executes the HTTP POST request to ElevenLabs with streaming byte metrics and timing logs.
      */
     static async _executeTtsFetch(text, modelId, voiceId, outputFormat, timeoutMs, onChunk = null, language = 'en') {
-        const apiKey = this.getApiKey();
+        let apiKey;
+        try {
+            apiKey = this.getApiKey();
+        } catch (_) {
+            return { success: false, status: 401, errorText: 'ELEVENLABS_API_KEY is not configured.' };
+        }
         const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=${outputFormat}`;
 
         const payload = {
@@ -531,7 +664,13 @@ export default class ElevenLabsService {
             return { transcript: '', language: 'en' };
         }
 
-        const apiKey = this.getApiKey();
+        let apiKey;
+        try {
+            apiKey = this.getApiKey();
+        } catch (_) {
+            console.warn('[ElevenLabsService] ELEVENLABS_API_KEY not configured; using Gemini STT fallback.');
+            return await this._transcribeWithGeminiFallback(audioBuffer, languageCode);
+        }
         const url = 'https://api.elevenlabs.io/v1/speech-to-text';
 
         const form = new FormData();
@@ -569,7 +708,7 @@ export default class ElevenLabsService {
             } else {
                 const errText = await res.text();
                 console.error(`[ElevenLabsService] STT API error (HTTP ${res.status}):`, errText.slice(0, 160));
-                return { transcript: '', language: 'en' };
+                return await this._transcribeWithGeminiFallback(audioBuffer, languageCode);
             }
         } catch (err) {
             clearTimeout(timer);
@@ -578,7 +717,50 @@ export default class ElevenLabsService {
             } else {
                 console.error('[ElevenLabsService] STT network exception:', err.message);
             }
-            return { transcript: '', language: 'en' };
+            return await this._transcribeWithGeminiFallback(audioBuffer, languageCode);
+        }
+    }
+
+    /**
+     * Fallback speech-to-text using Gemini multimodal audio model
+     * when ElevenLabs Scribe STT is exhausted or fails.
+     */
+    static async _transcribeWithGeminiFallback(audioBuffer, languageCode = null) {
+        const geminiKey = (process.env.GEMINI_API_KEY || '').trim();
+        if (!geminiKey || !audioBuffer || audioBuffer.length === 0) {
+            return { transcript: '', language: languageCode || 'en' };
+        }
+
+        try {
+            console.log('[ElevenLabsService] Invoking Gemini audio transcription fallback...');
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-transcribe:generateContent?key=${geminiKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{
+                        parts: [
+                            { text: 'Transcribe this spoken audio verbatim. Return only the exact transcription text.' },
+                            { inlineData: { mimeType: 'audio/wav', data: audioBuffer.toString('base64') } }
+                        ]
+                    }]
+                })
+            });
+
+            if (!res.ok) {
+                const errText = await res.text();
+                console.warn('[ElevenLabsService] Gemini transcription fallback warning:', res.status, errText.slice(0, 100));
+                return { transcript: '', language: languageCode || 'en' };
+            }
+
+            const data = await res.json();
+            const part = data?.candidates?.[0]?.content?.parts?.[0];
+            const transcript = (part?.audioTranscription?.text || part?.text || '').trim();
+            const detectedLang = this.detectLanguageFromText(transcript, languageCode || 'en');
+            console.log(`[ElevenLabsService] Gemini STT fallback transcript: "${transcript}" (Lang: ${detectedLang})`);
+            return { transcript, language: detectedLang };
+        } catch (e) {
+            console.error('[ElevenLabsService] Gemini STT fallback exception:', e.message);
+            return { transcript: '', language: languageCode || 'en' };
         }
     }
 
