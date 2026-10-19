@@ -481,12 +481,83 @@
               </div>
             </div>
 
+            <!-- Campaign Search & Filter Controls Toolbar -->
+            <div class="campaigns-controls-wrapper">
+              <div class="campaign-search-bar">
+                <span class="campaign-search-icon" aria-hidden="true">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                  </svg>
+                </span>
+                <input 
+                  type="text" 
+                  id="camp-search-input" 
+                  class="campaign-search-input" 
+                  placeholder="Search campaigns by name, role, candidate sheet, or ID..." 
+                  aria-label="Search campaigns"
+                  autocomplete="off"
+                />
+                <button type="button" id="camp-search-clear" class="campaign-search-clear-btn" title="Clear search" aria-label="Clear search" style="display: none;">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              </div>
+
+              <div class="campaign-filter-dropdowns">
+                <div class="camp-select-group">
+                  <span class="camp-select-group-icon">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                  </span>
+                  <select id="camp-service-filter-select" class="camp-toolbar-select" aria-label="Filter by Service Workflow">
+                    <option value="all">All Workflows (Rec & Sales)</option>
+                    <option value="recruitment">Recruitment (Rec)</option>
+                    <option value="sales">Sales</option>
+                    <option value="support">Customer Support</option>
+                    <option value="appointment">Appointment Setting</option>
+                    <option value="receptionist">Receptionist</option>
+                  </select>
+                </div>
+
+                <div class="camp-select-group">
+                  <span class="camp-select-group-icon">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  </span>
+                  <select id="camp-status-filter-select" class="camp-toolbar-select" aria-label="Filter by Status">
+                    <option value="all">All Statuses</option>
+                    <option value="ACTIVE">Active / In-Progress</option>
+                    <option value="READY">Ready</option>
+                    <option value="DRAFT">Draft</option>
+                    <option value="PAUSED">Paused</option>
+                    <option value="COMPLETED">Completed</option>
+                  </select>
+                </div>
+
+                <div class="camp-select-group">
+                  <span class="camp-select-group-icon">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+                  </span>
+                  <select id="camp-sort-select" class="camp-toolbar-select" aria-label="Sort Campaigns">
+                    <option value="newest">Newest First</option>
+                    <option value="oldest">Oldest First</option>
+                    <option value="name_asc">Name (A-Z)</option>
+                    <option value="contacts_desc">Most Contacts</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
             <!-- Campaign Filter Pills -->
             <div class="campaigns-filter-bar">
               <button type="button" class="camp-filter-pill active" data-filter="all">All Campaigns (<span id="cnt-filter-all">0</span>)</button>
               <button type="button" class="camp-filter-pill" data-filter="recruitment">Recruitment (<span id="cnt-filter-rec">0</span>)</button>
               <button type="button" class="camp-filter-pill" data-filter="sales">Sales (<span id="cnt-filter-sales">0</span>)</button>
               <button type="button" class="camp-filter-pill" data-filter="support">Support (<span id="cnt-filter-support">0</span>)</button>
+              <button type="button" class="camp-filter-pill" data-filter="appointment">Appointment Setting (<span id="cnt-filter-appointment">0</span>)</button>
+              <button type="button" class="camp-filter-pill" data-filter="receptionist">Receptionist (<span id="cnt-filter-receptionist">0</span>)</button>
+              <span id="camp-search-count-pill" class="camp-search-count-pill" style="display: none;">0 matches</span>
             </div>
 
             <!-- Saved Campaigns Cards Grid -->
@@ -2264,6 +2335,9 @@
       let selectedCampaignService = 'recruitment';
       let stagedFileId = 'candidates_2026_batch_01';
       let activeCampaignFilter = 'all';
+      let activeCampaignSearch = '';
+      let activeCampaignStatus = 'all';
+      let activeCampaignSort = 'newest';
       let stagedCreatePdfFile = null;
       let stagedCreateExcelFile = null;
       let stagedExtractedData = null;
@@ -2458,12 +2532,83 @@
           refreshBtn.addEventListener('click', () => loadCampaigns(activeCampaignFilter));
         }
 
-        // Filter pills: All, Recruitment, Sales, Support
+        // Campaign Search Input & Clear Button
+        const searchInput = document.getElementById('camp-search-input');
+        const searchClear = document.getElementById('camp-search-clear');
+        if (searchInput) {
+          searchInput.addEventListener('input', (e) => {
+            activeCampaignSearch = e.target.value.trim().toLowerCase();
+            if (searchClear) {
+              searchClear.style.display = activeCampaignSearch ? 'flex' : 'none';
+            }
+            renderSavedCampaignCards(cachedCampaignsList, activeCampaignFilter);
+          });
+
+          // Press ESC to clear search
+          searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && searchInput.value) {
+              searchInput.value = '';
+              activeCampaignSearch = '';
+              if (searchClear) searchClear.style.display = 'none';
+              renderSavedCampaignCards(cachedCampaignsList, activeCampaignFilter);
+            }
+          });
+        }
+
+        if (searchClear) {
+          searchClear.addEventListener('click', () => {
+            if (searchInput) {
+              searchInput.value = '';
+              searchInput.focus();
+            }
+            activeCampaignSearch = '';
+            searchClear.style.display = 'none';
+            renderSavedCampaignCards(cachedCampaignsList, activeCampaignFilter);
+          });
+        }
+
+        // Service Filter Dropdown (All, Recruitment, Sales, etc.)
+        const serviceSelect = document.getElementById('camp-service-filter-select');
+        if (serviceSelect) {
+          serviceSelect.addEventListener('change', (e) => {
+            activeCampaignFilter = e.target.value;
+            // Sync filter pills
+            document.querySelectorAll('.camp-filter-pill').forEach(p => {
+              if (p.getAttribute('data-filter') === activeCampaignFilter) {
+                p.classList.add('active');
+              } else {
+                p.classList.remove('active');
+              }
+            });
+            renderSavedCampaignCards(cachedCampaignsList, activeCampaignFilter);
+          });
+        }
+
+        // Status Filter Dropdown
+        const statusSelect = document.getElementById('camp-status-filter-select');
+        if (statusSelect) {
+          statusSelect.addEventListener('change', (e) => {
+            activeCampaignStatus = e.target.value;
+            renderSavedCampaignCards(cachedCampaignsList, activeCampaignFilter);
+          });
+        }
+
+        // Sort Selector
+        const sortSelect = document.getElementById('camp-sort-select');
+        if (sortSelect) {
+          sortSelect.addEventListener('change', (e) => {
+            activeCampaignSort = e.target.value;
+            renderSavedCampaignCards(cachedCampaignsList, activeCampaignFilter);
+          });
+        }
+
+        // Filter pills: All, Recruitment, Sales, Support, Appointment Setting, Receptionist
         document.querySelectorAll('.camp-filter-pill').forEach(pill => {
           pill.addEventListener('click', () => {
             document.querySelectorAll('.camp-filter-pill').forEach(p => p.classList.remove('active'));
             pill.classList.add('active');
             activeCampaignFilter = pill.getAttribute('data-filter') || 'all';
+            if (serviceSelect) serviceSelect.value = activeCampaignFilter;
             renderSavedCampaignCards(cachedCampaignsList, activeCampaignFilter);
           });
         });
@@ -3076,14 +3221,25 @@
             if (el) el.textContent = val;
           };
           setTxt('cnt-filter-all', cachedCampaignsList.length);
-          setTxt('cnt-filter-rec', cachedCampaignsList.filter(c => c.service === 'recruitment').length);
-          setTxt('cnt-filter-sales', cachedCampaignsList.filter(c => c.service === 'sales').length);
-          setTxt('cnt-filter-support', cachedCampaignsList.filter(c => c.service === 'support').length);
+          setTxt('cnt-filter-rec', cachedCampaignsList.filter(c => {
+            const s = (c.service || '').toLowerCase();
+            return s === 'recruitment' || s === 'rec';
+          }).length);
+          setTxt('cnt-filter-sales', cachedCampaignsList.filter(c => (c.service || '').toLowerCase() === 'sales').length);
+          setTxt('cnt-filter-support', cachedCampaignsList.filter(c => {
+            const s = (c.service || '').toLowerCase();
+            return s === 'support' || s === 'customer_support';
+          }).length);
+          setTxt('cnt-filter-appointment', cachedCampaignsList.filter(c => {
+            const s = (c.service || '').toLowerCase();
+            return s === 'appointment' || s === 'appointment_setting';
+          }).length);
+          setTxt('cnt-filter-receptionist', cachedCampaignsList.filter(c => (c.service || '').toLowerCase() === 'receptionist').length);
 
           renderSavedCampaignCards(cachedCampaignsList, filter);
         } catch (err) {
           container.innerHTML = `
-            <div style="text-align: center; padding: 28px; color: #DC2626; background: #FFFFFF; border: 1px solid #FECACA; border-radius: 12px;">
+            <div style="text-align: center; padding: 28px; color: #DC2626; background: #FFFFFF; border: 1px solid #FECACA; border-radius: 12px; grid-column: 1 / -1;">
               Failed to load saved campaigns: ${err.message}
             </div>
           `;
@@ -3094,28 +3250,159 @@
         const container = document.getElementById('saved-campaigns-container');
         if (!container) return;
 
-        const filtered = filter === 'all'
-          ? campaigns
-          : campaigns.filter(c => c.service === filter);
+        let filtered = Array.isArray(campaigns) ? [...campaigns] : [];
+
+        // 1. Service Filter (Recruitment, Sales, Support, etc.)
+        if (filter && filter !== 'all') {
+          filtered = filtered.filter(c => {
+            const s = (c.service || '').toLowerCase().trim();
+            if (filter === 'recruitment' || filter === 'rec') {
+              return s === 'recruitment' || s === 'rec';
+            }
+            if (filter === 'sales') {
+              return s === 'sales';
+            }
+            if (filter === 'support') {
+              return s === 'support' || s === 'customer_support';
+            }
+            if (filter === 'appointment') {
+              return s === 'appointment' || s === 'appointment_setting';
+            }
+            if (filter === 'receptionist') {
+              return s === 'receptionist';
+            }
+            return s === filter;
+          });
+        }
+
+        // 2. Status Filter
+        if (activeCampaignStatus && activeCampaignStatus !== 'all') {
+          filtered = filtered.filter(c => {
+            const st = (c.status || 'DRAFT').toUpperCase();
+            if (activeCampaignStatus === 'ACTIVE') {
+              return st === 'ACTIVE' || st === 'IN_PROGRESS';
+            }
+            return st === activeCampaignStatus;
+          });
+        }
+
+        // 3. Search Query Filter (name, description, service, status, role, files, id)
+        if (activeCampaignSearch && activeCampaignSearch.trim() !== '') {
+          const q = activeCampaignSearch.toLowerCase().trim();
+          filtered = filtered.filter(c => {
+            const name = (c.name || '').toLowerCase();
+            const desc = (c.description || '').toLowerCase();
+            const service = (c.service || '').toLowerCase();
+            const status = (c.status || '').toLowerCase();
+            const id = (c.id || '').toLowerCase();
+            const pdf = (c.pdf_filename || '').toLowerCase();
+            const excel = (c.excel_filename || '').toLowerCase();
+            const roleTitle = (c.extracted_data?.role_title || '').toLowerCase();
+            const roleSummary = (c.extracted_data?.role_summary || '').toLowerCase();
+            const product = (c.extracted_data?.product_name || '').toLowerCase();
+
+            return name.includes(q) ||
+                   desc.includes(q) ||
+                   service.includes(q) ||
+                   status.includes(q) ||
+                   id.includes(q) ||
+                   pdf.includes(q) ||
+                   excel.includes(q) ||
+                   roleTitle.includes(q) ||
+                   roleSummary.includes(q) ||
+                   product.includes(q);
+          });
+        }
+
+        // 4. Sort results
+        if (activeCampaignSort === 'oldest') {
+          filtered.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+        } else if (activeCampaignSort === 'name_asc') {
+          filtered.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        } else if (activeCampaignSort === 'contacts_desc') {
+          filtered.sort((a, b) => (Number(b.valid_contacts) || 0) - (Number(a.valid_contacts) || 0));
+        } else {
+          // Default: newest first
+          filtered.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+        }
+
+        // Update match count badge
+        const countPill = document.getElementById('camp-search-count-pill');
+        if (countPill) {
+          if (activeCampaignSearch || (activeCampaignStatus && activeCampaignStatus !== 'all')) {
+            countPill.style.display = 'inline-flex';
+            countPill.textContent = `${filtered.length} of ${campaigns.length} matches`;
+          } else {
+            countPill.style.display = 'none';
+          }
+        }
 
         if (filtered.length === 0) {
-          container.innerHTML = `
-            <div class="campaigns-empty-state">
-              <div class="empty-state-icon">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="1.8">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                  <polyline points="14 2 14 8 20 8"/>
-                  <line x1="16" y1="13" x2="8" y2="13"/>
-                  <line x1="16" y1="17" x2="8" y2="17"/>
-                  <polyline points="10 9 9 9 8 9"/>
-                </svg>
+          if (!campaigns || campaigns.length === 0) {
+            container.innerHTML = `
+              <div class="campaigns-empty-state" style="grid-column: 1 / -1;">
+                <div class="empty-state-icon">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="1.8">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                    <polyline points="10 9 9 9 8 9"/>
+                  </svg>
+                </div>
+                <h4 class="empty-state-title">No saved campaigns yet</h4>
+                <p class="empty-state-desc">
+                  Use the <strong>+ Create Campaign</strong> button in the section header above to configure an automated voice campaign with job description screening, lead qualification, or support workflows.
+                </p>
               </div>
-              <h4 class="empty-state-title">No saved campaigns yet</h4>
-              <p class="empty-state-desc">
-                Use the <strong>+ Create Campaign</strong> button in the section header above to configure an automated voice campaign with job description screening, lead qualification, or support workflows.
-              </p>
-            </div>
-          `;
+            `;
+          } else {
+            const safeQuery = activeCampaignSearch ? activeCampaignSearch.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
+            container.innerHTML = `
+              <div class="campaigns-empty-state" style="grid-column: 1 / -1; padding: 40px 24px; text-align: center; background: #FFFFFF; border: 1px dashed #CBD5E1; border-radius: 14px;">
+                <div style="width: 52px; height: 52px; border-radius: 50%; background: #F8FAFC; border: 1px solid #E2E8F0; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 12px; color: #64748B;">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                  </svg>
+                </div>
+                <h4 class="empty-state-title" style="font-size: 1.05rem; font-weight: 700; color: #0F172A; margin-bottom: 6px;">No campaigns match your filters</h4>
+                <p class="empty-state-desc" style="max-width: 460px; margin: 0 auto 16px auto; color: #64748B; font-size: 0.825rem; line-height: 1.5;">
+                  ${safeQuery ? `No campaigns found matching "<strong>${safeQuery}</strong>"` : ''} 
+                  ${filter !== 'all' ? `in <strong>${filter.toUpperCase()}</strong>` : ''}
+                  ${activeCampaignStatus !== 'all' ? `with status <strong>${activeCampaignStatus}</strong>` : ''}.
+                </p>
+                <button type="button" id="btn-reset-camp-filters" style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 18px; font-size: 0.8rem; font-weight: 600; color: #031740; background: #F1F5F9; border: 1px solid #CBD5E1; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                  <span>Reset Search & Filters</span>
+                </button>
+              </div>
+            `;
+            const resetBtn = container.querySelector('#btn-reset-camp-filters');
+            if (resetBtn) {
+              resetBtn.addEventListener('click', () => {
+                activeCampaignSearch = '';
+                activeCampaignFilter = 'all';
+                activeCampaignStatus = 'all';
+                activeCampaignSort = 'newest';
+                const sInput = document.getElementById('camp-search-input');
+                const sClear = document.getElementById('camp-search-clear');
+                const sSelect = document.getElementById('camp-service-filter-select');
+                const stSelect = document.getElementById('camp-status-filter-select');
+                const sortSel = document.getElementById('camp-sort-select');
+                if (sInput) sInput.value = '';
+                if (sClear) sClear.style.display = 'none';
+                if (sSelect) sSelect.value = 'all';
+                if (stSelect) stSelect.value = 'all';
+                if (sortSel) sortSel.value = 'newest';
+                document.querySelectorAll('.camp-filter-pill').forEach(p => {
+                  if (p.getAttribute('data-filter') === 'all') p.classList.add('active');
+                  else p.classList.remove('active');
+                });
+                renderSavedCampaignCards(cachedCampaignsList, activeCampaignFilter);
+              });
+            }
+          }
           return;
         }
 

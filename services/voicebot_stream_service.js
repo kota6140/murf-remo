@@ -168,6 +168,22 @@ export function isNoiseTranscript(transcript) {
 }
 
 /**
+ * Standard Conversation States for Remo voice pipeline.
+ * Ensures robust turn-taking and prevents premature question advancement.
+ */
+export const ConversationStates = Object.freeze({
+    IDLE: 'IDLE',
+    LISTENING: 'LISTENING',
+    CANDIDATE_SPEAKING: 'CANDIDATE_SPEAKING',
+    WAITING_FOR_END_OF_TURN: 'WAITING_FOR_END_OF_TURN',
+    FINALIZING_TRANSCRIPT: 'FINALIZING_TRANSCRIPT',
+    PROCESSING_ANSWER: 'PROCESSING_ANSWER',
+    GENERATING_RESPONSE: 'GENERATING_RESPONSE',
+    SPEAKING: 'SPEAKING',
+    COMPLETED: 'COMPLETED'
+});
+
+/**
  * Manages a live call session over the Plivo WebSocket stream.
  */
 export class CallSession {
@@ -200,6 +216,9 @@ export class CallSession {
         this.currentStage = 'AVAILABILITY';
         this.detectedLanguage = 'en';
 
+        // Conversation state machine
+        this.conversationState = ConversationStates.IDLE;
+
         // Greeting exact-once guards
         this.greetingDelivered = false;
         this.greetingInProgress = false;
@@ -217,7 +236,7 @@ export class CallSession {
         this.consecutiveSilenceFrames = 0;
         this.isCallerSpeaking = false;
 
-        // Overlap buffer (when caller speaks WHILE AI is speaking)
+        // Overlap buffer (when caller speaks WHILE AI is speaking or turn is being processed)
         this.overlapMulawChunks = [];
         this.overlapSpeechFrames = 0;
 
@@ -258,6 +277,80 @@ export class CallSession {
             company: this.companyName || (this.service === 'sales' ? 'Scorelabs Inc.' : 'Score Labs'),
             preferred_language: 'en'
         };
+    }
+
+    /**
+     * Updates conversation state machine and logs state change with reason.
+     */
+    setConversationState(newState, reason = '') {
+        const oldState = this.conversationState;
+        if (oldState === newState) return;
+        this.conversationState = newState;
+        this.logDiagnostic('state_change', {
+            from: oldState,
+            to: newState,
+            reason
+        });
+    }
+
+    /**
+     * Emits structured diagnostic logs with timestamps, call ID, turn ID, and state.
+     */
+    logDiagnostic(event, details = {}) {
+        const timestamp = new Date().toISOString();
+        const payload = {
+            timestamp,
+            callId: this.callId || 'unknown_call',
+            turnId: this.currentTurnId,
+            state: this.conversationState,
+            service: this.service,
+            event,
+            ...details
+        };
+        console.log(`[Diagnostic] ${JSON.stringify(payload)}`);
+    }
+
+    /**
+     * Returns configurable end-of-turn silence threshold in milliseconds.
+     * Recruitment uses RECRUITMENT_VAD_SILENCE_MS (default 1,400ms) to allow natural pauses.
+     * Sales / Support maintain ultra-low latency (~220ms - 280ms) for brief affirmations.
+     */
+    getSilenceThresholdMs() {
+        if (this.service === 'recruitment') {
+            const envVal = process.env.RECRUITMENT_VAD_SILENCE_MS;
+            if (envVal) {
+                const parsed = parseInt(envVal, 10);
+                if (!isNaN(parsed) && parsed >= 500 && parsed <= 5000) {
+                    return parsed;
+                }
+            }
+            return 1400; // Default 1,400ms end-of-turn threshold for recruitment
+        }
+
+        if (process.env.VAD_SILENCE_THRESHOLD_MS) {
+            const parsed = parseInt(process.env.VAD_SILENCE_THRESHOLD_MS, 10);
+            if (!isNaN(parsed) && parsed >= 100) {
+                return parsed;
+            }
+        }
+        return 220; // Default fast-path for sales / support
+    }
+
+    /**
+     * Checks if overlap audio was buffered during AI speech / turn finalization,
+     * and rolls it seamlessly into caller speech buffer without dropping any syllables.
+     */
+    checkAndApplyOverlapAudio() {
+        if (this.overlapMulawChunks && this.overlapMulawChunks.length > 0 && !this.isAiSpeaking && !this.isProcessingTurn) {
+            console.log(`[CallSession] Applying ${this.overlapMulawChunks.length} buffered overlap chunks (~${this.overlapMulawChunks.length * 20}ms) into caller buffer.`);
+            this.callerMulawChunks.push(...this.overlapMulawChunks);
+            this.overlapMulawChunks = [];
+            this.consecutiveSpeechFrames = this.overlapSpeechFrames;
+            this.overlapSpeechFrames = 0;
+            this.consecutiveSilenceFrames = 0;
+            this.isCallerSpeaking = true;
+            this.setConversationState(ConversationStates.CANDIDATE_SPEAKING, 'overlap_audio_carried_over');
+        }
     }
 
     /**
@@ -585,6 +678,8 @@ export class CallSession {
         }
 
         console.log(`[CallSession] Delivering opening greeting: "${greeting.substring(0, 80)}..."`);
+        this.setConversationState(ConversationStates.SPEAKING, 'opening_greeting');
+        this.logDiagnostic('remo_started_speaking', { text: greeting, isGreeting: true });
 
         this.conversationHistory.push({
             speaker: 'REMO',
@@ -627,6 +722,7 @@ export class CallSession {
         } catch (greetErr) {
             console.error('[CallSession] Error delivering greeting:', greetErr.message);
             this.greetingInProgress = false;
+            this.setConversationState(ConversationStates.LISTENING, 'greeting_error');
         }
     }
 
@@ -668,12 +764,19 @@ export class CallSession {
                 if (Date.now() >= this.aiSpeechEndTime && this.isAiSpeaking) {
                     this.isAiSpeaking = false;
                     console.log('[CallSession] AI finished speaking turn. Now listening for caller.');
+                    if (this.conversationState === ConversationStates.SPEAKING) {
+                        this.setConversationState(ConversationStates.LISTENING, 'speech_playback_complete');
+                    }
+                    this.checkAndApplyOverlapAudio();
                 }
             }, durationMs);
 
         } catch (e) {
             console.error('[CallSession] dispatchAudioBuffer error:', e.message);
             this.isAiSpeaking = false;
+            if (this.conversationState === ConversationStates.SPEAKING) {
+                this.setConversationState(ConversationStates.LISTENING, 'playback_error');
+            }
         }
     }
 
@@ -795,6 +898,10 @@ export class CallSession {
                 this.activeSpeechTimer = setTimeout(() => {
                     if (this.isAiSpeaking) {
                         this.isAiSpeaking = false;
+                        if (this.conversationState === ConversationStates.SPEAKING) {
+                            this.setConversationState(ConversationStates.LISTENING, 'speech_playback_complete');
+                        }
+                        this.checkAndApplyOverlapAudio();
                     }
                 }, simDurationMs);
                 return;
@@ -812,6 +919,10 @@ export class CallSession {
                     if (Date.now() >= this.aiSpeechEndTime && this.isAiSpeaking) {
                         this.isAiSpeaking = false;
                         console.log('[CallSession] AI finished speaking turn. Now listening for caller.');
+                        if (this.conversationState === ConversationStates.SPEAKING) {
+                            this.setConversationState(ConversationStates.LISTENING, 'speech_playback_complete');
+                        }
+                        this.checkAndApplyOverlapAudio();
                     }
                 }, totalDurationMs);
             } else {
@@ -823,6 +934,9 @@ export class CallSession {
         } catch (e) {
             console.error('[CallSession] playAiAudio error:', e.message);
             this.isAiSpeaking = false;
+            if (this.conversationState === ConversationStates.SPEAKING) {
+                this.setConversationState(ConversationStates.LISTENING, 'speech_error');
+            }
         }
     }
 
@@ -837,14 +951,14 @@ export class CallSession {
             return;
         }
 
-        if (this.isProcessingTurn || this.isClosed) return;
+        if (this.isClosed) return;
 
         const pcm16 = decodeMulawToPcm16(mulawChunk);
         const energy = calculateRms(pcm16);
         const hasSpeech = energy >= this.ENERGY_THRESHOLD;
 
         // SCENARIO 1: AI IS CURRENTLY SPEAKING (Barge-In Handling)
-        if (this.isAiSpeaking) {
+        if (this.isAiSpeaking || this.conversationState === ConversationStates.SPEAKING) {
             if (hasSpeech) {
                 this.overlapMulawChunks.push(mulawChunk);
                 this.overlapSpeechFrames++;
@@ -852,6 +966,7 @@ export class CallSession {
                 // If candidate speaks sustained speech (>= 700ms), trigger barge-in!
                 if (this.overlapSpeechFrames >= this.MIN_INTERRUPT_FRAMES) {
                     console.log(`[CallSession] Caller sustained speech detected (${this.overlapSpeechFrames * 20}ms). Stopping AI speech (Barge-in).`);
+                    this.logDiagnostic('candidate_speech_started', { reason: 'barge_in', frames: this.overlapSpeechFrames });
 
                     // Stop Plivo playback buffer immediately
                     if (this.streamId && this.ws.readyState === this.ws.OPEN) {
@@ -872,9 +987,11 @@ export class CallSession {
                     // Move overlap audio into active caller buffer
                     this.callerMulawChunks.push(...this.overlapMulawChunks);
                     this.overlapMulawChunks = [];
+                    this.consecutiveSpeechFrames = this.overlapSpeechFrames;
                     this.overlapSpeechFrames = 0;
                     this.isCallerSpeaking = true;
                     this.consecutiveSilenceFrames = 0;
+                    this.setConversationState(ConversationStates.CANDIDATE_SPEAKING, 'barge_in');
                 }
             } else {
                 // Short noise burst (< 700ms) while AI speaking: ignore and discard
@@ -886,34 +1003,84 @@ export class CallSession {
             return;
         }
 
-        // SCENARIO 2: AI IS LISTENING
+        // SCENARIO 2: AI IS FINALIZING OR GENERATING RESPONSE (Turn in progress)
+        // Never discard candidate audio during STT finalization or LLM reasoning!
+        // Buffer into overlapMulawChunks so continued candidate speech rolls into next turn.
+        if (this.isProcessingTurn ||
+            this.conversationState === ConversationStates.FINALIZING_TRANSCRIPT ||
+            this.conversationState === ConversationStates.PROCESSING_ANSWER ||
+            this.conversationState === ConversationStates.GENERATING_RESPONSE) {
+            if (hasSpeech) {
+                this.overlapMulawChunks.push(mulawChunk);
+                this.overlapSpeechFrames++;
+                this.logDiagnostic('candidate_speech_detected', { context: 'during_turn_processing', frames: this.overlapSpeechFrames });
+            } else if (this.overlapSpeechFrames > 0) {
+                // Keep brief silence frames in overlap buffer so speech pauses are preserved when rolled over
+                this.overlapMulawChunks.push(mulawChunk);
+            }
+            return;
+        }
+
+        // SCENARIO 3: ACTIVE CALLER TURN (AI LISTENING)
+        if (this.conversationState === ConversationStates.IDLE) {
+            this.setConversationState(ConversationStates.LISTENING, 'inbound_audio_received');
+        }
+
         if (hasSpeech) {
+            this.logDiagnostic('candidate_speech_detected', { rms: energy });
+
+            if (this.conversationState === ConversationStates.LISTENING) {
+                this.setConversationState(ConversationStates.CANDIDATE_SPEAKING, 'speech_started');
+                this.logDiagnostic('candidate_speech_started', { initialRms: energy });
+                this.consecutiveSpeechFrames = 0;
+                this.consecutiveSilenceFrames = 0;
+            } else if (this.conversationState === ConversationStates.WAITING_FOR_END_OF_TURN) {
+                const elapsedSilenceMs = this.consecutiveSilenceFrames * 20;
+                this.logDiagnostic('silence_timer_reset_speech_resumed', { elapsedSilenceMs });
+                this.setConversationState(ConversationStates.CANDIDATE_SPEAKING, 'speech_resumed_after_pause');
+                this.consecutiveSilenceFrames = 0;
+            }
+
             this.callerMulawChunks.push(mulawChunk);
             this.consecutiveSpeechFrames++;
-            this.consecutiveSilenceFrames = 0;
             this.isCallerSpeaking = true;
         } else {
-            if (this.isCallerSpeaking) {
+            if (this.conversationState === ConversationStates.CANDIDATE_SPEAKING) {
+                // First silence frame: start silence timer and enter WAITING_FOR_END_OF_TURN
+                this.isCallerSpeaking = false;
+                this.setConversationState(ConversationStates.WAITING_FOR_END_OF_TURN, 'speech_pause_started');
+                const thresholdMs = this.getSilenceThresholdMs();
+                this.logDiagnostic('silence_timer_started', { thresholdMs, consecutiveSpeechFrames: this.consecutiveSpeechFrames });
+                this.callerMulawChunks.push(mulawChunk);
+                this.consecutiveSilenceFrames = 1;
+            } else if (this.conversationState === ConversationStates.WAITING_FOR_END_OF_TURN) {
                 this.callerMulawChunks.push(mulawChunk);
                 this.consecutiveSilenceFrames++;
 
-                // Ultra-low-latency adaptive silence detection:
-                // 11 frames (~220ms) for common short answers ("yes", "okay", "no", "works for me")
-                // 14 frames (~280ms) for longer complex speech to allow natural pauses
-                // Configurable via VAD_SILENCE_THRESHOLD_MS (e.g. 200 - 300ms)
-                const baseShortFrames = process.env.VAD_SILENCE_THRESHOLD_MS
-                    ? Math.max(10, Math.round(parseInt(process.env.VAD_SILENCE_THRESHOLD_MS, 10) / 20))
-                    : 11;
-                const silenceRequired = this.consecutiveSpeechFrames < 50 ? baseShortFrames : (baseShortFrames + 3);
+                const currentSilenceMs = this.consecutiveSilenceFrames * 20;
+                const thresholdMs = this.getSilenceThresholdMs();
 
-                if (this.consecutiveSilenceFrames >= silenceRequired) {
-                    const silenceMs = this.consecutiveSilenceFrames * 20;
-                    console.log(`[CallSession] Silence threshold met (${silenceMs}ms). Processing caller turn.`);
-                    this.latencyTracker.markVadSilence(silenceMs, this.currentTurnId + 1);
+                // Compute frames required
+                let silenceRequiredFrames = Math.max(1, Math.round(thresholdMs / 20));
+                if (this.service !== 'recruitment' && this.consecutiveSpeechFrames >= 50) {
+                    silenceRequiredFrames += 3;
+                }
+
+                if (this.consecutiveSilenceFrames >= silenceRequiredFrames) {
+                    this.logDiagnostic('end_of_turn_confirmed', {
+                        reason: 'silence_threshold_reached',
+                        silenceMs: currentSilenceMs,
+                        thresholdMs,
+                        totalAudioBytes: this.callerMulawChunks.length * 160,
+                        totalSpeechFrames: this.consecutiveSpeechFrames
+                    });
+
+                    this.latencyTracker.markVadSilence(currentSilenceMs, this.currentTurnId + 1);
 
                     this.isCallerSpeaking = false;
                     this.consecutiveSilenceFrames = 0;
                     this.consecutiveSpeechFrames = 0;
+                    this.setConversationState(ConversationStates.FINALIZING_TRANSCRIPT, 'silence_threshold_met');
                     await this.processCallerTurn();
                 }
             }
@@ -923,21 +1090,21 @@ export class CallSession {
     /**
      * Completes caller audio turn:
      * 1. Transcribes via ElevenLabs Scribe STT.
-     * 2. Filters noise transcripts (FIX-2).
+     * 2. Filters noise transcripts (FIX-2) and handles unclear audio (Test H).
      * 3. Checks deterministic IntentService (< 1ms fast-path).
      * 4. Falls back to optimized LLM only when necessary.
      * 5. Dispatches spoken reply and records comprehensive latency.
-     * 
-     * FIX-1: isProcessingTurn is now cleared AFTER playAiAudio, not before.
-     * FIX-6: turnId guard prevents processing the same turn twice.
+     * 6. Safe conversation state transitions and overlap audio roll-over.
      */
     async processCallerTurn() {
         if (this.callMode === 'PROMOTIONAL_DEMO') return;
         if (this.callerMulawChunks.length === 0 || this.isProcessingTurn) return;
         this.isProcessingTurn = true;
 
-        // FIX-6: Unique ID for this turn — used to detect stale completions
+        // Turn ID safeguard: prevents duplicate or stale turn processing
         const turnId = ++this.currentTurnId;
+        this.setConversationState(ConversationStates.FINALIZING_TRANSCRIPT, `turn_${turnId}_start`);
+        this.logDiagnostic('transcript_finalization_started', { turnId, chunksCount: this.callerMulawChunks.length });
 
         const totalMulaw = Buffer.concat(this.callerMulawChunks);
         this.callerMulawChunks = [];
@@ -945,8 +1112,11 @@ export class CallSession {
         // Check minimum audio duration (>= 200ms = 1600 bytes)
         // Prevents dropping short words ("yes", "ok", "no") while filtering clicks
         if (totalMulaw.length < this.MIN_AUDIO_BYTES) {
+            this.logDiagnostic('turn_dropped_too_short', { turnId, bytes: totalMulaw.length });
             this.latencyTracker.cancelTurn();
             this.isProcessingTurn = false;
+            this.setConversationState(ConversationStates.LISTENING, 'click_filtered');
+            this.checkAndApplyOverlapAudio();
             return;
         }
 
@@ -971,19 +1141,59 @@ export class CallSession {
             console.error('[CallSession] STT error:', e.message);
         }
 
-        // FIX-6: If a newer turn started while we were in STT, discard this stale result
+        // Stale completion guard: if a newer turn started while in STT, discard
         if (turnId !== this.currentTurnId) {
             console.log(`[CallSession] Turn ${turnId} discarded (superseded by turn ${this.currentTurnId}).`);
+            this.logDiagnostic('turn_superseded', { staleTurnId: turnId, currentTurnId: this.currentTurnId });
             this.latencyTracker.cancelTurn();
             this.isProcessingTurn = false;
+            this.setConversationState(ConversationStates.LISTENING, 'turn_superseded');
+            this.checkAndApplyOverlapAudio();
             return;
         }
 
-        // FIX-2: Filter noise transcripts before ANY processing
+        this.logDiagnostic('final_transcript_received', { turnId, transcript, language: detectedLanguage });
+        this.logDiagnostic('transcript_finalization_completed', { turnId, transcriptLength: transcript.length });
+
+        // Filter noise or handle unclear audio:
         if (!transcript || isNoiseTranscript(transcript)) {
+            // Check if this was a substantial candidate utterance (>= 8000 bytes = 1s audio at 8kHz) in recruitment
+            if (this.service === 'recruitment' && totalMulaw.length >= 8000) {
+                console.log(`[CallSession] Unclear audio detected in recruitment (${totalMulaw.length} bytes). Asking for clarification.`);
+                this.logDiagnostic('unclear_audio_detected', { turnId, bytes: totalMulaw.length });
+
+                this.setConversationState(ConversationStates.GENERATING_RESPONSE, 'unclear_audio_clarification');
+                const clarification = this.detectedLanguage === 'te'
+                    ? 'క్షమించండి, మీ మాట స్పష్టంగా వినిపించలేదు. దయచేసి మళ్ళీ చెప్పగలరా?'
+                    : (this.detectedLanguage === 'hi'
+                        ? 'माफ़ कीजिए, मुझे आपकी आवाज़ ठीक से सुनाई नहीं दी। क्या आप कृपया दोबारा बता सकते हैं?'
+                        : "I'm sorry, I couldn't quite hear that. Could you please repeat that?");
+
+                const replyTimeSec = Math.floor((Date.now() - this.startTime) / 1000);
+                const replyTimeStr = `${String(Math.floor(replyTimeSec / 60)).padStart(2, '0')}:${String(replyTimeSec % 60).padStart(2, '0')}`;
+                this.conversationHistory.push({
+                    speaker: 'REMO',
+                    text: clarification,
+                    time: replyTimeStr,
+                    isClarification: true
+                });
+
+                this.setConversationState(ConversationStates.SPEAKING, 'speaking_clarification');
+                this.logDiagnostic('remo_started_speaking', { turnId, text: clarification, isClarification: true });
+                await this.playAiAudio(clarification);
+                this.latencyTracker.markAudioDispatched();
+                this.isProcessingTurn = false;
+                this.setConversationState(ConversationStates.LISTENING, 'clarification_requested');
+                this.checkAndApplyOverlapAudio();
+                return;
+            }
+
             console.log(`[CallSession] Noise/empty transcript filtered: "${transcript || '(empty)'}". Resuming listening.`);
+            this.logDiagnostic('noise_transcript_filtered', { turnId, transcript, bytes: totalMulaw.length });
             this.latencyTracker.cancelTurn();
             this.isProcessingTurn = false;
+            this.setConversationState(ConversationStates.LISTENING, 'noise_filtered');
+            this.checkAndApplyOverlapAudio();
             return;
         }
 
@@ -1006,6 +1216,14 @@ export class CallSession {
 
         console.log(`[CallSession] Caller said: "${transcript}" (Lang: ${detectedLanguage}, TurnId: ${turnId})`);
 
+        this.setConversationState(ConversationStates.PROCESSING_ANSWER, 'answer_recorded');
+        this.logDiagnostic('complete_candidate_answer_recorded', {
+            turnId,
+            transcript,
+            associatedQuestion: this.currentQuestion
+        });
+        this.logDiagnostic('answer_processing_started', { turnId });
+
         // Check for thinking pauses ("hmm, let me think", "one minute", "wait")
         if (this.memory && this.memory.isThinkingPause(transcript)) {
             console.log(`[CallSession] Caller thinking pause detected ("${transcript}"). Responding patiently.`);
@@ -1020,10 +1238,13 @@ export class CallSession {
             this.memory.recordTurn('USER', transcript);
             this.memory.recordTurn('REMO', pauseAck);
 
-            // FIX-1: Clear processing AFTER audio plays
+            this.setConversationState(ConversationStates.SPEAKING, 'thinking_pause_ack');
+            this.logDiagnostic('remo_started_speaking', { turnId, text: pauseAck, reason: 'thinking_pause' });
             await this.playAiAudio(pauseAck);
             this.latencyTracker.markAudioDispatched();
             this.isProcessingTurn = false;
+            this.setConversationState(ConversationStates.LISTENING, 'thinking_pause_ack_done');
+            this.checkAndApplyOverlapAudio();
             return;
         }
 
@@ -1033,17 +1254,20 @@ export class CallSession {
         if (pureMurmurs.has(cleanedUtterance) && !this.interruptedWithAnswer) {
             console.log(`[CallSession] Caller murmur acknowledged ("${transcript}"). Maintaining conversational focus.`);
             this.isProcessingTurn = false;
+            this.setConversationState(ConversationStates.LISTENING, 'murmur_ignored');
+            this.checkAndApplyOverlapAudio();
             return;
         }
 
-        // Add caller turn to conversation history & memory
+        // Add caller turn to conversation history & memory with associated question
         const elapsedSec = Math.floor((Date.now() - this.startTime) / 1000);
         const timeStr = `${String(Math.floor(elapsedSec / 60)).padStart(2, '0')}:${String(elapsedSec % 60).padStart(2, '0')}`;
 
         this.conversationHistory.push({
             speaker: this.contact.name || 'Caller',
             text: transcript,
-            time: timeStr
+            time: timeStr,
+            associatedQuestion: this.currentQuestion
         });
 
         try {
@@ -1091,8 +1315,6 @@ export class CallSession {
             if (intent.classification) {
                 this.classification = intent.classification;
             }
-            // FIX-3: Only advance stage if the intent explicitly provides next_stage
-            // Audibility check ("hello") does NOT advance stage — preserves current context
             if (intent.next_stage) {
                 this.stageHistory.push(this.currentStage);
                 this.currentStage = intent.next_stage;
@@ -1123,25 +1345,33 @@ export class CallSession {
             this.currentQuestion = spokenResponse;
             this.interruptedWithAnswer = false;
 
-            // FIX-1: Play fast-path response BEFORE clearing isProcessingTurn
+            this.logDiagnostic('answer_processing_completed', { turnId, source: 'INTENT_FAST_PATH' });
+            this.setConversationState(ConversationStates.GENERATING_RESPONSE, 'intent_fast_path');
+            this.logDiagnostic('next_question_generated', { turnId, question: spokenResponse, source: 'INTENT_FAST_PATH' });
+
+            this.setConversationState(ConversationStates.SPEAKING, 'intent_fast_path');
+            this.logDiagnostic('remo_started_speaking', { turnId, text: spokenResponse, source: 'INTENT_FAST_PATH' });
             await this.playAiAudio(spokenResponse);
             this.latencyTracker.markAudioDispatched();
 
-            // FIX-1: Only NOW clear the processing lock
             this.isProcessingTurn = false;
+            this.setConversationState(ConversationStates.LISTENING, 'intent_turn_completed');
+            this.checkAndApplyOverlapAudio();
 
             if (intent.should_end_call) {
                 this.callStatus = 'COMPLETED';
+                this.setConversationState(ConversationStates.COMPLETED, 'intent_call_completed');
                 const hangupDelay = Math.max((spokenResponse.split(/\s+/).length * 320) + 1200, 2500);
                 setTimeout(() => this.endCall(), hangupDelay);
             }
 
-            return; // Fast-path turn finished without calling LLM
+            return;
         }
 
         // -------------------------------------------------------------
         // STEP 2: LLM (Claude Haiku primary / Gemini fallback) FOR COMPLEX/AMBIGUOUS RESPONSES
         // -------------------------------------------------------------
+        this.setConversationState(ConversationStates.GENERATING_RESPONSE, 'llm_start');
         try {
             let firstSentenceDispatched = false;
 
@@ -1165,6 +1395,8 @@ export class CallSession {
                             firstSentenceDispatched = true;
                             this.latencyTracker.markDecisionEnd('LLM_STREAM');
                             console.log(`[CallSession] Early spoken phrase extracted. Streaming to TTS: "${sentence.slice(0, 50)}..."`);
+                            this.setConversationState(ConversationStates.SPEAKING, 'llm_early_phrase');
+                            this.logDiagnostic('remo_started_speaking', { turnId, text: sentence, source: 'LLM_EARLY_STREAM' });
                             await this.playAiAudio(sentence);
                         }
                     }
@@ -1179,6 +1411,8 @@ export class CallSession {
             if (turnId !== this.currentTurnId) {
                 console.log(`[CallSession] LLM response for turn ${turnId} discarded (superseded by turn ${this.currentTurnId}).`);
                 this.isProcessingTurn = false;
+                this.setConversationState(ConversationStates.LISTENING, 'turn_superseded');
+                this.checkAndApplyOverlapAudio();
                 return;
             }
 
@@ -1220,9 +1454,15 @@ export class CallSession {
                 this.conversationHistory.push({ speaker: 'REMO', text: fallback, time: replyTimeStr });
                 this.currentQuestion = fallback;
                 this.interruptedWithAnswer = false;
+                this.logDiagnostic('answer_processing_completed', { turnId, source: 'LLM_FALLBACK' });
+                this.logDiagnostic('next_question_generated', { turnId, question: fallback, source: 'LLM_FALLBACK' });
+                this.setConversationState(ConversationStates.SPEAKING, 'llm_fallback');
+                this.logDiagnostic('remo_started_speaking', { turnId, text: fallback, source: 'LLM_FALLBACK' });
                 await this.playAiAudio(fallback);
                 this.latencyTracker.markAudioDispatched();
                 this.isProcessingTurn = false;
+                this.setConversationState(ConversationStates.LISTENING, 'llm_fallback_finished');
+                this.checkAndApplyOverlapAudio();
                 return;
             }
 
@@ -1246,6 +1486,12 @@ export class CallSession {
             this.currentQuestion = spokenResponse;
             this.interruptedWithAnswer = false;
 
+            this.logDiagnostic('answer_processing_completed', { turnId, source: 'LLM' });
+            this.logDiagnostic('next_question_generated', { turnId, question: spokenResponse, source: 'LLM' });
+
+            this.setConversationState(ConversationStates.SPEAKING, 'llm_speaking');
+            this.logDiagnostic('remo_started_speaking', { turnId, text: spokenResponse, source: 'LLM' });
+
             // FIX-1: Play remaining or full LLM response BEFORE clearing isProcessingTurn
             if (firstSentenceDispatched) {
                 const emitted = (reply.emittedSentences && reply.emittedSentences.length > 0)
@@ -1263,9 +1509,12 @@ export class CallSession {
 
             // FIX-1: Only NOW clear the processing lock
             this.isProcessingTurn = false;
+            this.setConversationState(ConversationStates.LISTENING, 'llm_turn_completed');
+            this.checkAndApplyOverlapAudio();
 
             if (reply.should_end_call) {
                 this.callStatus = 'COMPLETED';
+                this.setConversationState(ConversationStates.COMPLETED, 'llm_call_completed');
                 const hangupDelay = Math.max((spokenResponse.split(/\s+/).length * 320) + 1400, 2800);
                 setTimeout(() => this.endCall(), hangupDelay);
             }
@@ -1281,6 +1530,8 @@ export class CallSession {
                 const replyTimeSec = Math.floor((Date.now() - this.startTime) / 1000);
                 const replyTimeStr = `${String(Math.floor(replyTimeSec / 60)).padStart(2, '0')}:${String(replyTimeSec % 60).padStart(2, '0')}`;
                 this.conversationHistory.push({ speaker: 'REMO', text: recoveryPhrase, time: replyTimeStr });
+                this.setConversationState(ConversationStates.SPEAKING, 'recovery_phrase');
+                this.logDiagnostic('remo_started_speaking', { turnId, text: recoveryPhrase, source: 'RECOVERY' });
                 await this.playAiAudio(recoveryPhrase);
                 this.latencyTracker.markAudioDispatched();
             } catch (recoveryErr) {
@@ -1290,6 +1541,8 @@ export class CallSession {
 
             // FIX-1: Clear processing lock after recovery
             this.isProcessingTurn = false;
+            this.setConversationState(ConversationStates.LISTENING, 'recovery_turn_finished');
+            this.checkAndApplyOverlapAudio();
         }
     }
 
@@ -1299,6 +1552,7 @@ export class CallSession {
     async endCall() {
         if (this.isClosed) return;
         this.isClosed = true;
+        this.setConversationState(ConversationStates.COMPLETED, 'call_ended');
 
         if (this.promoPlaybackTimer) {
             clearTimeout(this.promoPlaybackTimer);
