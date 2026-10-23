@@ -131,7 +131,7 @@ export class ConversationMemory {
         const isServiceNeed = q => /service or project you(?:'re| are) currently looking for|looking for any services|service or project are you/i.test(q);
         const isTechStack = q => /technical preferences|recommend the best approach|what technology|tech stack|programming language/i.test(q);
         const isAdditional = q => /anything else you(?:'d| would) like us to know|anything else to add/i.test(q);
-        const isFollowup = q => /send you some information|discuss your requirements with our team|company information/i.test(q);
+        const isFollowup = q => /send you some information|discuss your requirements with our team|company information|(?:call|phone).{0,60}in[- ]person/i.test(q);
         const isPermission = q => /good time to talk|talk for a minute|convenient time/i.test(q);
 
         if (isDiscovery(s1) && isDiscovery(s2)) return true;

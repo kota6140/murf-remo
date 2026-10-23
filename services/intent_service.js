@@ -1,4 +1,5 @@
 import AppointmentState from './appointment_state.js';
+import SalesState from './sales_state.js';
 import GreetingScript from './greeting_script.js';
 import { isYesNoQuestion, topicOf, questionPart } from './question_tracker.js';
 
@@ -155,6 +156,14 @@ export default class IntentService {
                 extracted_fields: { preferred_next_step: 'none', call_outcome: 'Do Not Call', opt_out: true },
                 reason: 'do_not_call_opt_out'
             };
+        }
+
+        // -------------------------------------------------------------
+        // 2.6 SALES: the answer to "call with our team, or meet in person?"
+        // -------------------------------------------------------------
+        if (service === 'sales') {
+            const meeting = this.handleMeetingAnswer(text, context, currentLang);
+            if (meeting) return meeting;
         }
 
         // -------------------------------------------------------------
@@ -616,6 +625,39 @@ export default class IntentService {
         }
 
         return { matched: false };
+    }
+
+    /**
+     * Sales: while the call-or-in-person question is open, a clear answer is recorded, acknowledged and the call is
+     * closed; a bare "yes"/"okay" gets one short clarification. Anything else goes on to the normal handling.
+     */
+    static handleMeetingAnswer(text, context, lang) {
+        const turn = SalesState.captureMeetingAnswer(context.collectedData || {}, text);
+        if (turn.clarify) {
+            return {
+                matched: true,
+                spoken_response: SalesState.meetingClarification(lang),
+                detected_language: lang,
+                extracted_fields: turn.fields,
+                should_end_call: false,
+                reason: 'sales_meeting_clarify'
+            };
+        }
+        if (!turn.captured) return null;
+
+        const meetingAgreed = ['phone_call', 'in_person', 'either'].includes(turn.preference);
+        return {
+            matched: true,
+            spoken_response: SalesState.meetingReply(turn.preference, lang),
+            detected_language: lang,
+            next_stage: 'CLOSING',
+            classification: meetingAgreed ? 'Meeting Requested' : undefined,
+            extracted_fields: meetingAgreed
+                ? { ...turn.fields, preferred_next_step: 'meeting', call_outcome: 'Meeting Requested' }
+                : turn.fields,
+            should_end_call: true,
+            reason: `sales_meeting_${turn.preference}`
+        };
     }
 
     /**

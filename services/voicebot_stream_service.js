@@ -816,6 +816,19 @@ export class CallSession {
     }
 
     /**
+     * Sales calls only: remembers that the call-or-in-person question has been said, so it is asked once.
+     */
+    noteSalesReply(spoken) {
+        if (this.service !== 'sales') return;
+        const fields = SalesState.noteSpokenReply(this.collectedData, spoken);
+        if (!fields) return;
+        this.collectedData = { ...this.collectedData, ...fields };
+        if (this.memory && typeof this.memory.recordFact === 'function') {
+            for (const [k, v] of Object.entries(fields)) this.memory.recordFact(k, v);
+        }
+    }
+
+    /**
      * The ElevenLabs voice for this call: the agent's own voice for English/Hindi when it has one,
      * otherwise the default language-based voice (Telugu always keeps its Telugu voice).
      */
@@ -1840,6 +1853,7 @@ export class CallSession {
 
             this.currentQuestion = spokenResponse;
             this.interruptedWithAnswer = false;
+            this.noteSalesReply(spokenResponse);
 
             this.logDiagnostic('answer_processing_completed', { turnId, source: 'INTENT_FAST_PATH' });
             this.setConversationState(ConversationStates.GENERATING_RESPONSE, 'intent_fast_path');
@@ -1898,8 +1912,9 @@ export class CallSession {
                             // Hold back anything the caller would hear twice: the same opener as last time, or a
                             // question that repeats an earlier topic. The finished reply is checked before it plays.
                             const repeatsOpener = this.questions.wouldRepeatOpener(sentence);
-                            const repeatsQuestion = this.service === 'recruitment' && sentence.includes('?')
-                                && this.questions.checkQuestion(sentence, { clarification: turnKind === 'clarification', dryRun: true }).duplicate;
+                            const repeatsQuestion = (this.service === 'recruitment' && sentence.includes('?')
+                                && this.questions.checkQuestion(sentence, { clarification: turnKind === 'clarification', dryRun: true }).duplicate)
+                                || (this.service === 'sales' && SalesState.wouldRepeatMeetingQuestion(this.collectedData, sentence));
                             if (repeatsOpener || repeatsQuestion) {
                                 this.logDiagnostic('early_phrase_held_back', { turnId, reason: repeatsOpener ? 'repeated_opener' : 'duplicate_question', text: sentence.slice(0, 80) });
                                 return;
@@ -1938,7 +1953,9 @@ export class CallSession {
             }
 
             if (reply.extracted_fields && Object.keys(reply.extracted_fields).length > 0) {
-                for (const [k, v] of Object.entries(reply.extracted_fields)) {
+                // The meeting preference is read from the caller's words by code; the AI cannot set or change it.
+                const aiFields = this.service === 'sales' ? SalesState.filterAiFields(this.collectedData, reply.extracted_fields) : reply.extracted_fields;
+                for (const [k, v] of Object.entries(aiFields)) {
                     if (v !== null && v !== undefined && String(v).trim() !== '') {
                         this.collectedData[k] = v;
                         if (this.memory && typeof this.memory.recordFact === 'function') {
@@ -2006,6 +2023,12 @@ export class CallSession {
                     text: String(spokenResponse).slice(0, 120)
                 });
             }
+            // Sales: the call-or-in-person question is asked once; a repeat becomes the closing for what is known.
+            if (spokenResponse && this.service === 'sales' && SalesState.wouldRepeatMeetingQuestion(this.collectedData, spokenResponse)) {
+                this.logDiagnostic('reply_adjusted', { turnId, source: 'LLM', notes: ['repeated_meeting_question'] });
+                spokenResponse = SalesState.meetingReply(this.collectedData.meeting_preference, this.detectedLanguage);
+                endAfterReply = true;
+            }
             if (!spokenResponse) {
                 console.warn('[CallSession] LLM returned empty spoken_response. Using stage-aware universal fallback.');
                 const fallback = this.recoveryLine();
@@ -2043,6 +2066,7 @@ export class CallSession {
 
             this.currentQuestion = spokenResponse;
             this.interruptedWithAnswer = false;
+            this.noteSalesReply(spokenResponse);
 
             this.logDiagnostic('answer_processing_completed', { turnId, source: 'LLM' });
             this.logDiagnostic('next_question_generated', { turnId, question: spokenResponse, source: 'LLM' });
@@ -2235,6 +2259,12 @@ export class CallSession {
                 } catch (evalErr) {
                     console.warn('[CallSession] Screening evaluation note:', evalErr.message);
                 }
+            }
+
+            if (this.service === 'sales') {
+                // Meeting preference from what the caller actually said ("not_specified" when never answered).
+                this.collectedData = { ...this.collectedData, ...SalesState.finalizeMeetingFields(this.collectedData) };
+                this.summary = SalesState.composeSalesSummary(this.collectedData, { classification: this.classification, summary: this.summary });
             }
 
             if (this.contactId) {
