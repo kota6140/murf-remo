@@ -16,11 +16,11 @@ import 'dotenv/config';
 
 export class LLMService {
     static getClaudeApiKey() {
-        return (process.env.CLAUDE_API_KEY || '').trim();
+        return (process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || '').trim();
     }
 
     static getGeminiApiKey() {
-        return (process.env.GEMINI_API_KEY || '').trim();
+        return '';
     }
 
     static getClaudeModel() {
@@ -36,26 +36,24 @@ export class LLMService {
     }
 
     static getGeminiModel() {
-        return (process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite').trim();
+        return 'disabled';
     }
 
     static getActiveProvider() {
-        if (this.getClaudeApiKey()) return 'claude';
-        if (this.getGeminiApiKey()) return 'gemini';
         return 'claude';
     }
 
     /**
-     * Executes a completion with automatic failover from Claude Haiku to Gemini Flash.
+     * Executes a completion using Anthropic Claude exclusively.
      * 
      * @param {object} params
      * @param {string} params.systemPrompt - High-priority system instructions
      * @param {Array<{role: string, content: string}>} params.messages - Conversation history
      * @param {number} [params.maxTokens=300] - Max tokens to generate
      * @param {number} [params.temperature=0.3] - Sampling temperature
-     * @param {number} [params.timeoutMs=4500] - Hard network timeout per provider
+     * @param {number} [params.timeoutMs=4500] - Hard network timeout
      * @param {boolean} [params.jsonMode=false] - Hint to return parsed JSON
-     * @returns {Promise<{text: string, parsedJson?: object, provider: string, model: string, latencyMs: number, fallback: boolean}>}
+     * @returns {Promise<{text: string, parsedJson?: object, provider: string, model: string, latencyMs: number, fallback: boolean, error?: string}>}
      */
     static async generate({
         systemPrompt = '',
@@ -67,77 +65,62 @@ export class LLMService {
     }) {
         const startTime = performance.now();
         const claudeKey = this.getClaudeApiKey();
-        const geminiKey = this.getGeminiApiKey();
 
-        // 1. Try Claude Haiku Primary
-        if (claudeKey) {
-            try {
-                const claudeModel = this.getClaudeModel();
-                const claudeResult = await this._callClaude({
-                    apiKey: claudeKey,
+        if (!claudeKey) {
+            const err = 'ANTHROPIC_API_KEY is not set in environment or .env file.';
+            console.error(`[LLMService] Configuration Error: ${err}`);
+            return {
+                text: '',
+                parsedJson: null,
+                provider: 'none',
+                model: 'none',
+                latencyMs: 0,
+                fallback: true,
+                error: err
+            };
+        }
+
+        try {
+            const claudeModel = this.getClaudeModel();
+            const claudeResult = await this._callClaude({
+                apiKey: claudeKey,
+                model: claudeModel,
+                systemPrompt,
+                messages,
+                maxTokens,
+                temperature,
+                timeoutMs
+            });
+
+            const latencyMs = Math.round(performance.now() - startTime);
+            if (claudeResult && claudeResult.text && claudeResult.text.trim()) {
+                let parsedJson = null;
+                if (jsonMode) {
+                    parsedJson = this.extractJson(claudeResult.text);
+                }
+                return {
+                    text: claudeResult.text.trim(),
+                    parsedJson,
+                    provider: 'claude',
                     model: claudeModel,
-                    systemPrompt,
-                    messages,
-                    maxTokens,
-                    temperature,
-                    timeoutMs
-                });
-
-                const latencyMs = Math.round(performance.now() - startTime);
-                if (claudeResult && claudeResult.text && claudeResult.text.trim()) {
-                    let parsedJson = null;
-                    if (jsonMode) {
-                        parsedJson = this.extractJson(claudeResult.text);
-                    }
-                    return {
-                        text: claudeResult.text.trim(),
-                        parsedJson,
-                        provider: 'claude',
-                        model: claudeModel,
-                        latencyMs,
-                        fallback: false
-                    };
-                }
-            } catch (claudeErr) {
-                console.warn(`[LLMService] Claude Haiku error (${claudeErr.message}). Triggering Gemini fallback...`);
+                    latencyMs,
+                    fallback: false
+                };
             }
+        } catch (claudeErr) {
+            console.error(`[LLMService] Claude API error: ${claudeErr.message}`);
+            const elapsed = Math.round(performance.now() - startTime);
+            return {
+                text: '',
+                parsedJson: null,
+                provider: 'claude',
+                model: this.getClaudeModel(),
+                latencyMs: elapsed,
+                fallback: true,
+                error: claudeErr.message
+            };
         }
 
-        // 2. Fallback to Gemini Flash
-        if (geminiKey) {
-            try {
-                const geminiModel = this.getGeminiModel();
-                const geminiResult = await this._callGemini({
-                    apiKey: geminiKey,
-                    model: geminiModel,
-                    systemPrompt,
-                    messages,
-                    maxTokens,
-                    temperature,
-                    timeoutMs
-                });
-
-                const latencyMs = Math.round(performance.now() - startTime);
-                if (geminiResult && geminiResult.text && geminiResult.text.trim()) {
-                    let parsedJson = null;
-                    if (jsonMode) {
-                        parsedJson = this.extractJson(geminiResult.text);
-                    }
-                    return {
-                        text: geminiResult.text.trim(),
-                        parsedJson,
-                        provider: 'gemini',
-                        model: geminiModel,
-                        latencyMs,
-                        fallback: true
-                    };
-                }
-            } catch (geminiErr) {
-                console.error(`[LLMService] Gemini Fallback error: ${geminiErr.message}.`);
-            }
-        }
-
-        // 3. Both failed or unconfigured
         const elapsed = Math.round(performance.now() - startTime);
         return {
             text: '',
@@ -146,7 +129,7 @@ export class LLMService {
             model: 'none',
             latencyMs: elapsed,
             fallback: true,
-            error: 'All configured LLM providers were unavailable or timed out.'
+            error: 'Claude returned empty response.'
         };
     }
 
