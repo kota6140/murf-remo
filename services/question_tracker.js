@@ -133,12 +133,17 @@ export function isYesNoQuestion(question) {
         || /^(hello|hi|okay|ok|great|thanks|thank you|sure|got it|so|and|perfect|alright),? (do|does|are|is|can|could|would|will|have)\b/.test(q);
 }
 
-/** "What do you mean?", "Could you repeat that?", "Sorry?" */
+/** "What do you mean?", "Could you repeat that?", "What is this call about?", "Who is this?" */
 export function isClarificationRequest(transcript) {
     const t = norm(transcript);
     if (!t) return false;
     if (/^(sorry|pardon|what|huh|come again|excuse me)$/.test(t)) return true;
-    return /what do you mean|didn'?t (get|catch|understand|hear)|(can|could) you (please )?(repeat|explain|clarify|say)|i (didn'?t|did not|don'?t) (understand|follow|get)|say that again|what was (that|the question)|which (one|part)|explain (that|the question)|phir se|samajh nahi|ardham kaledu|malli cheppandi/.test(t);
+    if (/what do you mean|didn'?t (get|catch|understand|hear)|(can|could) you (please )?(repeat|explain|clarify|say)|i (didn'?t|did not|don'?t) (understand|follow|get)|say that again|what was (that|the question)|which (one|part)|explain (that|the question)|phir se|samajh nahi|ardham kaledu|malli cheppandi/.test(t)) return true;
+    // Inquiry on identity, purpose or company (e.g. "what is this call about?", "who is this?", "why are you calling?")
+    if (/\b(what (?:is|was|s) (?:this|the) (?:call )?(?:all )?(?:about|regarding|for)|why (?:are you|did you|you) (?:calling|call)|who (?:is|are) (?:this|you|calling|speaking)|(?:what is|whats) (?:the )?purpose of (?:this |the )?call|which company|what company|where are you calling from|what do you want|what do you need)\b|kis (?:liye|baare|bare) mein|kaun bol raha|deni gurinchi|denikosam|enduku call|endukani call|evaru matladedi/i.test(t)) return true;
+    // Any question asked when caller message is an interrogative or contains question mark
+    if (String(transcript).includes('?') && /^(what|why|who|where|how|which|can|could|is this)\b/i.test(t)) return true;
+    return false;
 }
 
 /** "And then?", "Please continue", "Go on". */

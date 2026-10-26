@@ -63,7 +63,10 @@ export default class IntentService {
     static getSalesOfferings(context = {}) {
         const cc = context.campaignContext || (context.contact && context.contact.campaignContext) || {};
         if (Array.isArray(cc.key_features) && cc.key_features.length > 0) {
-            return cc.key_features.slice(0, 2).join(' and ');
+            return cc.key_features.slice(0, 3).join(', ');
+        }
+        if (Array.isArray(cc.value_propositions) && cc.value_propositions.length > 0) {
+            return cc.value_propositions.slice(0, 2).join(' and ');
         }
         if (cc.product_name && !cc.product_name.includes('Scorelabs')) {
             return cc.product_name;
@@ -211,16 +214,26 @@ export default class IntentService {
                 };
             }
 
-            // B. Purpose Inquiry: "Why are you calling?" / "What is this about?"
-            if (clean.includes('why are you calling') || clean.includes('what is this regarding') || clean.includes('what is this about') || clean.includes('what is the call about') || clean.includes('purpose of call') || clean.includes('kis liye call kiya') || clean.includes('endukani call chesaru')) {
+            // B. Purpose Inquiry: "Why are you calling?" / "What is this about?" / "What is this call about?"
+            const isPurposeInquiry = /\b(what (?:is|was|s) (?:this|the) (?:call )?(?:all )?(?:about|regarding|for)|why (?:are you|did you|you) (?:calling|call)|(?:what is|whats) (?:the )?purpose of (?:this |the )?call|tell me about (?:this|the) call|what do you want|what do you need)\b|kis (?:liye|baare|bare) mein|kya kaam hai|kya baat hai|deni gurinchi|denikosam|enduku call|endukani call/i.test(clean)
+                || clean.includes('why are you calling') || clean.includes('what is this regarding') || clean.includes('what is this about') || clean.includes('what is the call about') || clean.includes('what is this call about') || clean.includes('purpose of call') || clean.includes('kis liye call kiya') || clean.includes('endukani call chesaru');
+
+            if (isPurposeInquiry) {
+                const cc = context.campaignContext || (context.contact && context.contact.campaignContext) || {};
+                const purpose = cc.call_objective || cc.campaign_objective || cc.purpose || cc.role_summary || (cc.product_name ? `our ${cc.product_name}` : '');
+                const purposeEn = purpose
+                    ? `I'm reaching out from ${comp} regarding ${purpose}. Do you have a brief minute?`
+                    : `I'm reaching out from ${comp} to check if you're exploring any services we could help you with. Do you have a brief minute?`;
+                const purposeHi = purpose
+                    ? `मैं ${comp} से ${purpose} के संबंध में कॉल कर रहा हूँ। क्या आपके पास एक मिनट का समय है?`
+                    : `मैं ${comp} से यह जानने के लिए कॉल कर रहा हूँ कि क्या आप किसी सेवा की तलाश में हैं। क्या आपके पास एक मिनट का समय है?`;
+                const purposeTe = purpose
+                    ? `మేము ${comp} నుండి ${purpose} సంబంధించి కాల్ చేస్తున్నాను. ఒక నిమిషం సమయం ఉందా?`
+                    : `మేము సహాయపడగల సేవల గురించి తెలుసుకోవడానికి ${comp} నుండి కాల్ చేస్తున్నాను. ఒక నిమిషం సమయం ఉందా?`;
+
                 return {
                     matched: true,
-                    spoken_response: this.localize(
-                        `I'm reaching out from ${comp} to check if you're exploring any services we could help you with. Do you have a brief minute?`,
-                        `मैं ${comp} से यह जानने के लिए कॉल कर रहा हूँ कि क्या आप किसी सेवा की तलाश में हैं। क्या आपके पास एक मिनट का समय है?`,
-                        `మేము సహాయపడగల సేవల గురించి తెలుసుకోవడానికి ${comp} నుండి కాల్ చేస్తున్నాను. ఒక నిమిషం సమయం ఉందా?`,
-                        currentLang
-                    ),
+                    spoken_response: this.localize(purposeEn, purposeHi, purposeTe, currentLang),
                     detected_language: currentLang,
                     next_stage: 'PERMISSION_CHECK',
                     should_end_call: false,
@@ -322,20 +335,92 @@ export default class IntentService {
                 };
             }
 
-            // H. "What is your pricing?"
+            // H. "What is your pricing?" / "What are the charges?"
             if (clean.includes('pricing') || clean.includes('price') || clean.includes('charges') || clean.includes('cost') || clean.includes('rate') || clean.includes('how much')) {
+                const cc = context.campaignContext || (context.contact && context.contact.campaignContext) || {};
+                const docPrice = cc.pricing_summary || cc.pricing || cc.charges || cc.pricing_details || null;
+                let priceEn, priceHi, priceTe;
+                if (docPrice) {
+                    priceEn = `Our pricing starts at ${docPrice}. We can review your exact requirement for a specific quote.`;
+                    priceHi = `हमारा मूल्य निर्धारण ${docPrice} से शुरू होता है। हम आपकी विशिष्ट आवश्यकता के लिए एक सटीक कोटेशन प्रदान कर सकते हैं।`;
+                    priceTe = `మా ధరలు ${docPrice} నుండి ప్రారంభమవుతాయి. మీ అవసరానికి తగిన కొటేషన్‌ను అందించగలము.`;
+                } else {
+                    priceEn = "Pricing depends on the project scope and technical requirements. Our team can review your requirement and provide a quotation.";
+                    priceHi = "मूल्य निर्धारण परियोजना के दायरे और तकनीकी आवश्यकताओं पर निर्भर करता है। हमारी टीम समीक्षा करके उपयुक्त कोटेशन प्रदान कर सकती है।";
+                    priceTe = "ధర ప్రాజెక్ట్ పరిధి మరియు సాంకేతిక అవసరాలపై ఆధారపడి ఉంటుంది. మా బృందం పరిశీలించి తగిన కొటేషన్ అందిస్తుంది.";
+                }
                 return {
                     matched: true,
-                    spoken_response: this.localize(
-                        "Pricing depends on the project scope, technical requirements, and timeline. Our team can review your requirement and provide a suitable quotation.",
-                        "मूल्य निर्धारण परियोजना के दायरे, तकनीकी आवश्यकताओं और समय सीमा पर निर्भर करता है। हमारी टीम आपकी आवश्यकता की समीक्षा कर सकती है और एक उपयुक्त कोटेशन प्रदान कर सकती है।",
-                        "ధర అనేది ప్రాజెక్ట్ పరిధి, సాంకేతిక అవసరాలు మరియు కాలక్రమంపై ఆధారపడి ఉంటుంది. మా బృందం మీ అవసరాన్ని సమీక్షించి తగిన కొటేషన్‌ను అందించగలదు.",
-                        currentLang
-                    ),
+                    spoken_response: this.localize(priceEn, priceHi, priceTe, currentLang),
                     detected_language: currentLang,
                     next_stage: 'QUALIFICATION',
                     should_end_call: false,
                     reason: 'sales_pricing_inquiry'
+                };
+            }
+
+            // H2. "How does this work?"
+            if (clean.includes('how does this work') || clean.includes('how it works') || clean.includes('how does it work') || clean.includes('kaise kaam karta') || clean.includes('ela panichestundi')) {
+                const cc = context.campaignContext || (context.contact && context.contact.campaignContext) || {};
+                const howItWorks = cc.how_it_works || (Array.isArray(cc.value_propositions) && cc.value_propositions[0]) || null;
+                const respEn = howItWorks
+                    ? `It works by ${howItWorks}. Would you like to explore how this applies to your requirements?`
+                    : `We assess your specific requirements and deliver a tailored solution with full support. Would you like to discuss your needs?`;
+                return {
+                    matched: true,
+                    spoken_response: this.localize(
+                        respEn,
+                        howItWorks ? `यह ${howItWorks} के माध्यम से काम करता है। क्या आप इस पर चर्चा करना चाहेंगे?` : `हम आपकी आवश्यकताओं का आकलन करते हैं और एक अनुकूलित समाधान प्रदान करते हैं।`,
+                        howItWorks ? `ఇది ${howItWorks} ద్వారా పనిచేస్తుంది. మీ అవసరాల గురించి చర్చించాలనుకుంటున్నారా?` : `మేము మీ అవసరాలను అంచనా వేసి తగిన పరిష్కారాన్ని అందిస్తాము.`,
+                        currentLang
+                    ),
+                    detected_language: currentLang,
+                    next_stage: 'SERVICE_DISCOVERY',
+                    should_end_call: false,
+                    reason: 'sales_how_it_works_inquiry'
+                };
+            }
+
+            // H3. "Why should I be interested?" / "What are the benefits?"
+            if (clean.includes('why should i be interested') || clean.includes('why should i') || clean.includes('what are the benefits') || clean.includes('kya fayda') || clean.includes('fayda kya') || clean.includes('enduku interest')) {
+                const cc = context.campaignContext || (context.contact && context.contact.campaignContext) || {};
+                const benefit = (Array.isArray(cc.value_propositions) && cc.value_propositions.length > 0)
+                    ? cc.value_propositions.slice(0, 2).join(' and ')
+                    : (Array.isArray(cc.key_features) && cc.key_features.length > 0 ? cc.key_features.slice(0, 2).join(' and ') : null);
+                const benefitEn = benefit
+                    ? `Key benefits include ${benefit}. Does that align with what you're looking for?`
+                    : `We help streamline your operations and deliver custom solutions tailored to your business goals. Would that be helpful?`;
+                return {
+                    matched: true,
+                    spoken_response: this.localize(
+                        benefitEn,
+                        benefit ? `मुख्य लाभों में ${benefit} शामिल हैं। क्या यह आपके अनुकूल है?` : `हम आपके संचालन को सुव्यवस्थित करने और कस्टम समाधान प्रदान करने में मदद करते हैं।`,
+                        benefit ? `ముఖ్య ప్రయోజనాలలో ${benefit} ఉన్నాయి. ఇది మీ అవసరాలకు సరిపోతుందా?` : `మేము మీ వ్యాపార లక్ష్యాలకు అనుగుణంగా అనుకూలీకరించిన పరిష్కారాలను అందిస్తాము.`,
+                        currentLang
+                    ),
+                    detected_language: currentLang,
+                    next_stage: 'INTEREST_DISCOVERY',
+                    should_end_call: false,
+                    reason: 'sales_benefits_inquiry'
+                };
+            }
+
+            // H4. "What happens next?"
+            if (clean.includes('what happens next') || clean.includes('next step') || clean.includes('whats next') || clean.includes('aage kya') || clean.includes('taruvatha enti')) {
+                const cc = context.campaignContext || (context.contact && context.contact.campaignContext) || {};
+                const nextStep = cc.call_to_action || cc.desired_outcome || cc.next_steps || "our team coordinates with you to review requirements and share full details";
+                return {
+                    matched: true,
+                    spoken_response: this.localize(
+                        `Next, ${nextStep}. Does that sound good?`,
+                        `इसके बाद, ${nextStep}। क्या यह ठीक रहेगा?`,
+                        `తరువాత, ${nextStep}. ఇది మీకు సమ్మతమేనా?`,
+                        currentLang
+                    ),
+                    detected_language: currentLang,
+                    next_stage: 'NEXT_STEP',
+                    should_end_call: false,
+                    reason: 'sales_next_step_inquiry'
                 };
             }
 
@@ -357,7 +442,9 @@ export default class IntentService {
             }
 
             // J. "I'm busy" / Meeting / Driving
-            if (clean.includes('busy') || clean.includes('in a meeting') || clean.includes('driving') || clean.includes('call later')) {
+            const isBusy = /\b(busy|in a meeting|in meeting|driving|call (?:me )?later|call (?:me )?back|not a good time|bad time|tied up|occupied)\b|व्यस्त|मीटिंग|డ్రైవింగ్|బిజీ/i.test(clean)
+                || clean.includes('busy') || clean.includes('in a meeting') || clean.includes('driving') || clean.includes('call later');
+            if (isBusy) {
                 return {
                     matched: true,
                     intent: 'BUSY',
@@ -399,7 +486,7 @@ export default class IntentService {
         }
 
         // -------------------------------------------------------------
-        // 4b. RECRUITMENT: "who is this?" and "and then?" / "please continue"
+        // 4b. RECRUITMENT: "who is this?" / "what is this call about?" and "and then?" / "please continue"
         // -------------------------------------------------------------
         if (service === 'recruitment') {
             const questions = context.questions || null;
@@ -412,6 +499,40 @@ export default class IntentService {
                     next_stage: 'AVAILABILITY',
                     should_end_call: false,
                     reason: 'recruitment_identity_inquiry'
+                };
+            }
+            if (opening && (/\b(what (?:is|was|s) (?:this|the) (?:call )?(?:all )?(?:about|regarding|for)|why (?:are you|did you|you) (?:calling|call)|(?:what is|whats) (?:the )?purpose of (?:this |the )?call|what is this for)\b|kis (?:liye|baare|bare) mein|deni gurinchi|denikosam|enduku call|endukani call/i.test(clean))) {
+                const cc = context.campaignContext || (context.contact && context.contact.campaignContext) || {};
+                const compName = cc.company_name || (context.contact && context.contact.company) || 'ScoreLabs';
+                const targetRole = cc.job_title || role || 'the open position';
+                return {
+                    matched: true,
+                    spoken_response: this.localize(
+                        `I'm calling from ${compName} regarding your job application for the ${targetRole} role. Is this a good time to speak for a minute?`,
+                        `मैं ${compName} से ${targetRole} पद के लिए आपके जॉब आवेदन के संबंध में कॉल कर रहा हूँ। क्या अभी एक मिनट बात करने का समय है?`,
+                        `నేను ${compName} నుండి ${targetRole} ఉద్యోగ దరఖాస్తు సంబంధించి కాల్ చేస్తున్నాను. మాట్లాడటానికి ఒక నిమిషం సమయం ఉందా?`,
+                        currentLang
+                    ),
+                    detected_language: currentLang,
+                    next_stage: 'AVAILABILITY',
+                    should_end_call: false,
+                    reason: 'recruitment_purpose_inquiry'
+                };
+            }
+            if (opening && (/\b(busy|in a meeting|driving|call later|not a good time)\b/.test(clean))) {
+                return {
+                    matched: true,
+                    intent: 'BUSY',
+                    spoken_response: this.localize(
+                        "No problem at all! When would be a better time for our recruiting team to connect briefly?",
+                        "कोई बात नहीं! हमारी भर्ती टीम आपको वापस कॉल करने के लिए किस समय संपर्क कर सकती है?",
+                        "ఏమీ పర్వాలేదు! మా రిక్రూట్‌మెంట్ టీమ్ మీకు తిరిగి కాల్ చేయడానికి అనువైన సమయం ఎప్పుడు?",
+                        currentLang
+                    ),
+                    detected_language: currentLang,
+                    next_stage: 'CALLBACK_TIME',
+                    should_end_call: false,
+                    reason: 'recruitment_busy'
                 };
             }
             if (context.turnKind === 'continuation') {

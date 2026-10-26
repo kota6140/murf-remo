@@ -2,6 +2,8 @@ import db, { utcNow } from './db.js';
 import PlivoService from './plivo_service.js';
 import ExotelService from './exotel_service.js';
 import AgentService from './agent_service.js';
+import ElevenLabsService from './elevenlabs_service.js';
+import GeminiService from './gemini_service.js';
 
 export class CallQueueWorker {
     static isPaused = false;
@@ -184,6 +186,40 @@ export class CallQueueWorker {
                 if (agent && !contactRecord.agent_id) {
                     await db.run('UPDATE contacts SET agent_id = ? WHERE id = ?', [agent.id, nextJob.contact_id]).catch(() => {});
                 }
+
+                // Pre-warm opening greeting TTS into RAM cache during ringing
+                if (ElevenLabsService.isConfigured()) {
+                    (async () => {
+                        try {
+                            const rawName = String(contactRecord.name || contactRecord.contact || '').trim();
+                            const isValidName = rawName && !rawName.startsWith('Caller') && !rawName.startsWith('Candidate') && !rawName.startsWith('Contact') && !rawName.startsWith('Row');
+                            let greeting = '';
+                            if (agent && agent.greeting) {
+                                greeting = AgentService.renderGreeting(agent.greeting, {
+                                    name: isValidName ? rawName : '',
+                                    role: contactRecord.job_role || contactRecord.role || '',
+                                    company: contactRecord.company || '',
+                                    agent: agent.name
+                                });
+                            }
+                            if (!greeting) {
+                                greeting = GeminiService.getOpeningGreeting(nextJob.service, {
+                                    name: rawName,
+                                    job_role: contactRecord.job_role || contactRecord.role || '',
+                                    role: contactRecord.job_role || contactRecord.role || '',
+                                    company: contactRecord.company || ''
+                                });
+                            }
+                            if (greeting) {
+                                const lang = ElevenLabsService.detectLanguageFromText(greeting, 'en');
+                                const voiceId = (agent && agent.voice_id && lang !== 'te') ? agent.voice_id : ElevenLabsService.getVoiceId(lang);
+                                const modelId = ElevenLabsService.selectTtsModel({ language: lang, text: greeting, voiceId });
+                                ElevenLabsService.textToSpeech(greeting, { voiceId, modelId, outputFormat: 'ulaw_8000', language: lang }).catch(() => {});
+                            }
+                        } catch (_) {}
+                    })();
+                }
+
                 result = await PlivoService.initiateOutboundCall(contactRecord, nextJob.service, { agent });
             } catch (plivoErr) {
                 console.error('[QUEUE] Plivo dispatch error:', plivoErr);

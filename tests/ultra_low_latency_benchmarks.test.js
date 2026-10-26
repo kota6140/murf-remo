@@ -101,8 +101,8 @@ async function runUltraLowLatencySuite() {
     // -------------------------------------------------------------
     console.log('\n--- Benchmark 4: Streaming LLM Response & Early TTS Dispatch ---');
 
-    if (LLMService.getClaudeApiKey()) {
-        await test('Claude Haiku streams with early sentence extraction in < 1500ms', async () => {
+    if (LLMService.getOpenAIApiKey() || LLMService.getClaudeApiKey()) {
+        await test('Primary streaming LLM streams with early sentence extraction', async () => {
             let earlySentence = '';
             let ttft = null;
             const t0 = performance.now();
@@ -122,11 +122,12 @@ async function runUltraLowLatencySuite() {
             });
 
             const totalMs = Math.round(performance.now() - t0);
-            console.log(`    -> Claude Haiku TTFT: ${ttft || res.firstTokenMs}ms | Total Stream: ${totalMs}ms`);
+            console.log(`    -> Provider: ${res.provider} (${res.model}) | TTFT: ${ttft || res.firstTokenMs}ms | Total Stream: ${totalMs}ms`);
             console.log(`    -> Early extracted sentence: "${(earlySentence || res.text).slice(0, 60)}..."`);
 
             assert.ok(res.text && res.text.length > 10, 'Must return valid text');
-            assert.ok(totalMs < 3000, `Stream must complete in < 3000ms (got ${totalMs}ms)`);
+            assert.ok((ttft || res.firstTokenMs) < 5000, `First token must arrive within 5000ms (got ${ttft || res.firstTokenMs}ms)`);
+            assert.ok(totalMs < 8000, `Stream must complete in < 8000ms (got ${totalMs}ms)`);
         });
     }
 

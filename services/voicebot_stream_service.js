@@ -9,6 +9,7 @@ import ConversationMemory from './conversation_memory.js';
 import ScreeningEvaluator from './screening_evaluator.js';
 import AgentService, { ensureAgentSchema } from './agent_service.js';
 import PlivoService from './plivo_service.js';
+import CampaignService from './campaign_service.js';
 import LanguageStateMachine from './language_state_machine.js';
 import QuestionTracker, { stripAlreadySpoken, isAffirmativeMurmur, isAcknowledgement, splitSentences, topicOf, questionPart } from './question_tracker.js';
 
@@ -236,10 +237,18 @@ export class CallSession {
         this.service = (params.service || 'recruitment').toLowerCase();
         this.ownerUserId = params.ownerUserId || null;
         this.phone = params.phone || '';
-        this.callerName = params.callerName || '';
+        this.callerName = params.callerName || params.name || '';
         this.jobRole = params.role || '';
         this.companyName = params.company || '';
         this.campaignId = params.campaignId || null;
+        this.contact = {
+            id: this.contactId,
+            name: this.callerName || (this.service === 'recruitment' ? 'Candidate' : 'Customer'),
+            phone: this.phone,
+            role: this.jobRole,
+            company: this.companyName,
+            service: this.service
+        };
         // Multi-agent: the agent (number, greeting, instructions, voice) this call belongs to.
         this.agentId = params.agentId || '';
         this.direction = params.direction === 'inbound' ? 'inbound' : 'outbound';
@@ -297,6 +306,10 @@ export class CallSession {
         // Overlap buffer (when caller speaks WHILE AI is speaking or turn is being processed)
         this.overlapMulawChunks = [];
         this.overlapSpeechFrames = 0;
+
+        // Call termination & playback state
+        this.isClosingCall = false;
+        this.hangUpTimer = null;
 
         // VAD parameters (20ms frames = 160 mulaw bytes at 8kHz)
         this.ENERGY_THRESHOLD = 450;        // Minimum RMS to count as speech
@@ -725,19 +738,15 @@ export class CallSession {
             // Load Campaign Configuration & Question Plan if linked to a Campaign
             if (this.campaignId) {
                 try {
-                    const camp = await db.get('SELECT * FROM campaigns WHERE id = ?', [this.campaignId]);
-                    if (camp) {
-                        this.campaign = camp;
-                        if (camp.service) {
-                            this.service = camp.service.toLowerCase().trim();
+                    const campCtx = await CampaignService.getCampaignContext(this.campaignId);
+                    if (campCtx) {
+                        this.campaign = campCtx;
+                        if (campCtx.service) {
+                            this.service = campCtx.service.toLowerCase().trim();
                             this.contact.service = this.service;
                         }
-                        if (camp.extracted_data) {
-                            try {
-                                this.campaignContext = typeof camp.extracted_data === 'string' ? JSON.parse(camp.extracted_data) : camp.extracted_data;
-                            } catch (e) {
-                                this.campaignContext = { raw: camp.extracted_data };
-                            }
+                        if (campCtx.extracted_data) {
+                            this.campaignContext = campCtx.extracted_data;
                         }
                         if (this.campaignContext && this.campaignContext.job_title && (!this.jobRole || this.jobRole === 'the open position')) {
                             this.jobRole = this.campaignContext.job_title;
@@ -753,14 +762,10 @@ export class CallSession {
                                 this.jobRole = this.campaignContext.product_name;
                             }
                         }
-                        if (camp.question_plan) {
-                            try {
-                                this.questionPlan = typeof camp.question_plan === 'string' ? JSON.parse(camp.question_plan) : camp.question_plan;
-                            } catch (e) {
-                                this.questionPlan = null;
-                            }
+                        if (campCtx.question_plan) {
+                            this.questionPlan = campCtx.question_plan;
                         }
-                        console.log(`[CallSession] Loaded campaign "${camp.name}" (${camp.id}) — Service: ${camp.service}`);
+                        console.log(`[CallSession] Loaded campaign "${campCtx.name}" (${campCtx.id}) — Service: ${campCtx.service} (Version: ${campCtx.version || 'v1'})`);
                     }
                 } catch (campErr) {
                     console.warn('[CallSession] Campaign lookup note:', campErr.message);
@@ -953,6 +958,11 @@ export class CallSession {
                 this.scheduleSpeechEnd();
                 return;
             }
+            // If an early sentence finished playing but the LLM is still generating the remainder, wait for generation.
+            if (this.activeResponse && this.activeResponse.isStreaming && !this.activeResponse.llmComplete) {
+                this.scheduleSpeechEnd();
+                return;
+            }
             this.completePlayback('timer');
         }, this.pendingSpeech > 0 ? Math.max(wait, 60) : wait);
     }
@@ -967,7 +977,10 @@ export class CallSession {
         if (!this.isAiSpeaking || this.isClosed) return;
         this.isAiSpeaking = false;
         console.log('[CallSession] AI finished speaking turn. Now listening for caller.');
-        if (this.activeResponse && !this.activeResponse.cancelled) this.activeResponse.phase = 'PLAYBACK_COMPLETED';
+        if (this.activeResponse && !this.activeResponse.cancelled) {
+            this.activeResponse.phase = 'PLAYBACK_COMPLETED';
+            this.activeResponse.playbackComplete = true;
+        }
         this.questions.noteResponsePlayed();
         this.logDiagnostic('playback_completed', { source, responseId: this.activeResponse ? this.activeResponse.id : null });
         if (this.conversationState === ConversationStates.SPEAKING) {
@@ -1003,7 +1016,19 @@ export class CallSession {
     /** Starts the one response for a caller turn. A response still active from before is cancelled. */
     beginResponse(turnId = this.currentTurnId) {
         this.cancelActiveResponse('superseded_by_new_response');
-        const response = { id: ++this.responseSeq, turnId, cancelled: false, phase: 'GENERATING', spoken: [], startedAt: Date.now() };
+        const response = {
+            id: ++this.responseSeq,
+            turnId,
+            cancelled: false,
+            phase: 'GENERATING',
+            spoken: [],
+            startedAt: Date.now(),
+            llmComplete: false,
+            ttsComplete: false,
+            chunksDelivered: false,
+            playbackComplete: false,
+            callTerminated: false
+        };
         this.activeResponse = response;
         this.logDiagnostic('response_started', { responseId: response.id, turnId });
         return response;
@@ -1041,12 +1066,15 @@ export class CallSession {
         this.questions.setLanguage(this.detectedLanguage);
         this.questions.syncStage(this.currentStage);
         const entry = this.questions.noteResponseStarted(text, { turnId: response ? response.turnId : this.currentTurnId });
-        this.logDiagnostic('playback_started', {
-            responseId: response ? response.id : null,
-            questionId: entry ? entry.id : null,
-            topic: entry ? entry.topic : null,
-            text: String(text).slice(0, 120)
-        });
+        if (!response || !response.playbackStarted) {
+            if (response) response.playbackStarted = true;
+            this.logDiagnostic('playback_started', {
+                responseId: response ? response.id : null,
+                questionId: entry ? entry.id : null,
+                topic: entry ? entry.topic : null,
+                text: String(text).slice(0, 120)
+            });
+        }
     }
 
     /** All queued speech has been sent. Ask Plivo for the real end-of-playback signal and arm the timer fallback. */
@@ -1126,6 +1154,9 @@ export class CallSession {
                     playMsg.stream_id = this.streamId;
                 }
                 this.ws.send(JSON.stringify(playMsg));
+                if (response) {
+                    response.chunksDelivered = true;
+                }
                 console.log(`[CallSession] Sent ${audioBuffer.length} bytes of audio to Plivo (~${durationMs}ms at 8kHz ulaw)`);
             }
 
@@ -1305,6 +1336,9 @@ export class CallSession {
                 ttsRequest.catch(() => {});
             }
 
+            if (response) {
+                response.ttsComplete = true;
+            }
             this.latencyTracker.markTtsEnd(isCached);
 
             this.logDiagnostic('tts_completed', {
@@ -1336,7 +1370,7 @@ export class CallSession {
             // If audio was already streamed chunk-by-chunk, calculate total duration and set completion timer
             if (firstChunkSent) {
                 const totalDurationMs = Math.round((streamedBytes / 8000) * 1000);
-                // aiSpeechEndTime was built up chunk by chunk as the audio was sent
+                if (response) response.chunksDelivered = true;
                 console.log(`[CallSession] Incremental stream complete: ${streamedBytes} bytes (~${totalDurationMs}ms at 8kHz ulaw)`);
                 this.latencyTracker.markAudioDispatched();
                 this.scheduleSpeechEnd();
@@ -1344,6 +1378,7 @@ export class CallSession {
                 // If loaded from RAM cache, dispatch complete buffer instantly
                 this.latencyTracker.markFirstAudioChunkSent();
                 await this.dispatchAudioBuffer(audioBuffer, text, response);
+                if (response) response.chunksDelivered = true;
             }
 
         } catch (e) {
@@ -1370,6 +1405,11 @@ export class CallSession {
         }
 
         if (this.isClosed) return;
+
+        // If the call is in closing sequence and delivering farewell, do not allow barge-in to truncate it
+        if (this.isClosingCall) {
+            return;
+        }
 
         // Watchdog: never stay deaf. If the bot is still marked as speaking well after its audio ended
         // (its end-of-speech timer was lost), go back to listening right now.
@@ -1921,6 +1961,8 @@ export class CallSession {
                             }
                             firstSentenceDispatched = true;
                             earlySpoken.push(sentence);
+                            response.isStreaming = true;
+                            response.llmComplete = false;
                             this.latencyTracker.markDecisionEnd('LLM_STREAM');
                             console.log(`[CallSession] Early spoken phrase extracted. Streaming to TTS: "${sentence.slice(0, 50)}..."`);
                             this.setConversationState(ConversationStates.SPEAKING, 'llm_early_phrase');
@@ -1931,10 +1973,20 @@ export class CallSession {
                 }
             );
 
+            response.llmComplete = true;
+
             if (!firstSentenceDispatched) {
                 this.latencyTracker.markDecisionEnd('LLM');
             }
-            this.logDiagnostic('llm_generation_completed', { turnId, responseId: response.id, model: reply.model_used || null, streamedEarly: firstSentenceDispatched });
+            this.logDiagnostic('llm_generation_completed', {
+                turnId,
+                responseId: response.id,
+                model: reply.model_used || null,
+                provider: reply.provider || null,
+                isFallback: Boolean(reply.fallback),
+                failureReason: reply.fallbackReason || null,
+                streamedEarly: firstSentenceDispatched
+            });
 
             // FIX-6: Check if we've been superseded by a newer turn
             if (turnId !== this.currentTurnId) {
@@ -2072,7 +2124,9 @@ export class CallSession {
             this.logDiagnostic('next_question_generated', { turnId, question: spokenResponse, source: 'LLM' });
 
             this.setConversationState(ConversationStates.SPEAKING, 'llm_speaking');
-            this.logDiagnostic('remo_started_speaking', { turnId, text: spokenResponse, source: 'LLM' });
+            if (!firstSentenceDispatched) {
+                this.logDiagnostic('remo_started_speaking', { turnId, text: spokenResponse, source: 'LLM' });
+            }
 
             // Safe streaming: play only what has not been spoken yet. The sentence(s) already sent while the AI
             // was still writing are removed from the final text by meaning (not by exact characters), so an
@@ -2082,6 +2136,7 @@ export class CallSession {
                 const remainder = stripAlreadySpoken(spokenResponse, earlySpoken);
                 if (remainder && remainder.length > 3 && turnId === this.currentTurnId && !this.isClosed && !response.cancelled) {
                     console.log(`[CallSession] Streaming remainder sentence to TTS: "${remainder.slice(0, 50)}..."`);
+                    this.logDiagnostic('remainder_dispatched', { turnId, responseId: response.id, text: remainder.slice(0, 80) });
                     await this.playAiAudio(remainder, response);
                 } else if (!remainder) {
                     this.logDiagnostic('remainder_deduplicated', { turnId, responseId: response.id, early: earlySpoken });
@@ -2142,11 +2197,26 @@ export class CallSession {
         return GeminiService.getUniversalFallback(this.detectedLanguage, this.service, this.currentStage);
     }
 
-    /** Ends the call a little after the closing words have finished playing (not after a guess at their length). */
-    hangUpAfterSpeech(spokenText, paddingMs, minimumMs) {
-        const wordsMs = String(spokenText || '').split(/\s+/).length * 320 + paddingMs;
-        const audioLeftMs = Math.max(0, this.aiSpeechEndTime - Date.now()) + 1200;
-        setTimeout(() => this.endCall(), Math.max(wordsMs, audioLeftMs, minimumMs));
+    /** Ends the call after the closing words have completely finished playing on the phone line. */
+    hangUpAfterSpeech(spokenText, paddingMs = 1400, minimumMs = 2800) {
+        if (this.hangUpTimer) {
+            clearTimeout(this.hangUpTimer);
+            this.hangUpTimer = null;
+        }
+        this.isClosingCall = true; // Prevents barge-in or background noise from truncating farewell
+        const words = String(spokenText || '').split(/\s+/).filter(Boolean);
+        const wordsMs = words.length * 360 + paddingMs;
+        const audioLeftMs = Math.max(0, this.aiSpeechEndTime - Date.now()) + 1400;
+        const delay = Math.max(wordsMs, audioLeftMs, minimumMs);
+
+        console.log(`[CallSession] Scheduling duration-aware termination in ${delay}ms to guarantee complete farewell playback.`);
+        this.hangUpTimer = setTimeout(() => {
+            this.hangUpTimer = null;
+            if (!this.isClosed) {
+                if (this.activeResponse) this.activeResponse.callTerminated = true;
+                this.endCall();
+            }
+        }, delay);
     }
 
     /** What the question record knows, for the AI's prompt. */
@@ -2186,6 +2256,15 @@ export class CallSession {
     async endCall() {
         if (this.isClosed) return;
         this.isClosed = true;
+
+        if (this.hangUpTimer) {
+            clearTimeout(this.hangUpTimer);
+            this.hangUpTimer = null;
+        }
+        if (this.activeResponse) {
+            this.activeResponse.callTerminated = true;
+        }
+
         // No further speech after the line is gone: cancel the reply in progress and drop the queue.
         this.cancelActiveResponse('call_ended');
         this.playbackCheckpoint = null;

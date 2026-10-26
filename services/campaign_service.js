@@ -21,6 +21,89 @@ if (!fs.existsSync(UPLOAD_DIR)) {
  * with per-campaign question planning, call queuing, and live telemetry tracking.
  */
 export class CampaignService {
+    static _campaignContextCache = new Map();
+
+    /**
+     * Retrieves structured campaign document context from memory cache or database.
+     * Guarantees the document is the source of truth, parsed once and cached per campaign version.
+     */
+    static async getCampaignContext(campaignId) {
+        if (!campaignId) return null;
+        if (this._campaignContextCache.has(campaignId)) {
+            return this._campaignContextCache.get(campaignId);
+        }
+
+        await ensureCampaignSchema();
+        const camp = await db.get('SELECT * FROM campaigns WHERE id = ?', [campaignId]);
+        if (!camp) return null;
+
+        let extracted = null;
+        if (camp.extracted_data) {
+            try {
+                extracted = typeof camp.extracted_data === 'string' ? JSON.parse(camp.extracted_data) : camp.extracted_data;
+            } catch (e) {
+                extracted = { raw: camp.extracted_data };
+            }
+        } else if (camp.pdf_path && fs.existsSync(camp.pdf_path)) {
+            try {
+                const buffer = fs.readFileSync(camp.pdf_path);
+                extracted = await DocumentService.parseCampaignDocument(buffer, camp.pdf_filename || 'document.pdf', camp.service || 'recruitment');
+                const plan = await QuestionPlanner.generatePlanFor(camp.service || 'recruitment', extracted);
+                const now = utcNow();
+                await db.run('UPDATE campaigns SET extracted_data = ?, question_plan = ?, updated_at = ? WHERE id = ?', [
+                    JSON.stringify(extracted),
+                    JSON.stringify(plan),
+                    now,
+                    campaignId
+                ]);
+            } catch (extErr) {
+                console.error(`[CampaignService] Error parsing document for campaign ${campaignId}:`, extErr.message);
+                throw new Error(`The campaign document could not be processed: ${extErr.message}. Please upload a readable document.`);
+            }
+        }
+
+        let questionPlan = [];
+        if (camp.question_plan) {
+            try {
+                questionPlan = typeof camp.question_plan === 'string' ? JSON.parse(camp.question_plan) : camp.question_plan;
+            } catch {}
+        }
+
+        let config = {};
+        if (camp.config) {
+            try {
+                config = typeof camp.config === 'string' ? JSON.parse(camp.config) : camp.config;
+            } catch {}
+        }
+
+        const context = {
+            id: camp.id,
+            name: camp.name,
+            service: camp.service,
+            description: camp.description,
+            extracted_data: extracted,
+            question_plan: questionPlan,
+            config,
+            pdf_filename: camp.pdf_filename,
+            pdf_path: camp.pdf_path,
+            batch_id: camp.batch_id,
+            version: `${camp.id}_${camp.updated_at || camp.created_at || Date.now()}`
+        };
+
+        this._campaignContextCache.set(campaignId, context);
+        return context;
+    }
+
+    /**
+     * Invalidates the campaign memory cache (e.g. after document replacement, update, or deletion).
+     */
+    static invalidateCampaignContext(campaignId = null) {
+        if (!campaignId) {
+            this._campaignContextCache.clear();
+            return;
+        }
+        this._campaignContextCache.delete(campaignId);
+    }
     /**
      * Creates a new campaign in DRAFT status.
      */
@@ -181,6 +264,8 @@ export class CampaignService {
             WHERE id = ?
         `, [name, description, status, extractedData, questionPlan, config, now, id]);
 
+        this.invalidateCampaignContext(id);
+
         return this.getCampaign(id, ownerUserId);
     }
 
@@ -221,6 +306,8 @@ export class CampaignService {
             WHERE id = ?
         `, [originalName, filePath, JSON.stringify(extracted), JSON.stringify(questionPlan), now, campaignId]);
 
+        this.invalidateCampaignContext(campaignId);
+
         return {
             campaignId,
             pdfFilename: originalName,
@@ -256,6 +343,8 @@ export class CampaignService {
                 pdf_filename = NULL, pdf_path = NULL, extracted_data = NULL, question_plan = NULL, updated_at = ?
             WHERE id = ?
         `, [now, campaignId]);
+
+        this.invalidateCampaignContext(campaignId);
 
         return { success: true, campaignId, message: 'Attached document removed.' };
     }
@@ -372,6 +461,12 @@ export class CampaignService {
 
         if (campaign.service === 'recruitment' && !campaign.pdf_filename && (!campaign.extracted_data || Object.keys(campaign.extracted_data).length === 0)) {
             throw new Error('Please upload a Job Description document (PDF or Word) before starting a recruitment screening campaign.');
+        }
+
+        // Validate and pre-warm campaign context in memory cache before first call
+        const campaignCtx = await this.getCampaignContext(campaignId);
+        if (campaign.pdf_filename && (!campaignCtx || !campaignCtx.extracted_data || Object.keys(campaignCtx.extracted_data).length === 0)) {
+            throw new Error(`The uploaded campaign document "${campaign.pdf_filename}" could not be parsed or contains no usable data. Cannot run campaign with ungrounded information.`);
         }
 
         const now = utcNow();
@@ -571,6 +666,7 @@ export class CampaignService {
 
         // 9. Remove campaign record itself
         await db.run(`DELETE FROM campaigns WHERE id = ?`, [campaignId]);
+        this.invalidateCampaignContext(campaignId);
 
         console.log(`[CampaignService] Permanently deleted campaign "${campaign.name}" (${campaignId}).`);
 

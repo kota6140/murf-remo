@@ -31,6 +31,7 @@ import { CallQueueWorker } from '../services/call_queue_worker.js';
 import PlivoService from '../services/plivo_service.js';
 import ElevenLabsService from '../services/elevenlabs_service.js';
 import AgentService from '../services/agent_service.js';
+import GeminiService from '../services/gemini_service.js';
 import { updateDemoCallStatus } from './demo.js';
 
 const SERVICES = {
@@ -267,8 +268,8 @@ router.get('/conversations/:id/audio', wrap(async (req, res) => {
     if (!recordingUrl && callUuid && PlivoService.isConfigured()) {
         try {
             const plivoRec = await PlivoService.fetchRecordingByCallUuid(callUuid);
-            if (plivoRec && plivoRec.recording_url) {
-                recordingUrl = plivoRec.recording_url;
+            if (plivoRec && (plivoRec.recording_url || plivoRec.url)) {
+                recordingUrl = plivoRec.recording_url || plivoRec.url;
                 await db.run('UPDATE conversations SET recording_url = ?, recording_id = ? WHERE id = ?', [recordingUrl, plivoRec.recording_id || '', convId]).catch(() => {});
                 await db.run('UPDATE contacts SET recording_url = ?, recording_id = ? WHERE provider_call_id = ?', [recordingUrl, plivoRec.recording_id || '', callUuid]).catch(() => {});
             }
@@ -282,17 +283,37 @@ router.get('/conversations/:id/audio', wrap(async (req, res) => {
     }
 
     if (recordingUrl.startsWith('http://') || recordingUrl.startsWith('https://')) {
+        let targetUrl = recordingUrl;
         const headers = {};
-        if (recordingUrl.includes('plivo.com')) {
-            const cfg = PlivoService.getConfig();
-            headers['Authorization'] = 'Basic ' + Buffer.from(`${cfg.authId}:${cfg.authToken}`).toString('base64');
-        }
         if (req.headers.range) {
             headers['Range'] = req.headers.range;
         }
 
         try {
-            const audioRes = await fetch(recordingUrl, { headers });
+            // Plivo media URLs respond with a 302 Found redirect to an Amazon S3 presigned URL.
+            // Standard fetch forwarding 'Authorization: Basic ...' to S3 causes:
+            // "400 Bad Request: Only one auth mechanism allowed".
+            // Resolve Plivo redirect manually and strip Authorization header before fetching from S3.
+            if (targetUrl.includes('plivo.com')) {
+                const cfg = PlivoService.getConfig();
+                const plivoHeaders = {
+                    ...headers,
+                    'Authorization': 'Basic ' + Buffer.from(`${cfg.authId}:${cfg.authToken}`).toString('base64')
+                };
+                const redirectProbe = await fetch(targetUrl, {
+                    method: 'GET',
+                    headers: plivoHeaders,
+                    redirect: 'manual'
+                });
+                if ([301, 302, 303, 307, 308].includes(redirectProbe.status)) {
+                    const loc = redirectProbe.headers.get('location');
+                    if (loc) {
+                        targetUrl = loc;
+                    }
+                }
+            }
+
+            const audioRes = await fetch(targetUrl, { headers });
             if (!audioRes.ok && audioRes.status !== 206) {
                 return res.status(audioRes.status).json({ success: false, error: `Upstream error fetching audio: ${audioRes.statusText}` });
             }
@@ -366,8 +387,8 @@ router.get('/conversations/:id/recording-info', wrap(async (req, res) => {
     if (!recordingUrl && callUuid && PlivoService.isConfigured()) {
         try {
             const plivoRec = await PlivoService.fetchRecordingByCallUuid(callUuid);
-            if (plivoRec && plivoRec.recording_url) {
-                recordingUrl = plivoRec.recording_url;
+            if (plivoRec && (plivoRec.recording_url || plivoRec.url)) {
+                recordingUrl = plivoRec.recording_url || plivoRec.url;
                 await db.run('UPDATE conversations SET recording_url = ?, recording_id = ? WHERE id = ?', [recordingUrl, plivoRec.recording_id || '', convId]).catch(() => {});
                 await db.run('UPDATE contacts SET recording_url = ?, recording_id = ? WHERE provider_call_id = ?', [recordingUrl, plivoRec.recording_id || '', callUuid]).catch(() => {});
             }
@@ -886,6 +907,42 @@ export async function handlePlivoAnswer(req, res) {
         });
     }
 
+    // Pre-warm opening greeting TTS into in-memory RAM cache so WebSocket playback begins in < 5ms
+    if (ElevenLabsService.isConfigured()) {
+        (async () => {
+            try {
+                const rawName = String(name || '').trim();
+                const isValidName = rawName && !rawName.startsWith('Caller') && !rawName.startsWith('Candidate') && !rawName.startsWith('Contact') && !rawName.startsWith('Row');
+                let greeting = '';
+                if (agentId) {
+                    const agent = await AgentService.get(agentId).catch(() => null);
+                    if (agent && agent.greeting) {
+                        greeting = AgentService.renderGreeting(agent.greeting, {
+                            name: isValidName ? rawName : '',
+                            role,
+                            company,
+                            agent: agent.name
+                        });
+                    }
+                }
+                if (!greeting) {
+                    greeting = GeminiService.getOpeningGreeting(service, {
+                        name: rawName,
+                        job_role: role,
+                        role,
+                        company
+                    });
+                }
+                if (greeting) {
+                    const lang = ElevenLabsService.detectLanguageFromText(greeting, 'en');
+                    const voiceId = ElevenLabsService.getVoiceId(lang);
+                    const modelId = ElevenLabsService.selectTtsModel({ language: lang, text: greeting, voiceId });
+                    ElevenLabsService.textToSpeech(greeting, { voiceId, modelId, outputFormat: 'ulaw_8000', language: lang }).catch(() => {});
+                }
+            } catch (_) {}
+        })();
+    }
+
     res.set('Content-Type', 'text/xml');
     res.status(200).send(xml);
 }
@@ -999,10 +1056,10 @@ export async function handlePlivoHangup(req, res) {
 // ============================================================================
 export async function handlePlivoRecording(req, res) {
     const body = { ...(req.query || {}), ...(req.body || {}) };
-    const callUuid = body.CallUUID || body.call_uuid || '';
-    const recordingUrl = body.RecordUrl || body.recording_url || '';
-    const recordingId = body.RecordingID || body.recording_id || '';
-    const duration = parseInt(body.RecordingDuration || body.recording_duration || '0', 10);
+    const callUuid = body.CallUUID || body.call_uuid || body.callUuid || body.CallId || body.callId || '';
+    const recordingUrl = body.RecordUrl || body.recording_url || body.RecordFile || body.RecordingUrl || body.url || '';
+    const recordingId = body.RecordingID || body.recording_id || body.recordingId || '';
+    const duration = parseInt(body.RecordingDuration || body.recording_duration || (body.RecordingDurationMs ? Math.round(body.RecordingDurationMs / 1000) : '0'), 10);
     const contactId = body.contactId || body.contact_id || '';
 
     console.log(`[Plivo Recording Webhook] CallUUID: ${callUuid}, Contact: ${contactId}, ID: ${recordingId}, URL: ${recordingUrl}, Duration: ${duration}s`);

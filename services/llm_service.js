@@ -240,6 +240,7 @@ export class LLMService {
         const claudeKey = this.getClaudeApiKey();
 
         // 1. Primary: OpenAI Stream
+        let openAiFallbackReason = null;
         if (openAiKey) {
             try {
                 const openAiModel = this.getOpenAIModel();
@@ -273,6 +274,7 @@ export class LLMService {
                     };
                 }
             } catch (openAiErr) {
+                openAiFallbackReason = openAiErr.message;
                 console.warn(`[LLMService] OpenAI streaming error (${openAiErr.message}). Triggering Anthropic Claude fallback...`);
             }
         }
@@ -307,7 +309,8 @@ export class LLMService {
                         latencyMs,
                         firstTokenMs: claudeResult.firstTokenMs,
                         emittedSentences: claudeResult.emittedSentences || [],
-                        fallback: Boolean(openAiKey)
+                        fallback: Boolean(openAiKey),
+                        fallbackReason: openAiFallbackReason || null
                     };
                 }
             } catch (claudeErr) {
@@ -329,13 +332,17 @@ export class LLMService {
     /**
      * Direct OpenAI REST API call
      */
-    static async _callOpenAI({ apiKey, model, systemPrompt, messages, maxTokens, temperature, timeoutMs }) {
+    static async _callOpenAI({ apiKey, model, systemPrompt, messages, maxTokens, temperature, timeoutMs, jsonMode = true }) {
+        const startTime = performance.now();
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
 
+        const isModernModel = model.includes('gpt-5') || model.includes('gpt-6') || model.includes('o1') || model.includes('o3');
+        const systemRole = isModernModel ? 'developer' : 'system';
+
         const openAiMessages = [];
         if (systemPrompt && systemPrompt.trim()) {
-            openAiMessages.push({ role: 'system', content: systemPrompt.trim() });
+            openAiMessages.push({ role: systemRole, content: systemPrompt.trim() });
         }
         for (const m of messages) {
             openAiMessages.push({
@@ -343,21 +350,25 @@ export class LLMService {
                 content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
             });
         }
-        if (openAiMessages.length === 0 || (openAiMessages.length === 1 && openAiMessages[0].role === 'system')) {
+        if (openAiMessages.length === 0 || (openAiMessages.length === 1 && openAiMessages[0].role === systemRole)) {
             openAiMessages.push({ role: 'user', content: 'Begin conversation.' });
         }
 
         try {
-            const isModernModel = model.includes('gpt-5') || model.includes('gpt-6') || model.includes('o1') || model.includes('o3');
             const bodyPayload = {
                 model,
                 messages: openAiMessages
             };
             if (isModernModel) {
-                // Reasoning models spend initial tokens on internal thinking. Ensure at least 300 completion tokens.
-                bodyPayload.max_completion_tokens = Math.max(maxTokens, 300);
+                bodyPayload.max_completion_tokens = Math.max(maxTokens, 120);
+                if (process.env.OPENAI_REASONING_EFFORT) {
+                    bodyPayload.reasoning_effort = process.env.OPENAI_REASONING_EFFORT;
+                }
             } else {
                 bodyPayload.max_tokens = maxTokens;
+            }
+            if (jsonMode) {
+                bodyPayload.response_format = { type: 'json_object' };
             }
             if (!isModernModel && typeof temperature === 'number') {
                 bodyPayload.temperature = temperature;
@@ -398,16 +409,21 @@ export class LLMService {
         maxTokens,
         temperature,
         timeoutMs,
+        jsonMode = true,
         onToken = null,
         onSpokenSentence = null
     }) {
+        const startTime = performance.now();
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
         let streamTimer = null;
 
+        const isModernModel = model.includes('gpt-5') || model.includes('gpt-6') || model.includes('o1') || model.includes('o3');
+        const systemRole = isModernModel ? 'developer' : 'system';
+
         const openAiMessages = [];
         if (systemPrompt && systemPrompt.trim()) {
-            openAiMessages.push({ role: 'system', content: systemPrompt.trim() });
+            openAiMessages.push({ role: systemRole, content: systemPrompt.trim() });
         }
         for (const m of messages) {
             openAiMessages.push({
@@ -415,22 +431,26 @@ export class LLMService {
                 content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
             });
         }
-        if (openAiMessages.length === 0 || (openAiMessages.length === 1 && openAiMessages[0].role === 'system')) {
+        if (openAiMessages.length === 0 || (openAiMessages.length === 1 && openAiMessages[0].role === systemRole)) {
             openAiMessages.push({ role: 'user', content: 'Begin conversation.' });
         }
 
         try {
-            const isModernModel = model.includes('gpt-5') || model.includes('gpt-6') || model.includes('o1') || model.includes('o3');
             const bodyPayload = {
                 model,
                 messages: openAiMessages,
                 stream: true
             };
             if (isModernModel) {
-                // Reasoning models spend initial tokens on internal thinking. Ensure at least 300 completion tokens.
-                bodyPayload.max_completion_tokens = Math.max(maxTokens, 300);
+                bodyPayload.max_completion_tokens = Math.max(maxTokens, 120);
+                if (process.env.OPENAI_REASONING_EFFORT) {
+                    bodyPayload.reasoning_effort = process.env.OPENAI_REASONING_EFFORT;
+                }
             } else {
                 bodyPayload.max_tokens = maxTokens;
+            }
+            if (jsonMode) {
+                bodyPayload.response_format = { type: 'json_object' };
             }
             if (!isModernModel && typeof temperature === 'number') {
                 bodyPayload.temperature = temperature;
@@ -462,7 +482,6 @@ export class LLMService {
             let quoteFinished = false;
             let emittedSentences = [];
             let firstTokenMs = null;
-            const startTime = performance.now();
 
             while (true) {
                 const { done, value } = await reader.read();
@@ -625,6 +644,7 @@ export class LLMService {
         onToken = null,
         onSpokenSentence = null
     }) {
+        const startTime = performance.now();
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
         let streamTimer = null;
@@ -685,7 +705,6 @@ export class LLMService {
             let quoteFinished = false;
             let emittedSentences = [];
             let firstTokenMs = null;
-            const startTime = performance.now();
 
             while (true) {
                 const { done, value } = await reader.read();

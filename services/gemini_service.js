@@ -593,6 +593,9 @@ OUTPUT STRICT JSON ONLY:
                 return {
                     ...parsed,
                     model_used: `${llmRes.provider}_${llmRes.model}`,
+                    provider: llmRes.provider,
+                    fallback: Boolean(llmRes.fallback),
+                    fallbackReason: llmRes.fallbackReason || null,
                     firstTokenMs: llmRes.firstTokenMs || null,
                     emittedSentences: llmRes.emittedSentences || []
                 };
