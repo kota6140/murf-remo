@@ -39,7 +39,15 @@ export class LLMService {
 
     static getOpenAIModel() {
         const fileEnv = getDynamicEnv();
-        return (process.env.OPENAI_MODEL || fileEnv.OPENAI_MODEL || 'gpt-6 luna batch 50%').trim();
+        const raw = (process.env.OPENAI_MODEL || fileEnv.OPENAI_MODEL || 'gpt-6 luna batch 50%').trim();
+        const normalized = raw.toLowerCase().replace(/[\s\-_]+/g, ' ');
+        if (normalized.includes('gpt 6') && normalized.includes('luna')) {
+            return 'gpt-6-luna';
+        }
+        if (normalized.includes('gpt 5') && normalized.includes('luna')) {
+            return 'gpt-5.6-luna';
+        }
+        return raw;
     }
 
     static getClaudeApiKey() {
@@ -340,12 +348,18 @@ export class LLMService {
         }
 
         try {
+            const isModernModel = model.includes('gpt-5') || model.includes('gpt-6') || model.includes('o1') || model.includes('o3');
             const bodyPayload = {
                 model,
-                messages: openAiMessages,
-                max_tokens: maxTokens
+                messages: openAiMessages
             };
-            if (typeof temperature === 'number') {
+            if (isModernModel) {
+                // Reasoning models spend initial tokens on internal thinking. Ensure at least 300 completion tokens.
+                bodyPayload.max_completion_tokens = Math.max(maxTokens, 300);
+            } else {
+                bodyPayload.max_tokens = maxTokens;
+            }
+            if (!isModernModel && typeof temperature === 'number') {
                 bodyPayload.temperature = temperature;
             }
 
@@ -406,13 +420,19 @@ export class LLMService {
         }
 
         try {
+            const isModernModel = model.includes('gpt-5') || model.includes('gpt-6') || model.includes('o1') || model.includes('o3');
             const bodyPayload = {
                 model,
                 messages: openAiMessages,
-                max_tokens: maxTokens,
                 stream: true
             };
-            if (typeof temperature === 'number') {
+            if (isModernModel) {
+                // Reasoning models spend initial tokens on internal thinking. Ensure at least 300 completion tokens.
+                bodyPayload.max_completion_tokens = Math.max(maxTokens, 300);
+            } else {
+                bodyPayload.max_tokens = maxTokens;
+            }
+            if (!isModernModel && typeof temperature === 'number') {
                 bodyPayload.temperature = temperature;
             }
 
@@ -439,6 +459,7 @@ export class LLMService {
             let fullText = '';
             let spokenBuffer = '';
             let inSpokenQuote = false;
+            let quoteFinished = false;
             let emittedSentences = [];
             let firstTokenMs = null;
             const startTime = performance.now();
@@ -468,19 +489,32 @@ export class LLMService {
                                 try { onToken(chunk, firstTokenMs); } catch (_) {}
                             }
 
-                            if (!inSpokenQuote) {
+                            if (!inSpokenQuote && !quoteFinished) {
                                 const match = fullText.match(/"spoken_response"\s*:\s*"/);
                                 if (match) {
                                     inSpokenQuote = true;
                                     const startIdx = fullText.indexOf(match[0]) + match[0].length;
                                     spokenBuffer = fullText.slice(startIdx);
+                                    const endQuoteIdx = spokenBuffer.indexOf('"');
+                                    if (endQuoteIdx !== -1) {
+                                        inSpokenQuote = false;
+                                        quoteFinished = true;
+                                        const sentence = spokenBuffer.slice(0, endQuoteIdx).trim();
+                                        spokenBuffer = '';
+                                        if (sentence.length > 0 && typeof onSpokenSentence === 'function') {
+                                            emittedSentences.push(sentence);
+                                            try { onSpokenSentence(sentence, emittedSentences.length === 1, true); } catch (_) {}
+                                        }
+                                    }
                                 }
-                            } else {
+                            } else if (inSpokenQuote) {
                                 const endQuoteIdx = chunk.indexOf('"');
                                 if (endQuoteIdx !== -1) {
                                     spokenBuffer += chunk.slice(0, endQuoteIdx);
                                     inSpokenQuote = false;
+                                    quoteFinished = true;
                                     const remaining = spokenBuffer.trim();
+                                    spokenBuffer = '';
                                     if (remaining.length > 0 && typeof onSpokenSentence === 'function') {
                                         emittedSentences.push(remaining);
                                         try { onSpokenSentence(remaining, emittedSentences.length === 1, true); } catch (_) {}
@@ -648,6 +682,7 @@ export class LLMService {
             let fullText = '';
             let spokenBuffer = '';
             let inSpokenQuote = false;
+            let quoteFinished = false;
             let emittedSentences = [];
             let firstTokenMs = null;
             const startTime = performance.now();
@@ -677,19 +712,32 @@ export class LLMService {
                                 try { onToken(chunk, firstTokenMs); } catch (_) {}
                             }
 
-                            if (!inSpokenQuote) {
+                            if (!inSpokenQuote && !quoteFinished) {
                                 const match = fullText.match(/"spoken_response"\s*:\s*"/);
                                 if (match) {
                                     inSpokenQuote = true;
                                     const startIdx = fullText.indexOf(match[0]) + match[0].length;
                                     spokenBuffer = fullText.slice(startIdx);
+                                    const endQuoteIdx = spokenBuffer.indexOf('"');
+                                    if (endQuoteIdx !== -1) {
+                                        inSpokenQuote = false;
+                                        quoteFinished = true;
+                                        const sentence = spokenBuffer.slice(0, endQuoteIdx).trim();
+                                        spokenBuffer = '';
+                                        if (sentence.length > 0 && typeof onSpokenSentence === 'function') {
+                                            emittedSentences.push(sentence);
+                                            try { onSpokenSentence(sentence, emittedSentences.length === 1, true); } catch (_) {}
+                                        }
+                                    }
                                 }
-                            } else {
+                            } else if (inSpokenQuote) {
                                 const endQuoteIdx = chunk.indexOf('"');
                                 if (endQuoteIdx !== -1) {
                                     spokenBuffer += chunk.slice(0, endQuoteIdx);
                                     inSpokenQuote = false;
+                                    quoteFinished = true;
                                     const remaining = spokenBuffer.trim();
+                                    spokenBuffer = '';
                                     if (remaining.length > 0 && typeof onSpokenSentence === 'function') {
                                         emittedSentences.push(remaining);
                                         try { onSpokenSentence(remaining, emittedSentences.length === 1, true); } catch (_) {}

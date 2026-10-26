@@ -576,7 +576,7 @@ OUTPUT STRICT JSON ONLY:
                     messages: [{ role: 'user', content: userPrompt }],
                     maxTokens: service === 'appointment' ? 220 : 110,
                     jsonMode: true,
-                    timeoutMs: 5000,
+                    timeoutMs: 6500,
                     onSpokenSentence: options.onSpokenSentence,
                     onToken: options.onToken
                 })
@@ -585,7 +585,7 @@ OUTPUT STRICT JSON ONLY:
                     messages: [{ role: 'user', content: userPrompt }],
                     maxTokens: service === 'appointment' ? 220 : 110,
                     jsonMode: true,
-                    timeoutMs: 5000
+                    timeoutMs: 6500
                 });
 
             if (llmRes && llmRes.text) {

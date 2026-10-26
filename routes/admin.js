@@ -877,7 +877,7 @@ export async function handlePlivoAnswer(req, res) {
     const extraHeaders = `callId=${callUuid},contactId=${contactId},service=${service},ownerId=${ownerId},phone=${phone},name=${encodeURIComponent(name)},role=${encodeURIComponent(role)},company=${encodeURIComponent(company)},campaignId=${campaignId},agentId=${agentId},direction=${direction},callMode=${callMode}`;
 
     const recordCallbackUrl = `${serverUrl}/api/plivo/recording?contactId=${encodeURIComponent(contactId)}&callUuid=${encodeURIComponent(callUuid)}`;
-    const xml = PlivoService.generateAnswerXml(streamWsUrl, extraHeaders, recordCallbackUrl);
+    const xml = PlivoService.generateAnswerXml(streamWsUrl, extraHeaders);
 
     // Also trigger Plivo REST API call recording asynchronously for maximum reliability
     if (callUuid && PlivoService.isConfigured()) {

@@ -177,7 +177,7 @@ export default class PlivoService {
      * connecting Plivo's real-time 8kHz mu-law audio to our voicebot WebSocket.
      * Optionally includes a non-blocking <Record> element to record call audio.
      */
-    static generateAnswerXml(streamWsUrl, extraHeaders = '', recordCallbackUrl = '') {
+    static generateAnswerXml(streamWsUrl, extraHeaders = '') {
         const cleanUrl = String(streamWsUrl || '')
             .trim()
             .replace(/&/g, '&amp;')
@@ -187,10 +187,9 @@ export default class PlivoService {
             .replace(/&/g, '&amp;')
             .replace(/"/g, '&quot;');
         const headersAttr = cleanHeaders ? ` extraHeaders="${cleanHeaders}"` : '';
-        const recordTag = recordCallbackUrl ? `    <Record action="${String(recordCallbackUrl).replace(/&/g, '&amp;')}" method="POST" redirect="false" fileFormat="mp3" maxLength="3600" playBeep="false" timeout="0" />\n` : '';
         return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-${recordTag}    <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-mulaw;rate=8000"${headersAttr}>${cleanUrl}</Stream>
+    <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-mulaw;rate=8000"${headersAttr}>${cleanUrl}</Stream>
 </Response>`.trim();
     }
 
