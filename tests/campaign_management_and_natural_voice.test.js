@@ -183,9 +183,9 @@ async function runAllTests() {
     // -------------------------------------------------------------
     console.log('\n--- Suite 3: Multi-LLM Provider Abstraction & Fallback ---');
 
-    await test('LLMService initializes with Claude Haiku primary and Gemini fallback', () => {
+    await test('LLMService initializes with configured primary provider (OpenAI / Claude / Gemini)', () => {
         const active = LLMService.getActiveProvider();
-        assert.ok(['claude', 'gemini'].includes(active));
+        assert.ok(['openai', 'claude', 'gemini'].includes(active));
     });
 
     await test('LLMService successfully generates responses via configured models', async () => {
@@ -196,7 +196,7 @@ async function runAllTests() {
         });
 
         assert.ok(res.text && res.text.length > 0);
-        assert.ok(['claude', 'gemini'].includes(res.provider));
+        assert.ok(['openai', 'claude', 'gemini'].includes(res.provider));
     });
 
     await test('LLMService extractJson handles markdown fenced blocks and clean JSON', () => {

@@ -247,22 +247,25 @@ async function runTests() {
 
         const originalFetch = globalThis.fetch;
         globalThis.fetch = async (url, opts) => {
-            callCount++;
-            const body = JSON.parse(opts.body);
-            requestedModels.push(body.model_id);
+            if (typeof url === 'string' && url.includes('elevenlabs.io')) {
+                callCount++;
+                const body = typeof opts?.body === 'string' ? JSON.parse(opts.body) : {};
+                requestedModels.push(body.model_id);
 
-            if (callCount === 1) {
+                if (callCount === 1) {
+                    return {
+                        ok: false,
+                        status: 400,
+                        text: async () => 'Error: Model eleven_flash_v2_5 does not support voice configuration'
+                    };
+                }
                 return {
-                    ok: false,
-                    status: 400,
-                    text: async () => 'Error: Model eleven_flash_v2_5 does not support voice configuration'
+                    ok: true,
+                    status: 200,
+                    arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer
                 };
             }
-            return {
-                ok: true,
-                status: 200,
-                arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer
-            };
+            return { ok: false, status: 500 };
         };
 
         try {
@@ -281,14 +284,21 @@ async function runTests() {
     });
 
     await test('Non-compatibility errors (401, 429) do NOT trigger retry to prevent latency spikes', async () => {
-        let callCount = 0;
+        let elevenLabsCallCount = 0;
         const originalFetch = globalThis.fetch;
-        globalThis.fetch = async () => {
-            callCount++;
+        globalThis.fetch = async (url, opts) => {
+            if (typeof url === 'string' && url.includes('elevenlabs.io')) {
+                elevenLabsCallCount++;
+                return {
+                    ok: false,
+                    status: 429,
+                    text: async () => 'Rate limit exceeded'
+                };
+            }
             return {
                 ok: false,
-                status: 429,
-                text: async () => 'Rate limit exceeded'
+                status: 500,
+                text: async () => 'Emergency fallback error'
             };
         };
 
@@ -298,7 +308,7 @@ async function runTests() {
                 modelId: ElevenLabsService.getFastModelId()
             });
             assert.strictEqual(buf, null);
-            assert.strictEqual(callCount, 1);
+            assert.strictEqual(elevenLabsCallCount, 1);
         } finally {
             globalThis.fetch = originalFetch;
         }

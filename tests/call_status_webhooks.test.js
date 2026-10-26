@@ -45,6 +45,7 @@ const queue = (id) => db.get('SELECT status FROM call_queue WHERE contact_id = ?
 
 async function seed(id, callStatus, { withQueue = true, withConversation = false } = {}) {
     const now = new Date().toISOString();
+    await db.run("INSERT OR IGNORE INTO batches (id, service, filename, created_at, updated_at) VALUES ('b_cs', 'recruitment', 'test.xlsx', ?, ?)", [now, now]);
     await db.run(
         "INSERT INTO contacts (id, batch_id, service, row_index, raw_data, name, phone, call_status, provider_call_id, updated_at) VALUES (?, 'b_cs', 'recruitment', 1, '{}', 'T', '919900000001', ?, ?, ?)",
         [`cnt_cs_${id}`, callStatus, `PID-${id}`, now]);
@@ -61,9 +62,10 @@ async function seed(id, callStatus, { withQueue = true, withConversation = false
 }
 
 async function cleanup() {
-    await db.run("DELETE FROM contacts WHERE id LIKE 'cnt_cs_%'");
     await db.run("DELETE FROM call_queue WHERE id LIKE 'q_cs_%'");
     await db.run("DELETE FROM conversations WHERE id LIKE 'conv_cs_%'");
+    await db.run("DELETE FROM contacts WHERE id LIKE 'cnt_cs_%'");
+    await db.run("DELETE FROM batches WHERE id = 'b_cs'");
 }
 
 await initDb();

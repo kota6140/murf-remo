@@ -29,6 +29,7 @@ import assert from 'assert';
 process.env.DB_HOST = '127.0.0.1';
 process.env.DB_PORT = '1';
 process.env.SKIP_TTS_PRECACHE = '1';
+process.env.RECRUITMENT_VAD_SILENCE_MS = '1400';
 
 const { CallSession, ConversationStates } = await import('../services/voicebot_stream_service.js');
 const { default: ElevenLabsService } = await import('../services/elevenlabs_service.js');

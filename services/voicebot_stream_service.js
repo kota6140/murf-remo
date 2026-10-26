@@ -2299,10 +2299,22 @@ export class CallSession {
             const phone = this.contact?.phone || this.phone || '';
             const contactName = this.contact?.name || this.callerName || (phone ? `Caller (${phone})` : 'Caller');
 
+            let existingRecUrl = null;
+            let existingRecId = null;
+            if (this.contactId) {
+                try {
+                    const ct = await db.get('SELECT recording_url, recording_id FROM contacts WHERE id = ?', [this.contactId]);
+                    if (ct) {
+                        existingRecUrl = ct.recording_url || null;
+                        existingRecId = ct.recording_id || null;
+                    }
+                } catch {}
+            }
+
             const convId = `conv_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
             await db.run(`
-                INSERT INTO conversations (id, contact_id, batch_id, campaign_id, service, phone, contact_name, status, started_at, ended_at, duration_seconds, summary, classification, created_at, owner_user_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO conversations (id, contact_id, batch_id, campaign_id, service, phone, contact_name, status, started_at, ended_at, duration_seconds, summary, classification, created_at, owner_user_id, provider_call_id, recording_url, recording_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `, [
                 convId,
                 this.contactId || this.contact?.id || 'direct',
@@ -2317,7 +2329,10 @@ export class CallSession {
                 this.summary || `${this.service.toUpperCase()} call completed.`,
                 this.classification,
                 now,
-                ownerId
+                ownerId,
+                this.callId || null,
+                existingRecUrl,
+                existingRecId
             ]);
 
             // Record which agent took the call and whether it was incoming or outgoing.

@@ -48,6 +48,7 @@ import adminRoutes, {
     handlePlivoAnswer,
     handlePlivoStatus,
     handlePlivoHangup,
+    handlePlivoRecording,
     handleElevenLabsWebhook
 } from './routes/admin.js';
 import userRoutes from './routes/user.js';
@@ -169,6 +170,7 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.all('/api/plivo/answer', handlePlivoAnswer);
 app.all('/api/plivo/status', handlePlivoStatus);
 app.all('/api/plivo/hangup', handlePlivoHangup);
+app.all('/api/plivo/recording', handlePlivoRecording);
 
 // Webhook for ElevenLabs Voice AI
 app.post('/api/webhooks/elevenlabs', handleElevenLabsWebhook);

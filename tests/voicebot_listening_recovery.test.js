@@ -213,10 +213,12 @@ await test('a correct language guess is not re-run (no extra delay)', async () =
 console.log('\nPlivo webhooks');
 
 const CONTACT = 'cnt_vbtest_1';
+const nowIso = new Date().toISOString();
+await db.run("INSERT OR IGNORE INTO batches (id, service, filename, created_at, updated_at) VALUES ('b_vbtest', 'recruitment', 'test.xlsx', ?, ?)", [nowIso, nowIso]);
 await db.run("DELETE FROM contacts WHERE id = ?", [CONTACT]);
 await db.run(
     "INSERT INTO contacts (id, batch_id, service, row_index, raw_data, name, phone, call_status, provider_call_id, updated_at) VALUES (?, 'b_vbtest', 'recruitment', 1, '{}', 'T', '919900000009', 'CALLING', 'REQUEST-UUID-OLD', ?)",
-    [CONTACT, new Date().toISOString()]);
+    [CONTACT, nowIso]);
 
 await test('answering saves the live call ID on the contact', async () => {
     await handlePlivoAnswer({ query: { contactId: CONTACT, service: 'recruitment', direction: 'outbound' }, body: { CallUUID: 'LIVE-UUID-1' } }, fakeRes());
@@ -255,5 +257,6 @@ await test('a webhook with no ID at all is accepted without error', async () => 
 });
 
 await db.run("DELETE FROM contacts WHERE id = ?", [CONTACT]);
+await db.run("DELETE FROM batches WHERE id = 'b_vbtest'");
 console.log(`\n${passed}/${total} listening-recovery tests passed\n`);
 process.exit(passed === total ? 0 : 1);

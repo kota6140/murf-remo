@@ -277,7 +277,8 @@ TakeRemo.com — AI Calling. Human Conversations. Real Results!`.trim();
         const session = new CallSession(ws, {
             callId: 'call_recruitment_standard',
             service: 'recruitment',
-            phone: '+919876543210'
+            callerName: '',
+            phone: '+919999999999'
         });
 
         assert.strictEqual(session.callMode, 'STANDARD');

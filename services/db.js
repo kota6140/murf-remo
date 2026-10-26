@@ -316,7 +316,7 @@ export async function initDb() {
                 waitForConnections: true,
                 connectionLimit: 10,
                 queueLimit: 0,
-                connectTimeout: 4000
+                connectTimeout: 15000
             });
 
             // Verify connection
@@ -511,6 +511,49 @@ export function ensureCampaignSchema() {
     return campaignSchemaReady;
 }
 
+let recordingSchemaReady = null;
+export function ensureRecordingSchema() {
+    if (!recordingSchemaReady) {
+        recordingSchemaReady = (async () => {
+            await initDb();
+            if (activeEngine === 'mysql') {
+                for (const col of ['provider_call_id VARCHAR(128) NULL', 'recording_url TEXT NULL', 'recording_id VARCHAR(128) NULL']) {
+                    const colName = col.split(' ')[0];
+                    try {
+                        await mysqlPool.query(`SELECT ${colName} FROM conversations LIMIT 1`);
+                    } catch {
+                        await mysqlPool.query(`ALTER TABLE conversations ADD COLUMN ${col}`).catch(() => {});
+                    }
+                }
+                for (const col of ['recording_url TEXT NULL', 'recording_id VARCHAR(128) NULL']) {
+                    const colName = col.split(' ')[0];
+                    try {
+                        await mysqlPool.query(`SELECT ${colName} FROM contacts LIMIT 1`);
+                    } catch {
+                        await mysqlPool.query(`ALTER TABLE contacts ADD COLUMN ${col}`).catch(() => {});
+                    }
+                }
+            } else {
+                for (const colName of ['provider_call_id', 'recording_url', 'recording_id']) {
+                    try {
+                        sqliteDb.prepare(`SELECT ${colName} FROM conversations LIMIT 1`).get();
+                    } catch {
+                        try { sqliteDb.prepare(`ALTER TABLE conversations ADD COLUMN ${colName} TEXT NULL`).run(); } catch {}
+                    }
+                }
+                for (const colName of ['recording_url', 'recording_id']) {
+                    try {
+                        sqliteDb.prepare(`SELECT ${colName} FROM contacts LIMIT 1`).get();
+                    } catch {
+                        try { sqliteDb.prepare(`ALTER TABLE contacts ADD COLUMN ${colName} TEXT NULL`).run(); } catch {}
+                    }
+                }
+            }
+        })().catch((e) => { recordingSchemaReady = null; throw e; });
+    }
+    return recordingSchemaReady;
+}
+
 export const db = {
     get,
     all,
@@ -529,6 +572,7 @@ export function getDbConnection() {
 initDb()
     .then(() => ensureOwnerColumns().catch(() => {}))
     .then(() => ensureCampaignSchema().catch(() => {}))
+    .then(() => ensureRecordingSchema().catch(() => {}))
     .catch(e => console.error('[DB] Initialization error:', e));
 
 export default db;

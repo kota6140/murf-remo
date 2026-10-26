@@ -1,4 +1,21 @@
 import 'dotenv/config';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const ENV_FILE = path.resolve(__dirname, '..', '.env');
+
+function getDynamicEnv() {
+    try {
+        if (fs.existsSync(ENV_FILE)) {
+            return dotenv.parse(fs.readFileSync(ENV_FILE, 'utf-8'));
+        }
+    } catch (_) {}
+    return {};
+}
 
 /**
  * services/llm_service.js
@@ -15,12 +32,24 @@ import 'dotenv/config';
  */
 
 export class LLMService {
+    static getOpenAIApiKey() {
+        const fileEnv = getDynamicEnv();
+        return (process.env.OPENAI_API_KEY || process.env.OPEN_API_KEY || fileEnv.OPENAI_API_KEY || fileEnv.OPEN_API_KEY || '').trim();
+    }
+
+    static getOpenAIModel() {
+        const fileEnv = getDynamicEnv();
+        return (process.env.OPENAI_MODEL || fileEnv.OPENAI_MODEL || 'gpt-6 luna batch 50%').trim();
+    }
+
     static getClaudeApiKey() {
-        return (process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || '').trim();
+        const fileEnv = getDynamicEnv();
+        return (process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || fileEnv.ANTHROPIC_API_KEY || fileEnv.CLAUDE_API_KEY || '').trim();
     }
 
     static getGeminiApiKey() {
-        return '';
+        const fileEnv = getDynamicEnv();
+        return (process.env.GEMINI_API_KEY || fileEnv.GEMINI_API_KEY || '').trim();
     }
 
     static getClaudeModel() {
@@ -36,15 +65,18 @@ export class LLMService {
     }
 
     static getGeminiModel() {
-        return 'disabled';
+        return process.env.GEMINI_MODEL || 'gemini-2.5-flash';
     }
 
     static getActiveProvider() {
-        return 'claude';
+        if (this.getOpenAIApiKey()) return 'openai';
+        if (this.getClaudeApiKey()) return 'claude';
+        if (this.getGeminiApiKey()) return 'gemini';
+        return 'none';
     }
 
     /**
-     * Executes a completion using Anthropic Claude exclusively.
+     * Executes a completion using OpenAI primary with Anthropic Claude Haiku fallback.
      * 
      * @param {object} params
      * @param {string} params.systemPrompt - High-priority system instructions
@@ -64,61 +96,109 @@ export class LLMService {
         jsonMode = false
     }) {
         const startTime = performance.now();
+        const openAiKey = this.getOpenAIApiKey();
         const claudeKey = this.getClaudeApiKey();
+        const geminiKey = this.getGeminiApiKey();
 
-        if (!claudeKey) {
-            const err = 'ANTHROPIC_API_KEY is not set in environment or .env file.';
-            console.error(`[LLMService] Configuration Error: ${err}`);
-            return {
-                text: '',
-                parsedJson: null,
-                provider: 'none',
-                model: 'none',
-                latencyMs: 0,
-                fallback: true,
-                error: err
-            };
+        // 1. Primary: OpenAI
+        if (openAiKey) {
+            const openAiModel = this.getOpenAIModel();
+            try {
+                const res = await this._callOpenAI({
+                    apiKey: openAiKey,
+                    model: openAiModel,
+                    systemPrompt,
+                    messages,
+                    maxTokens,
+                    temperature,
+                    timeoutMs
+                });
+                const latencyMs = Math.round(performance.now() - startTime);
+                if (res && res.text && res.text.trim()) {
+                    let parsedJson = null;
+                    if (jsonMode) {
+                        parsedJson = this.extractJson(res.text);
+                    }
+                    return {
+                        text: res.text.trim(),
+                        parsedJson,
+                        provider: 'openai',
+                        model: openAiModel,
+                        latencyMs,
+                        fallback: false
+                    };
+                }
+            } catch (openAiErr) {
+                console.warn(`[LLMService] OpenAI primary error (${openAiErr.message}). Triggering Anthropic fallback...`);
+            }
         }
 
-        try {
+        // 2. Fallback: Anthropic Claude Haiku 5.5
+        if (claudeKey) {
             const claudeModel = this.getClaudeModel();
-            const claudeResult = await this._callClaude({
-                apiKey: claudeKey,
-                model: claudeModel,
-                systemPrompt,
-                messages,
-                maxTokens,
-                temperature,
-                timeoutMs
-            });
-
-            const latencyMs = Math.round(performance.now() - startTime);
-            if (claudeResult && claudeResult.text && claudeResult.text.trim()) {
-                let parsedJson = null;
-                if (jsonMode) {
-                    parsedJson = this.extractJson(claudeResult.text);
-                }
-                return {
-                    text: claudeResult.text.trim(),
-                    parsedJson,
-                    provider: 'claude',
+            try {
+                const claudeResult = await this._callClaude({
+                    apiKey: claudeKey,
                     model: claudeModel,
-                    latencyMs,
-                    fallback: false
-                };
+                    systemPrompt,
+                    messages,
+                    maxTokens,
+                    temperature,
+                    timeoutMs
+                });
+
+                const latencyMs = Math.round(performance.now() - startTime);
+                if (claudeResult && claudeResult.text && claudeResult.text.trim()) {
+                    let parsedJson = null;
+                    if (jsonMode) {
+                        parsedJson = this.extractJson(claudeResult.text);
+                    }
+                    return {
+                        text: claudeResult.text.trim(),
+                        parsedJson,
+                        provider: 'claude',
+                        model: claudeModel,
+                        latencyMs,
+                        fallback: Boolean(openAiKey)
+                    };
+                }
+            } catch (claudeErr) {
+                console.warn(`[LLMService] Claude API error: ${claudeErr.message}`);
             }
-        } catch (claudeErr) {
-            console.error(`[LLMService] Claude API error: ${claudeErr.message}`);
-            const elapsed = Math.round(performance.now() - startTime);
-            return {
-                text: '',
-                parsedJson: null,
-                provider: 'claude',
-                model: this.getClaudeModel(),
-                latencyMs: elapsed,
-                fallback: true,
-                error: claudeErr.message
-            };
+        }
+
+        // 3. Fallback: Gemini (if configured)
+        if (geminiKey) {
+            const geminiModel = this.getGeminiModel();
+            try {
+                const geminiResult = await this._callGemini({
+                    apiKey: geminiKey,
+                    model: geminiModel,
+                    systemPrompt,
+                    messages,
+                    maxTokens,
+                    temperature,
+                    timeoutMs
+                });
+
+                const latencyMs = Math.round(performance.now() - startTime);
+                if (geminiResult && geminiResult.text && geminiResult.text.trim()) {
+                    let parsedJson = null;
+                    if (jsonMode) {
+                        parsedJson = this.extractJson(geminiResult.text);
+                    }
+                    return {
+                        text: geminiResult.text.trim(),
+                        parsedJson,
+                        provider: 'gemini',
+                        model: geminiModel,
+                        latencyMs,
+                        fallback: true
+                    };
+                }
+            } catch (geminiErr) {
+                console.warn(`[LLMService] Gemini fallback error: ${geminiErr.message}`);
+            }
         }
 
         const elapsed = Math.round(performance.now() - startTime);
@@ -129,7 +209,7 @@ export class LLMService {
             model: 'none',
             latencyMs: elapsed,
             fallback: true,
-            error: 'Claude returned empty response.'
+            error: 'All configured LLM providers failed.'
         };
     }
 
@@ -148,8 +228,48 @@ export class LLMService {
         onSpokenSentence = null
     }) {
         const startTime = performance.now();
+        const openAiKey = this.getOpenAIApiKey();
         const claudeKey = this.getClaudeApiKey();
 
+        // 1. Primary: OpenAI Stream
+        if (openAiKey) {
+            try {
+                const openAiModel = this.getOpenAIModel();
+                const openAiResult = await this._callOpenAIStream({
+                    apiKey: openAiKey,
+                    model: openAiModel,
+                    systemPrompt,
+                    messages,
+                    maxTokens,
+                    temperature,
+                    timeoutMs,
+                    onToken,
+                    onSpokenSentence
+                });
+
+                const latencyMs = Math.round(performance.now() - startTime);
+                if (openAiResult && openAiResult.text && openAiResult.text.trim()) {
+                    let parsedJson = null;
+                    if (jsonMode) {
+                        parsedJson = this.extractJson(openAiResult.text);
+                    }
+                    return {
+                        text: openAiResult.text.trim(),
+                        parsedJson,
+                        provider: 'openai',
+                        model: openAiModel,
+                        latencyMs,
+                        firstTokenMs: openAiResult.firstTokenMs,
+                        emittedSentences: openAiResult.emittedSentences || [],
+                        fallback: false
+                    };
+                }
+            } catch (openAiErr) {
+                console.warn(`[LLMService] OpenAI streaming error (${openAiErr.message}). Triggering Anthropic Claude fallback...`);
+            }
+        }
+
+        // 2. Fallback: Anthropic Claude Haiku Stream
         if (claudeKey) {
             try {
                 const claudeModel = this.getClaudeModel();
@@ -179,7 +299,7 @@ export class LLMService {
                         latencyMs,
                         firstTokenMs: claudeResult.firstTokenMs,
                         emittedSentences: claudeResult.emittedSentences || [],
-                        fallback: false
+                        fallback: Boolean(openAiKey)
                     };
                 }
             } catch (claudeErr) {
@@ -196,6 +316,202 @@ export class LLMService {
             timeoutMs,
             jsonMode
         });
+    }
+
+    /**
+     * Direct OpenAI REST API call
+     */
+    static async _callOpenAI({ apiKey, model, systemPrompt, messages, maxTokens, temperature, timeoutMs }) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+        const openAiMessages = [];
+        if (systemPrompt && systemPrompt.trim()) {
+            openAiMessages.push({ role: 'system', content: systemPrompt.trim() });
+        }
+        for (const m of messages) {
+            openAiMessages.push({
+                role: m.role === 'assistant' || m.role === 'model' ? 'assistant' : 'user',
+                content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
+            });
+        }
+        if (openAiMessages.length === 0 || (openAiMessages.length === 1 && openAiMessages[0].role === 'system')) {
+            openAiMessages.push({ role: 'user', content: 'Begin conversation.' });
+        }
+
+        try {
+            const bodyPayload = {
+                model,
+                messages: openAiMessages,
+                max_tokens: maxTokens
+            };
+            if (typeof temperature === 'number') {
+                bodyPayload.temperature = temperature;
+            }
+
+            const res = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(bodyPayload),
+                signal: controller.signal
+            });
+
+            clearTimeout(timer);
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`OpenAI HTTP ${res.status}: ${errText.slice(0, 150)}`);
+            }
+
+            const data = await res.json();
+            const text = data.choices?.[0]?.message?.content || '';
+            return { text };
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    /**
+     * Streams OpenAI completion with early extraction of spoken dialogue.
+     */
+    static async _callOpenAIStream({
+        apiKey,
+        model,
+        systemPrompt,
+        messages,
+        maxTokens,
+        temperature,
+        timeoutMs,
+        onToken = null,
+        onSpokenSentence = null
+    }) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        let streamTimer = null;
+
+        const openAiMessages = [];
+        if (systemPrompt && systemPrompt.trim()) {
+            openAiMessages.push({ role: 'system', content: systemPrompt.trim() });
+        }
+        for (const m of messages) {
+            openAiMessages.push({
+                role: m.role === 'assistant' || m.role === 'model' ? 'assistant' : 'user',
+                content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
+            });
+        }
+        if (openAiMessages.length === 0 || (openAiMessages.length === 1 && openAiMessages[0].role === 'system')) {
+            openAiMessages.push({ role: 'user', content: 'Begin conversation.' });
+        }
+
+        try {
+            const bodyPayload = {
+                model,
+                messages: openAiMessages,
+                max_tokens: maxTokens,
+                stream: true
+            };
+            if (typeof temperature === 'number') {
+                bodyPayload.temperature = temperature;
+            }
+
+            const res = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(bodyPayload),
+                signal: controller.signal
+            });
+
+            clearTimeout(timer);
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`OpenAI HTTP ${res.status}: ${errText.slice(0, 150)}`);
+            }
+
+            streamTimer = setTimeout(() => controller.abort(), timeoutMs);
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let sseBuffer = '';
+            let fullText = '';
+            let spokenBuffer = '';
+            let inSpokenQuote = false;
+            let emittedSentences = [];
+            let firstTokenMs = null;
+            const startTime = performance.now();
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                sseBuffer += decoder.decode(value, { stream: true });
+                const lines = sseBuffer.split('\n');
+                sseBuffer = lines.pop();
+
+                for (const line of lines) {
+                    if (!line.startsWith('data: ')) continue;
+                    const jsonStr = line.slice(6).trim();
+                    if (jsonStr === '[DONE]') break;
+
+                    try {
+                        const event = JSON.parse(jsonStr);
+                        const chunk = event.choices?.[0]?.delta?.content;
+                        if (chunk) {
+                            if (firstTokenMs === null) {
+                                firstTokenMs = Math.round(performance.now() - startTime);
+                            }
+                            fullText += chunk;
+                            if (typeof onToken === 'function') {
+                                try { onToken(chunk, firstTokenMs); } catch (_) {}
+                            }
+
+                            if (!inSpokenQuote) {
+                                const match = fullText.match(/"spoken_response"\s*:\s*"/);
+                                if (match) {
+                                    inSpokenQuote = true;
+                                    const startIdx = fullText.indexOf(match[0]) + match[0].length;
+                                    spokenBuffer = fullText.slice(startIdx);
+                                }
+                            } else {
+                                const endQuoteIdx = chunk.indexOf('"');
+                                if (endQuoteIdx !== -1) {
+                                    spokenBuffer += chunk.slice(0, endQuoteIdx);
+                                    inSpokenQuote = false;
+                                    const remaining = spokenBuffer.trim();
+                                    if (remaining.length > 0 && typeof onSpokenSentence === 'function') {
+                                        emittedSentences.push(remaining);
+                                        try { onSpokenSentence(remaining, emittedSentences.length === 1, true); } catch (_) {}
+                                    }
+                                } else {
+                                    spokenBuffer += chunk;
+                                    const sentenceMatch = spokenBuffer.match(/^([\s\S]+?[.?!])\s+([\s\S]*)$/);
+                                    if (sentenceMatch) {
+                                        const sentence = sentenceMatch[1].trim();
+                                        spokenBuffer = sentenceMatch[2];
+                                        if (sentence.length > 0 && typeof onSpokenSentence === 'function') {
+                                            emittedSentences.push(sentence);
+                                            try { onSpokenSentence(sentence, emittedSentences.length === 1, false); } catch (_) {}
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } catch (_) {}
+                }
+            }
+
+            return {
+                text: fullText,
+                firstTokenMs: firstTokenMs || Math.round(performance.now() - startTime),
+                emittedSentences
+            };
+        } finally {
+            clearTimeout(timer);
+            if (streamTimer) clearTimeout(streamTimer);
+        }
     }
 
     /**

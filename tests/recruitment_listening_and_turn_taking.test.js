@@ -24,6 +24,8 @@ import IntentService from '../services/intent_service.js';
 import GeminiService from '../services/gemini_service.js';
 import { ConversationMemory } from '../services/conversation_memory.js';
 
+process.env.RECRUITMENT_VAD_SILENCE_MS = '1400';
+
 let totalTests = 0;
 let passedTests = 0;
 let failedTests = 0;
@@ -460,4 +462,5 @@ function createMockWs() {
         }
         process.exit(1);
     }
+    process.exit(0);
 })();

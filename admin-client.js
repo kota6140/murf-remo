@@ -378,6 +378,15 @@ const AdminClient = {
 
   getCampaignDownloadUrl(id) {
     return `/api/admin/campaigns/${encodeURIComponent(id)}/download`;
+  },
+
+  getConversationAudioUrl(id) {
+    return `/api/admin/conversations/${encodeURIComponent(id)}/audio`;
+  },
+
+  async getConversationRecordingInfo(id) {
+    if (!id) throw new Error('Conversation ID is required');
+    return this.request(`/api/admin/conversations/${encodeURIComponent(id)}/recording-info`);
   }
 };
 

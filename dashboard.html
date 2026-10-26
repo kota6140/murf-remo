@@ -1712,32 +1712,117 @@
   </div>
 
   <!-- ======================================================================
-       10. CAMPAIGN CONVERSATIONS MODAL
+       10. CAMPAIGN CONVERSATIONS MODAL (REDESIGNED ORANGE BRAND & AUDIO PLAYER)
        ====================================================================== -->
   <div class="modal-backdrop-layer" id="modal-campaign-conversations">
-    <div class="modal-dialog-card" style="max-width: 820px; width: 95%; max-height: 85vh; overflow-y: auto;">
-      <button type="button" class="modal-close-x" id="modal-camp-convs-close" aria-label="Close modal">×</button>
-      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px;">
-        <div>
-          <h3 class="modal-title-text" id="camp-convs-title" style="font-size: 1.2rem; margin-bottom: 2px;">Campaign Conversations</h3>
-          <p class="modal-subtitle-text" id="camp-convs-subtitle">Review transcripts and screening decisions for this campaign.</p>
+    <div class="modal-dialog-card">
+      
+      <!-- Top Header -->
+      <div class="convs-header">
+        <div class="convs-header-left">
+          <div class="convs-header-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+            </svg>
+          </div>
+          <div>
+            <h3 class="convs-header-title" id="camp-convs-title">Campaign — Conversations</h3>
+            <p class="convs-header-sub" id="camp-convs-subtitle">Review transcripts, recordings, and screening decisions for this campaign.</p>
+          </div>
         </div>
-        <a href="#" id="camp-convs-dl-btn" class="btn-camp-action btn-camp-excel" style="flex: none; padding: 6px 14px;">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          <span>Download Excel</span>
-        </a>
+        <div class="convs-header-right">
+          <a href="#" id="camp-convs-dl-btn" class="btn-convs-excel" download target="_blank">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            <span>Download Excel</span>
+          </a>
+          <button type="button" class="btn-convs-close" id="modal-camp-convs-close" aria-label="Close modal">×</button>
+        </div>
       </div>
 
-      <div class="table-responsive" style="max-height: 480px; overflow-y: auto;">
-        <table class="data-table" style="font-size: 0.775rem;">
+      <!-- Filter Strip Toolbar -->
+      <div class="convs-filter-bar">
+        <!-- Duration Filters (All 5 required options) -->
+        <div class="convs-filter-group" id="convs-filter-duration-group">
+          <div class="convs-filter-label">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+            <span>Call Duration</span>
+          </div>
+          <div class="convs-filter-pills" id="convs-pills-duration">
+            <button type="button" class="convs-pill-btn active" data-duration="all">All</button>
+            <button type="button" class="convs-pill-btn" data-duration="<1">&lt; 1 min</button>
+            <button type="button" class="convs-pill-btn" data-duration="<2">&lt; 2 min</button>
+            <button type="button" class="convs-pill-btn" data-duration="<3">&lt; 3 min</button>
+            <button type="button" class="convs-pill-btn" data-duration="<5">&lt; 5 min</button>
+          </div>
+        </div>
+
+        <!-- Sales Outcome Filters (Shown only for Sales campaigns) -->
+        <div class="convs-filter-group" id="convs-filter-sales-group" style="display: none;">
+          <div class="convs-filter-label">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+              <line x1="7" y1="7" x2="7.01" y2="7"/>
+            </svg>
+            <span>Sales Outcome</span>
+          </div>
+          <div class="convs-filter-pills" id="convs-pills-sales">
+            <button type="button" class="convs-pill-btn active" data-sales="all">All</button>
+            <button type="button" class="convs-pill-btn pill-interested" data-sales="interested">Interested</button>
+            <button type="button" class="convs-pill-btn pill-notinterested" data-sales="not_interested">Not Interested</button>
+          </div>
+        </div>
+
+        <!-- Recruitment Status Filters (Shown only for Recruitment campaigns) -->
+        <div class="convs-filter-group" id="convs-filter-rec-group" style="display: none;">
+          <div class="convs-filter-label">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+            <span>Recruitment Status</span>
+          </div>
+          <div class="convs-filter-pills" id="convs-pills-rec">
+            <button type="button" class="convs-pill-btn active" data-rec="all">All</button>
+            <button type="button" class="convs-pill-btn pill-selected" data-rec="selected">Selected</button>
+            <button type="button" class="convs-pill-btn pill-onhold" data-rec="on_hold">On Hold</button>
+            <button type="button" class="convs-pill-btn pill-rejected" data-rec="rejected">Rejected</button>
+          </div>
+        </div>
+
+        <!-- Clear Filters Button -->
+        <button type="button" class="btn-convs-clear-filters" id="btn-convs-clear-filters">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+          </svg>
+          <span>Clear Filters</span>
+        </button>
+      </div>
+
+      <!-- Table Section -->
+      <div class="convs-table-container">
+        <table class="convs-table">
           <thead>
             <tr>
+              <th style="width: 38px; text-align: center;">
+                <input type="checkbox" id="convs-select-all" class="convs-checkbox" title="Select all calls">
+              </th>
               <th>Contact</th>
               <th>Phone</th>
+              <th>Date & Time</th>
               <th>Duration</th>
-              <th>AI Outcome</th>
+              <th id="camp-convs-th-outcome">Outcome</th>
               <th>Summary</th>
-              <th>Action</th>
+              <th style="min-width: 230px;">Recording</th>
+              <th style="width: 120px;">Action</th>
             </tr>
           </thead>
           <tbody id="camp-convs-tbody">
@@ -1745,6 +1830,28 @@
           </tbody>
         </table>
       </div>
+
+      <!-- Footer & Pager -->
+      <div class="convs-footer">
+        <div id="camp-convs-count-info">0 calls recorded</div>
+        <div class="convs-pagination" id="camp-convs-pagination">
+          <button type="button" class="convs-page-btn" id="camp-convs-prev-btn" disabled>&lt;</button>
+          <span class="convs-page-btn active" id="camp-convs-curr-page">1</span>
+          <button type="button" class="convs-page-btn" id="camp-convs-next-btn" disabled>&gt;</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Summary Expanded View Modal -->
+  <div class="modal-backdrop-layer" id="modal-summary-view" style="z-index: 10050;">
+    <div class="modal-dialog-card" style="max-width: 560px; padding: 24px; border-radius: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <h4 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: #0F172A;" id="summary-view-title">Call Summary</h4>
+        <button type="button" class="btn-convs-close" id="modal-summary-view-close">×</button>
+      </div>
+      <div id="summary-view-content" style="color: #334155; font-size: 0.9rem; line-height: 1.6; max-height: 360px; overflow-y: auto; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 14px; white-space: pre-wrap;"></div>
     </div>
   </div>
 
@@ -3156,8 +3263,18 @@
         const closeConvsBtn = document.getElementById('modal-camp-convs-close');
         if (closeConvsBtn) {
           closeConvsBtn.addEventListener('click', () => {
+            if (typeof stopActiveConvsAudio === 'function') stopActiveConvsAudio();
             const m = document.getElementById('modal-campaign-conversations');
             if (m) m.classList.remove('open');
+          });
+        }
+        const campConvsModal = document.getElementById('modal-campaign-conversations');
+        if (campConvsModal) {
+          campConvsModal.addEventListener('click', (e) => {
+            if (e.target === campConvsModal) {
+              if (typeof stopActiveConvsAudio === 'function') stopActiveConvsAudio();
+              campConvsModal.classList.remove('open');
+            }
           });
         }
 
@@ -4503,8 +4620,426 @@
       }
 
       // ----------------------------------------------------------------------
-      // Campaign Conversations Modal Controller
+      // Campaign Conversations Modal Controller (Full Audio & Responsive Filters)
       // ----------------------------------------------------------------------
+      let activeCampaignConvs = [];
+      let activeCampaignObj = null;
+      let activeDurationFilter = 'all';
+      let activeOutcomeFilter = 'all';
+      let currentConvsAudio = null;
+      let currentConvsAudioPlayerEl = null;
+
+      function stopActiveConvsAudio() {
+        if (currentConvsAudio) {
+          try {
+            currentConvsAudio.pause();
+            currentConvsAudio.src = '';
+          } catch(e) {}
+          currentConvsAudio = null;
+        }
+        if (currentConvsAudioPlayerEl) {
+          const playBtn = currentConvsAudioPlayerEl.querySelector('.conv-audio-play');
+          if (playBtn) {
+            playBtn.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+            playBtn.title = 'Play recording';
+          }
+          currentConvsAudioPlayerEl = null;
+        }
+      }
+
+      function formatMinSec(sec) {
+        const s = Math.max(0, Math.floor(sec || 0));
+        const m = Math.floor(s / 60);
+        const rem = s % 60;
+        return `${m}:${rem < 10 ? '0' : ''}${rem}`;
+      }
+
+      function getAvatarColor(name) {
+        const palettes = [
+          { bg: '#DCFCE7', text: '#166534' }, // Green
+          { bg: '#E0F2FE', text: '#0369A1' }, // Blue
+          { bg: '#F3E8FF', text: '#7E22CE' }, // Purple
+          { bg: '#FFF1EE', text: '#FC2415' }, // Orange
+          { bg: '#FEF3C7', text: '#B45309' }, // Amber
+          { bg: '#FCE7F3', text: '#BE185D' }, // Pink
+          { bg: '#F1F5F9', text: '#334155' }  // Slate
+        ];
+        let code = 0;
+        const str = String(name || '');
+        for (let i = 0; i < str.length; i++) {
+          code += str.charCodeAt(i);
+        }
+        return palettes[code % palettes.length];
+      }
+
+      function filterAndRenderCampaignConversations() {
+        const tbody = document.getElementById('camp-convs-tbody');
+        const countInfo = document.getElementById('camp-convs-count-info');
+        if (!tbody) return;
+
+        // Stop any active audio playback before re-rendering
+        stopActiveConvsAudio();
+
+        const isSales = (activeCampaignObj?.service || '').toLowerCase() === 'sales';
+
+        const filtered = activeCampaignConvs.filter(c => {
+          const dur = Number(c.duration_seconds || 0);
+
+          // 1. Duration Filter: 'all', '<1', '<2', '<3', '<5'
+          if (activeDurationFilter === '<1' && dur >= 60) return false;
+          if (activeDurationFilter === '<2' && dur >= 120) return false;
+          if (activeDurationFilter === '<3' && dur >= 180) return false;
+          if (activeDurationFilter === '<5' && dur >= 300) return false;
+
+          // 2. Outcome/Status Filter
+          if (activeOutcomeFilter !== 'all') {
+            const rawOutcome = String(c.screening_outcome || c.contact_classification || c.classification || c.call_outcome || '').trim();
+            const norm = rawOutcome.toLowerCase();
+
+            if (isSales) {
+              const isInterested = (norm.includes('interest') && !norm.includes('not')) || norm.includes('callback') || norm.includes('meeting') || norm.includes('appointment');
+              const isNotInterested = norm.includes('not_interest') || norm.includes('not interest') || norm.includes('reject');
+
+              if (activeOutcomeFilter === 'interested' && !isInterested) return false;
+              if (activeOutcomeFilter === 'not_interested' && !isNotInterested) return false;
+            } else {
+              const isSelected = norm.includes('select') || norm.includes('shortlist');
+              const isRejected = norm.includes('reject') || norm.includes('not_interest') || norm.includes('not interest');
+              const isOnHold = !isSelected && !isRejected;
+
+              if (activeOutcomeFilter === 'selected' && !isSelected) return false;
+              if (activeOutcomeFilter === 'rejected' && !isRejected) return false;
+              if (activeOutcomeFilter === 'on_hold' && !isOnHold) return false;
+            }
+          }
+
+          return true;
+        });
+
+        // Update call count label
+        if (countInfo) {
+          const total = activeCampaignConvs.length;
+          const shown = filtered.length;
+          countInfo.textContent = total === shown
+            ? `Showing 1-${shown} of ${total} calls`
+            : `Showing ${shown} of ${total} calls (filtered)`;
+        }
+
+        if (filtered.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:44px 20px; color:#94A3B8; font-size:0.875rem;">No calls match the selected duration and outcome filters.</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = filtered.map((c) => {
+          const contactName = c.contact_display_name || c.contact_name || c.contact || 'Candidate';
+          const contactPhone = c.contact_phone || c.phone || '—';
+          const companyOrRole = c.contact_company || c.contact_role || (c.service ? c.service.toUpperCase() : 'Campaign Contact');
+          const initial = contactName.trim().charAt(0).toUpperCase() || 'C';
+          const avatarColor = getAvatarColor(contactName);
+
+          // Date & Time formatting
+          let dateStr = '—';
+          let timeStr = '';
+          const rawDate = c.started_at || c.created_at || c.timestamp;
+          if (rawDate) {
+            try {
+              const d = new Date(rawDate);
+              if (!isNaN(d.getTime())) {
+                dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                timeStr = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+              }
+            } catch(e) {}
+          }
+
+          // Duration Badge
+          const durSec = Number(c.duration_seconds || 0);
+          const durBadgeText = durSec > 0
+            ? (durSec >= 60 ? `${Math.floor(durSec / 60)}m ${durSec % 60}s` : `${durSec}s`)
+            : '0s';
+
+          // Outcome / Status
+          const rawOutcome = String(c.screening_outcome || c.contact_classification || c.classification || c.status || 'On Hold').trim();
+          const normOutcome = rawOutcome.toLowerCase();
+          let badgeClass = 'outcome-gray';
+          let displayOutcome = rawOutcome;
+
+          if (isSales) {
+            if ((normOutcome.includes('interest') && !normOutcome.includes('not')) || normOutcome.includes('callback') || normOutcome.includes('meeting') || normOutcome.includes('appointment')) {
+              badgeClass = 'outcome-green';
+              displayOutcome = 'Interested';
+            } else if (normOutcome.includes('not_interest') || normOutcome.includes('not interest') || normOutcome.includes('reject')) {
+              badgeClass = 'outcome-red';
+              displayOutcome = 'Not Interested';
+            } else {
+              badgeClass = 'outcome-amber';
+            }
+          } else {
+            if (normOutcome.includes('select') || normOutcome.includes('shortlist')) {
+              badgeClass = 'outcome-green';
+              displayOutcome = 'Selected';
+            } else if (normOutcome.includes('reject') || normOutcome.includes('not_interest')) {
+              badgeClass = 'outcome-red';
+              displayOutcome = 'Rejected';
+            } else {
+              badgeClass = 'outcome-amber';
+              displayOutcome = 'On Hold';
+            }
+          }
+
+          // Full Summary
+          const fullSummary = c.screening_reason || c.summary || `${(c.service || 'Call').toUpperCase()} interaction completed.`;
+
+          // Audio Recording Player
+          const hasRecording = Boolean(c.has_recording && c.audio_url);
+          const isPending = Boolean(c.recording_pending);
+          const audioEndpoint = c.audio_url || `/api/admin/conversations/${encodeURIComponent(c.id)}/audio`;
+
+          let recordingHtml = '';
+          if (hasRecording && durSec > 0) {
+            recordingHtml = `
+              <div class="conv-audio-player" data-conv-id="${c.id}" data-audio-src="${audioEndpoint}" data-duration="${durSec}">
+                <button type="button" class="conv-audio-btn conv-audio-play" title="Play recording" aria-label="Play recording">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                </button>
+                <span class="conv-audio-time">0:00 / ${formatMinSec(durSec)}</span>
+                <input type="range" class="conv-audio-slider" min="0" max="${durSec}" value="0" step="0.1" aria-label="Seek audio">
+                <button type="button" class="conv-audio-vol-btn" title="Mute/Unmute" aria-label="Toggle mute">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                </button>
+              </div>
+            `;
+          } else if (isPending) {
+            recordingHtml = `
+              <span class="conv-audio-pending" title="Recording is processing">
+                <span class="auth-spinner" style="width:11px; height:11px; border-width:1.5px; border-top-color:#D97706; display:inline-block; margin-right:5px; vertical-align:middle;"></span>
+                Processing recording...
+              </span>
+            `;
+          } else {
+            recordingHtml = `
+              <span class="conv-audio-unavailable">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/></svg>
+                Recording unavailable
+              </span>
+            `;
+          }
+
+          return `
+            <tr data-row-id="${c.id}">
+              <td style="text-align: center;">
+                <input type="checkbox" class="convs-checkbox row-select-checkbox" data-conv-id="${c.id}">
+              </td>
+              <td>
+                <div class="convs-contact-cell">
+                  <div class="convs-avatar" style="background:${avatarColor.bg}; color:${avatarColor.text};">
+                    ${initial}
+                  </div>
+                  <div>
+                    <div class="convs-contact-name">${contactName}</div>
+                    <div class="convs-contact-sub">${companyOrRole}</div>
+                  </div>
+                </div>
+              </td>
+              <td>
+                <div class="convs-phone-cell">
+                  <span>${contactPhone}</span>
+                  ${contactPhone !== '—' ? `
+                    <button type="button" class="convs-btn-copy" data-phone="${contactPhone}" title="Copy phone number">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    </button>
+                  ` : ''}
+                </div>
+              </td>
+              <td>
+                <div class="convs-date-cell">
+                  <div class="convs-date-main">${dateStr}</div>
+                  <div class="convs-date-time">${timeStr}</div>
+                </div>
+              </td>
+              <td>
+                <span class="convs-duration-badge">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  ${durBadgeText}
+                </span>
+              </td>
+              <td>
+                <span class="convs-outcome-badge ${badgeClass}">${displayOutcome}</span>
+              </td>
+              <td>
+                <div class="convs-summary-cell" data-summary="${encodeURIComponent(fullSummary)}" data-contact="${encodeURIComponent(contactName)}" title="Click to view full summary">
+                  ${fullSummary}
+                </div>
+              </td>
+              <td>
+                ${recordingHtml}
+              </td>
+              <td>
+                <div class="convs-actions-cell">
+                  <button type="button" class="convs-btn-transcript btn-view-camp-conv-detail" data-conv-id="${c.id}">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                    <span>Transcript</span>
+                  </button>
+                  <button type="button" class="convs-btn-dots" data-conv-id="${c.id}" title="More options">⋮</button>
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join('');
+
+        // 1. Copy phone number button listener
+        tbody.querySelectorAll('.convs-btn-copy').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const phone = btn.getAttribute('data-phone');
+            if (phone) {
+              if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(phone);
+              }
+              btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>';
+              setTimeout(() => {
+                btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+              }, 1800);
+            }
+          });
+        });
+
+        // 2. Summary click listener
+        tbody.querySelectorAll('.convs-summary-cell').forEach(el => {
+          el.addEventListener('click', () => {
+            const sum = decodeURIComponent(el.getAttribute('data-summary') || '');
+            const contact = decodeURIComponent(el.getAttribute('data-contact') || '');
+            const sumModal = document.getElementById('modal-summary-view');
+            const sumTitle = document.getElementById('summary-view-title');
+            const sumContent = document.getElementById('summary-view-content');
+            if (sumModal && sumContent) {
+              if (sumTitle) sumTitle.textContent = `Call Summary — ${contact}`;
+              sumContent.textContent = sum;
+              sumModal.classList.add('open');
+            }
+          });
+        });
+
+        // 3. Transcript button listener
+        tbody.querySelectorAll('.btn-view-camp-conv-detail').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const convId = btn.getAttribute('data-conv-id');
+            if (convId) openConversationModal(convId);
+          });
+        });
+
+        // 4. Dots button listener
+        tbody.querySelectorAll('.convs-btn-dots').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const convId = btn.getAttribute('data-conv-id');
+            if (convId) openConversationModal(convId);
+          });
+        });
+
+        // 5. Audio Player Listeners
+        tbody.querySelectorAll('.conv-audio-player').forEach(playerEl => {
+          const playBtn = playerEl.querySelector('.conv-audio-play');
+          const timeEl = playerEl.querySelector('.conv-audio-time');
+          const slider = playerEl.querySelector('.conv-audio-slider');
+          const volBtn = playerEl.querySelector('.conv-audio-vol-btn');
+          const audioSrc = playerEl.getAttribute('data-audio-src');
+          const defaultDuration = parseFloat(playerEl.getAttribute('data-duration') || '0');
+
+          playBtn?.addEventListener('click', () => {
+            if (currentConvsAudioPlayerEl === playerEl && currentConvsAudio) {
+              if (!currentConvsAudio.paused) {
+                currentConvsAudio.pause();
+                playBtn.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+                playBtn.title = 'Play recording';
+                return;
+              } else {
+                currentConvsAudio.play().catch(() => {});
+                playBtn.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+                playBtn.title = 'Pause recording';
+                return;
+              }
+            }
+
+            stopActiveConvsAudio();
+
+            currentConvsAudio = new Audio(audioSrc);
+            currentConvsAudioPlayerEl = playerEl;
+
+            playBtn.innerHTML = '<span class="auth-spinner" style="width:10px; height:10px; border-width:1.5px; border-top-color:#FFF; display:inline-block;"></span>';
+
+            currentConvsAudio.addEventListener('loadedmetadata', () => {
+              const dur = currentConvsAudio.duration || defaultDuration;
+              if (slider && dur > 0) slider.max = dur;
+              if (timeEl) timeEl.textContent = `${formatMinSec(currentConvsAudio.currentTime)} / ${formatMinSec(dur)}`;
+            });
+
+            currentConvsAudio.addEventListener('playing', () => {
+              playBtn.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+              playBtn.title = 'Pause recording';
+            });
+
+            currentConvsAudio.addEventListener('timeupdate', () => {
+              const dur = currentConvsAudio.duration || defaultDuration;
+              if (slider && !slider.matches(':active')) {
+                slider.value = currentConvsAudio.currentTime;
+              }
+              if (timeEl) {
+                timeEl.textContent = `${formatMinSec(currentConvsAudio.currentTime)} / ${formatMinSec(dur)}`;
+              }
+            });
+
+            currentConvsAudio.addEventListener('ended', () => {
+              if (slider) slider.value = 0;
+              playBtn.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+              playBtn.title = 'Play recording';
+              const dur = currentConvsAudio?.duration || defaultDuration;
+              if (timeEl) timeEl.textContent = `0:00 / ${formatMinSec(dur)}`;
+            });
+
+            currentConvsAudio.addEventListener('error', () => {
+              playBtn.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+              playerEl.innerHTML = `<span class="conv-audio-unavailable" title="Audio unavailable"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/></svg>Recording unavailable</span>`;
+            });
+
+            currentConvsAudio.play().catch(err => {
+              console.warn('[AudioPlay] Playback notice:', err.message);
+              playerEl.innerHTML = `<span class="conv-audio-unavailable"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/></svg>Recording unavailable</span>`;
+            });
+          });
+
+          slider?.addEventListener('input', () => {
+            if (currentConvsAudioPlayerEl === playerEl && currentConvsAudio) {
+              currentConvsAudio.currentTime = parseFloat(slider.value);
+            }
+          });
+
+          volBtn?.addEventListener('click', () => {
+            if (currentConvsAudioPlayerEl === playerEl && currentConvsAudio) {
+              currentConvsAudio.muted = !currentConvsAudio.muted;
+              if (currentConvsAudio.muted) {
+                volBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>';
+                volBtn.title = 'Unmute';
+              } else {
+                volBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>';
+                volBtn.title = 'Mute';
+              }
+            }
+          });
+        });
+
+        // 6. Checkbox select all
+        const selectAllCb = document.getElementById('convs-select-all');
+        if (selectAllCb) {
+          selectAllCb.checked = false;
+          selectAllCb.onchange = () => {
+            tbody.querySelectorAll('.row-select-checkbox').forEach(cb => {
+              cb.checked = selectAllCb.checked;
+            });
+          };
+        }
+      }
+
       async function openCampaignConversationsModal(campaignId) {
         const modal = document.getElementById('modal-campaign-conversations');
         if (!modal) return;
@@ -4513,9 +5048,28 @@
         const subtitleEl = document.getElementById('camp-convs-subtitle');
         const dlBtn = document.getElementById('camp-convs-dl-btn');
         const tbody = document.getElementById('camp-convs-tbody');
+        const salesFilterGroup = document.getElementById('convs-filter-sales-group');
+        const recFilterGroup = document.getElementById('convs-filter-rec-group');
+        const outcomeHeaderTh = document.getElementById('camp-convs-th-outcome');
+
+        // Reset filter states to defaults
+        activeDurationFilter = 'all';
+        activeOutcomeFilter = 'all';
+        stopActiveConvsAudio();
+
+        // Reset pills UI
+        document.querySelectorAll('#convs-pills-duration .convs-pill-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.getAttribute('data-duration') === 'all');
+        });
+        document.querySelectorAll('#convs-pills-sales .convs-pill-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.getAttribute('data-sales') === 'all');
+        });
+        document.querySelectorAll('#convs-pills-rec .convs-pill-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.getAttribute('data-rec') === 'all');
+        });
 
         if (titleEl) titleEl.textContent = 'Loading Campaign Conversations...';
-        if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:24px; color:#94A3B8;"><span class="auth-spinner"></span> Loading conversations...</td></tr>`;
+        if (tbody) tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:36px; color:#94A3B8;"><span class="auth-spinner" style="margin-right:8px;"></span> Loading conversations...</td></tr>`;
 
         modal.classList.add('open');
 
@@ -4524,57 +5078,86 @@
             AdminClient.getCampaign(campaignId),
             AdminClient.getCampaignConversations(campaignId)
           ]);
-          const campaign = campRes.campaign;
-          const conversations = convsRes.conversations || [];
 
-          if (titleEl) titleEl.textContent = `${campaign.name} — Conversations`;
-          if (subtitleEl) subtitleEl.textContent = `${conversations.length} calls recorded for this ${campaign.service} campaign.`;
+          activeCampaignObj = campRes.campaign;
+          activeCampaignConvs = convsRes.conversations || [];
+
+          const isSales = (activeCampaignObj.service || '').toLowerCase() === 'sales';
+
+          if (titleEl) titleEl.textContent = `${activeCampaignObj.name} — Conversations`;
+          if (subtitleEl) subtitleEl.textContent = `${activeCampaignConvs.length} calls recorded for this ${activeCampaignObj.service} campaign.`;
           if (dlBtn) dlBtn.href = AdminClient.getCampaignDownloadUrl(campaignId);
 
-          if (conversations.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:32px; color:#94A3B8;">No conversations have taken place for this campaign yet. Launch calls to see live screening outcomes.</td></tr>`;
-            return;
+          // Configure Campaign Filter Type Visibility
+          if (isSales) {
+            if (salesFilterGroup) salesFilterGroup.style.display = 'flex';
+            if (recFilterGroup) recFilterGroup.style.display = 'none';
+            if (outcomeHeaderTh) outcomeHeaderTh.textContent = 'Outcome';
+          } else {
+            if (salesFilterGroup) salesFilterGroup.style.display = 'none';
+            if (recFilterGroup) recFilterGroup.style.display = 'flex';
+            if (outcomeHeaderTh) outcomeHeaderTh.textContent = 'Candidate Status';
           }
 
-          tbody.innerHTML = conversations.map(c => {
-            const outcome = c.screening_outcome || c.contact_classification || c.status || 'On Hold';
-            let outcomeClass = 'outcome-onhold';
-            if (outcome.toLowerCase().includes('select') || outcome.toLowerCase().includes('shortlist')) outcomeClass = 'outcome-selected';
-            else if (outcome.toLowerCase().includes('reject')) outcomeClass = 'outcome-rejected';
+          // Initial Render
+          filterAndRenderCampaignConversations();
 
-            const contactName = c.contact_display_name || c.contact_name || c.contact || 'Candidate';
-            const contactPhone = c.contact_phone || c.phone || '—';
-            const dur = c.duration_seconds ? `${Math.floor(c.duration_seconds / 60)}m ${c.duration_seconds % 60}s` : '0m';
-
-            return `
-              <tr style="border-bottom: 1px solid #F1F5F9;">
-                <td style="font-weight:600; color:#0F172A;">${contactName}</td>
-                <td style="font-family:monospace; color:#475569;">${contactPhone}</td>
-                <td style="font-family:monospace;">${dur}</td>
-                <td><span class="badge-rec-outcome ${outcomeClass}">${outcome}</span></td>
-                <td style="color:#475569; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                  ${c.screening_reason || c.summary || 'Call completed.'}
-                </td>
-                <td>
-                  <button type="button" class="btn-table-action btn-view-camp-conv-detail" data-conv-id="${c.id}">
-                    <span>Transcript</span>
-                  </button>
-                </td>
-              </tr>
-            `;
-          }).join('');
-
-          tbody.querySelectorAll('.btn-view-camp-conv-detail').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-              e.preventDefault();
-              const convId = btn.getAttribute('data-conv-id');
-              if (convId) openConversationModal(convId);
-            });
-          });
         } catch (err) {
-          if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:24px; color:#DC2626;">Error: ${err.message}</td></tr>`;
+          if (tbody) tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:28px; color:#DC2626;">Failed to load conversations: ${err.message}</td></tr>`;
         }
       }
+
+      // Initialize filter button click bindings once
+      document.querySelectorAll('#convs-pills-duration .convs-pill-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('#convs-pills-duration .convs-pill-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          activeDurationFilter = btn.getAttribute('data-duration') || 'all';
+          filterAndRenderCampaignConversations();
+        });
+      });
+
+      document.querySelectorAll('#convs-pills-sales .convs-pill-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('#convs-pills-sales .convs-pill-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          activeOutcomeFilter = btn.getAttribute('data-sales') || 'all';
+          filterAndRenderCampaignConversations();
+        });
+      });
+
+      document.querySelectorAll('#convs-pills-rec .convs-pill-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('#convs-pills-rec .convs-pill-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          activeOutcomeFilter = btn.getAttribute('data-rec') || 'all';
+          filterAndRenderCampaignConversations();
+        });
+      });
+
+      document.getElementById('btn-convs-clear-filters')?.addEventListener('click', () => {
+        activeDurationFilter = 'all';
+        activeOutcomeFilter = 'all';
+        document.querySelectorAll('#convs-pills-duration .convs-pill-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.getAttribute('data-duration') === 'all');
+        });
+        document.querySelectorAll('#convs-pills-sales .convs-pill-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.getAttribute('data-sales') === 'all');
+        });
+        document.querySelectorAll('#convs-pills-rec .convs-pill-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.getAttribute('data-rec') === 'all');
+        });
+        filterAndRenderCampaignConversations();
+      });
+
+      document.getElementById('modal-summary-view-close')?.addEventListener('click', () => {
+        document.getElementById('modal-summary-view')?.classList.remove('open');
+      });
+      document.getElementById('modal-summary-view')?.addEventListener('click', (e) => {
+        if (e.target.id === 'modal-summary-view') {
+          document.getElementById('modal-summary-view')?.classList.remove('open');
+        }
+      });
 
       // ======================================================================
       // 10. CONVERSATIONS & TRANSCRIPTS CONTROLLER

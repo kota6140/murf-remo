@@ -175,8 +175,9 @@ export default class PlivoService {
     /**
      * Generates Plivo XML containing a bidirectional <Stream> element
      * connecting Plivo's real-time 8kHz mu-law audio to our voicebot WebSocket.
+     * Optionally includes a non-blocking <Record> element to record call audio.
      */
-    static generateAnswerXml(streamWsUrl, extraHeaders = '') {
+    static generateAnswerXml(streamWsUrl, extraHeaders = '', recordCallbackUrl = '') {
         const cleanUrl = String(streamWsUrl || '')
             .trim()
             .replace(/&/g, '&amp;')
@@ -186,10 +187,95 @@ export default class PlivoService {
             .replace(/&/g, '&amp;')
             .replace(/"/g, '&quot;');
         const headersAttr = cleanHeaders ? ` extraHeaders="${cleanHeaders}"` : '';
+        const recordTag = recordCallbackUrl ? `    <Record action="${String(recordCallbackUrl).replace(/&/g, '&amp;')}" method="POST" redirect="false" fileFormat="mp3" maxLength="3600" playBeep="false" timeout="0" />\n` : '';
         return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-mulaw;rate=8000"${headersAttr}>${cleanUrl}</Stream>
+${recordTag}    <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-mulaw;rate=8000"${headersAttr}>${cleanUrl}</Stream>
 </Response>`.trim();
+    }
+
+    /**
+     * Triggers active call recording via Plivo REST API.
+     * @param {string} callUuid - Plivo Call UUID
+     * @param {object} options - Options including callbackUrl
+     * @returns {Promise<{success: boolean, recordingId?: string, url?: string, error?: string}>}
+     */
+    static async startCallRecording(callUuid, options = {}) {
+        if (!callUuid || !this.isConfigured()) return { success: false, error: 'Plivo not configured or no call UUID' };
+        try {
+            const cfg = this.getConfig();
+            const callbackUrl = options.callbackUrl || `${cfg.serverUrl}/api/plivo/recording`;
+            const url = `https://api.plivo.com/v1/Account/${cfg.authId}/Call/${callUuid}/Record/`;
+            const authHeader = 'Basic ' + Buffer.from(`${cfg.authId}:${cfg.authToken}`).toString('base64');
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Authorization': authHeader,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    file_format: 'mp3',
+                    time_limit: 3600,
+                    callback_url: callbackUrl,
+                    callback_method: 'POST'
+                })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok) {
+                console.log(`[PlivoService] Call recording started for ${callUuid}:`, data.recording_id || data.url);
+                return { success: true, recordingId: data.recording_id, url: data.url };
+            } else {
+                console.warn(`[PlivoService] Failed to start recording for ${callUuid}:`, data.error || data.message);
+                return { success: false, error: data.error || data.message };
+            }
+        } catch (err) {
+            console.error('[PlivoService] Error starting call recording:', err.message);
+            return { success: false, error: err.message };
+        }
+    }
+
+    /**
+     * Queries Plivo API for any recordings associated with a call UUID.
+     * @param {string} callUuid - Plivo Call UUID
+     * @returns {Promise<object|null>} Recording object or null
+     */
+    static async fetchRecordingByCallUuid(callUuid) {
+        if (!callUuid || !this.isConfigured()) return null;
+        try {
+            const cfg = this.getConfig();
+            const authHeader = 'Basic ' + Buffer.from(`${cfg.authId}:${cfg.authToken}`).toString('base64');
+            const url = `https://api.plivo.com/v1/Account/${cfg.authId}/Recording/?call_uuid=${encodeURIComponent(callUuid)}`;
+            const res = await fetch(url, { headers: { 'Authorization': authHeader } });
+            if (!res.ok) return null;
+            const data = await res.json().catch(() => ({}));
+            if (data && Array.isArray(data.objects) && data.objects.length > 0) {
+                return data.objects[0];
+            }
+            return null;
+        } catch (err) {
+            console.warn(`[PlivoService] Error fetching recording for ${callUuid}:`, err.message);
+            return null;
+        }
+    }
+
+    /**
+     * Queries Plivo API for a specific recording by Recording ID.
+     * @param {string} recordingId - Plivo Recording ID
+     * @returns {Promise<object|null>}
+     */
+    static async fetchRecordingById(recordingId) {
+        if (!recordingId || !this.isConfigured()) return null;
+        try {
+            const cfg = this.getConfig();
+            const authHeader = 'Basic ' + Buffer.from(`${cfg.authId}:${cfg.authToken}`).toString('base64');
+            const url = `https://api.plivo.com/v1/Account/${cfg.authId}/Recording/${encodeURIComponent(recordingId)}/`;
+            const res = await fetch(url, { headers: { 'Authorization': authHeader } });
+            if (!res.ok) return null;
+            return await res.json().catch(() => null);
+        } catch (err) {
+            console.warn(`[PlivoService] Error fetching recording ID ${recordingId}:`, err.message);
+            return null;
+        }
     }
 
     /**
