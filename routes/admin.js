@@ -30,8 +30,10 @@ import { QuestionPlanner } from '../services/question_planner.js';
 import { CallQueueWorker } from '../services/call_queue_worker.js';
 import PlivoService from '../services/plivo_service.js';
 import ElevenLabsService from '../services/elevenlabs_service.js';
+import MurfService from '../services/murf_service.js';
 import AgentService from '../services/agent_service.js';
 import GeminiService from '../services/gemini_service.js';
+import VoiceRegistry from '../services/voice_registry.js';
 import { updateDemoCallStatus } from './demo.js';
 
 const SERVICES = {
@@ -543,6 +545,74 @@ router.post('/test-call', async (req, res) => {
 });
 
 // ============================================================================
+// VOICE & LANGUAGE CONFIGURATION & PREVIEW API (/api/admin/voice/*)
+// ============================================================================
+
+// Get available voices, languages, and client-safe configuration
+router.get('/voice/config', wrap(async (req, res) => {
+    res.json({
+        success: true,
+        ...VoiceRegistry.getPublicConfig()
+    });
+}));
+
+// Synthesize or retrieve short voice preview audio in selected language (WAV format)
+router.post('/voice/preview', wrap(async (req, res) => {
+    const { voiceKey, locale, text } = req.body || {};
+    const normKey = VoiceRegistry.normalizeVoiceKey(voiceKey || 'pooja');
+    const normLocale = VoiceRegistry.normalizeLocale(locale || 'en-IN');
+
+    const validation = VoiceRegistry.validateVoiceAndLocale(normKey, normLocale);
+    if (!validation.valid) {
+        return fail(res, 400, validation.error);
+    }
+
+    if (!MurfService.isConfigured()) {
+        return fail(res, 400, 'Voice provider Murf is not configured in the server environment.');
+    }
+
+    const voiceConfig = VoiceRegistry.resolveVoice(normKey, normLocale);
+    const previewText = (typeof text === 'string' && text.trim().length > 0)
+        ? text.trim().slice(0, 200)
+        : VoiceRegistry.getPreviewText(normLocale);
+
+    // Retrieve from RAM cache or synthesize via Murf
+    let mulawBuffer = MurfService.getCachedAudio(previewText, {
+        voiceId: voiceConfig.voiceId,
+        model: voiceConfig.model,
+        locale: normLocale
+    });
+
+    if (!mulawBuffer) {
+        mulawBuffer = await MurfService.textToSpeech(previewText, {
+            voiceId: voiceConfig.voiceId,
+            model: voiceConfig.model,
+            style: voiceConfig.style,
+            locale: normLocale,
+            timeoutMs: 9000
+        });
+    }
+
+    if (!mulawBuffer || mulawBuffer.length === 0) {
+        return fail(res, 502, 'Failed to synthesize voice preview audio.');
+    }
+
+    // Convert 8kHz mu-law audio to standard linear 16-bit PCM WAV for universal browser playback
+    const wavBuffer = VoiceRegistry.mulawBufferToPcmWav(mulawBuffer, 8000);
+    const audioBase64 = wavBuffer.toString('base64');
+
+    res.json({
+        success: true,
+        voiceKey: normKey,
+        voiceName: voiceConfig.name,
+        locale: normLocale,
+        text: previewText,
+        mimeType: 'audio/wav',
+        audio: audioBase64
+    });
+}));
+
+// ============================================================================
 // CAMPAIGN MANAGEMENT API (/api/admin/campaigns/*)
 // ============================================================================
 
@@ -580,13 +650,23 @@ router.get('/campaigns/:id', wrap(async (req, res) => {
 
 // Create campaign
 router.post('/campaigns', wrap(async (req, res) => {
-    const { name, service, description, config } = req.body;
+    const { name, service, description, config, primary_language, primary_locale, voice_id, voice_provider, voice_model } = req.body;
     if (!name || !name.trim()) return fail(res, 400, 'Campaign name is required.');
+
+    const mergedConfig = {
+        ...(config || {}),
+        ...(primary_language ? { primary_language } : {}),
+        ...(primary_locale ? { primary_locale } : {}),
+        ...(voice_id ? { voice_id } : {}),
+        ...(voice_provider ? { voice_provider } : {}),
+        ...(voice_model ? { voice_model } : {})
+    };
+
     const campaign = await CampaignService.createCampaign({
         name,
         service: service || 'recruitment',
         description,
-        config: config || {},
+        config: mergedConfig,
         ownerUserId: req.user.id
     });
     res.status(201).json({ success: true, campaign });
@@ -934,10 +1014,14 @@ export async function handlePlivoAnswer(req, res) {
                     });
                 }
                 if (greeting) {
-                    const lang = ElevenLabsService.detectLanguageFromText(greeting, 'en');
-                    const voiceId = ElevenLabsService.getVoiceId(lang);
-                    const modelId = ElevenLabsService.selectTtsModel({ language: lang, text: greeting, voiceId });
-                    ElevenLabsService.textToSpeech(greeting, { voiceId, modelId, outputFormat: 'ulaw_8000', language: lang }).catch(() => {});
+                    if (MurfService.isConfigured()) {
+                        MurfService.textToSpeech(greeting).catch(() => {});
+                    } else if (ElevenLabsService.isConfigured()) {
+                        const lang = ElevenLabsService.detectLanguageFromText(greeting, 'en');
+                        const voiceId = ElevenLabsService.getVoiceId(lang);
+                        const modelId = ElevenLabsService.selectTtsModel({ language: lang, text: greeting, voiceId });
+                        ElevenLabsService.textToSpeech(greeting, { voiceId, modelId, outputFormat: 'ulaw_8000', language: lang }).catch(() => {});
+                    }
                 }
             } catch (_) {}
         })();

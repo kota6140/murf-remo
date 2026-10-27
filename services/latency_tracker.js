@@ -42,20 +42,27 @@ export default class LatencyTracker {
     }
 
     startTurn(turnIndex = null) {
+        const now = performance.now();
         this.currentTurn = {
             turnIndex: turnIndex !== null ? turnIndex : (this.turns.length + 1),
-            turnStartTime: Date.now(),
+            turnStartTime: now,
+            callerSpeechStartedTime: now,
+            sttSessionReadyTime: null,
             speechEndpointDetectedTime: null,
             vadSilenceDetectedTime: null,
-            // null = not measured. A missing measurement is never reported as 0.
             vadDurationMs: null,
             sttStartTime: null,
+            sttFinalizeSentTime: null,
             sttEndTime: null,
             sttDurationMs: null,
+            sttFinalizeDurationMs: null,
             decisionStartTime: null,
             decisionEndTime: null,
             decisionDurationMs: null,
             decisionType: 'UNKNOWN',
+            llmFirstTokenTime: null,
+            llmFirstTokenMs: null,
+            firstSafePhraseReadyTime: null,
             ttsStartTime: null,
             ttsFirstByteTime: null,
             ttsEndTime: null,
@@ -73,103 +80,155 @@ export default class LatencyTracker {
         this.currentTurn = null;
     }
 
-    markSpeechEndpointDetected() {
+    markCallerSpeechStarted() {
         if (!this.currentTurn) this.startTurn();
-        this.currentTurn.speechEndpointDetectedTime = Date.now();
+        this.currentTurn.callerSpeechStartedTime = performance.now();
     }
 
-    markVadSilence(silenceMs = 280, turnIndex = null) {
+    markSttSessionReady(connectDurationMs = null) {
+        if (!this.currentTurn) return;
+        this.currentTurn.sttSessionReadyTime = performance.now();
+        if (typeof connectDurationMs === 'number') {
+            this.currentTurn.sttConnectDurationMs = connectDurationMs;
+        }
+    }
+
+    markSpeechEndpointDetected() {
+        if (!this.currentTurn) this.startTurn();
+        this.currentTurn.speechEndpointDetectedTime = performance.now();
+    }
+
+    markVadSilence(silenceMs = 300, turnIndex = null) {
         if (!this.currentTurn) this.startTurn(turnIndex);
-        this.currentTurn.vadSilenceDetectedTime = Date.now();
-        this.currentTurn.speechEndpointDetectedTime = this.currentTurn.speechEndpointDetectedTime || Date.now();
-        this.currentTurn.vadDurationMs = silenceMs;
+        const now = performance.now();
+        this.currentTurn.vadSilenceDetectedTime = now;
+        this.currentTurn.speechEndpointDetectedTime = this.currentTurn.speechEndpointDetectedTime || now;
+        this.currentTurn.vadDurationMs = Math.round(silenceMs);
     }
 
     markSttStart() {
         if (!this.currentTurn) this.startTurn();
-        this.currentTurn.sttStartTime = Date.now();
+        if (!this.currentTurn.sttStartTime) {
+            this.currentTurn.sttStartTime = performance.now();
+        }
     }
 
-    markSttEnd(transcriptLength = 0) {
-        if (!this.currentTurn || !this.currentTurn.sttStartTime) return;
-        this.currentTurn.sttEndTime = Date.now();
-        this.currentTurn.sttDurationMs = this.currentTurn.sttEndTime - this.currentTurn.sttStartTime;
+    markSttFinalizeSent() {
+        if (!this.currentTurn) this.startTurn();
+        this.currentTurn.sttFinalizeSentTime = performance.now();
+        if (!this.currentTurn.sttStartTime) {
+            this.currentTurn.sttStartTime = this.currentTurn.sttFinalizeSentTime;
+        }
+    }
+
+    markSttEnd(transcriptLength = 0, finalizeDurationMs = null) {
+        if (!this.currentTurn) return;
+        const now = performance.now();
+        this.currentTurn.sttEndTime = now;
+        if (typeof finalizeDurationMs === 'number') {
+            this.currentTurn.sttFinalizeDurationMs = Math.round(finalizeDurationMs);
+        } else if (this.currentTurn.sttFinalizeSentTime) {
+            this.currentTurn.sttFinalizeDurationMs = Math.max(0, Math.round(now - this.currentTurn.sttFinalizeSentTime));
+        }
+        if (this.currentTurn.sttStartTime) {
+            this.currentTurn.sttDurationMs = Math.max(0, Math.round(now - this.currentTurn.sttStartTime));
+        } else if (this.currentTurn.sttFinalizeDurationMs !== null) {
+            this.currentTurn.sttDurationMs = this.currentTurn.sttFinalizeDurationMs;
+        }
     }
 
     markDecisionStart() {
         if (!this.currentTurn) this.startTurn();
-        this.currentTurn.decisionStartTime = Date.now();
+        this.currentTurn.decisionStartTime = performance.now();
     }
 
     markLlmFirstToken() {
         if (!this.currentTurn) return;
-        this.currentTurn.llmFirstTokenTime = Date.now();
-        if (this.currentTurn.decisionStartTime) {
-            this.currentTurn.llmFirstTokenMs = this.currentTurn.llmFirstTokenTime - this.currentTurn.decisionStartTime;
+        if (!this.currentTurn.llmFirstTokenTime) {
+            this.currentTurn.llmFirstTokenTime = performance.now();
+            if (this.currentTurn.decisionStartTime) {
+                this.currentTurn.llmFirstTokenMs = Math.max(0, Math.round(this.currentTurn.llmFirstTokenTime - this.currentTurn.decisionStartTime));
+            }
+        }
+    }
+
+    markFirstSafePhraseReady() {
+        if (!this.currentTurn) return;
+        if (!this.currentTurn.firstSafePhraseReadyTime) {
+            this.currentTurn.firstSafePhraseReadyTime = performance.now();
+            if (this.currentTurn.decisionStartTime) {
+                this.currentTurn.timeToFirstSafePhraseMs = Math.max(0, Math.round(this.currentTurn.firstSafePhraseReadyTime - this.currentTurn.decisionStartTime));
+            }
         }
     }
 
     markDecisionEnd(type = 'GEMINI_LLM') {
         if (!this.currentTurn || !this.currentTurn.decisionStartTime) return;
-        this.currentTurn.decisionEndTime = Date.now();
-        this.currentTurn.decisionDurationMs = this.currentTurn.decisionEndTime - this.currentTurn.decisionStartTime;
+        this.currentTurn.decisionEndTime = performance.now();
+        this.currentTurn.decisionDurationMs = Math.max(0, Math.round(this.currentTurn.decisionEndTime - this.currentTurn.decisionStartTime));
         this.currentTurn.decisionType = type;
     }
 
     markTtsStart() {
         if (!this.currentTurn) this.startTurn();
-        this.currentTurn.ttsStartTime = Date.now();
+        // Crucial bugfix: Only set ttsStartTime once per turn so multi-sentence turns don't overwrite it with a later time
+        if (!this.currentTurn.ttsStartTime) {
+            this.currentTurn.ttsStartTime = performance.now();
+        }
     }
 
     markTtsFirstByte() {
         if (!this.currentTurn) return;
-        this.currentTurn.ttsFirstByteTime = Date.now();
+        if (!this.currentTurn.ttsFirstByteTime) {
+            this.currentTurn.ttsFirstByteTime = performance.now();
+        }
     }
 
     markTtsEnd(isCached = false) {
         if (!this.currentTurn || !this.currentTurn.ttsStartTime) return;
-        this.currentTurn.ttsEndTime = Date.now();
-        // Audio taken from the cache was not synthesised, so there is no synthesis time to report.
-        this.currentTurn.ttsDurationMs = isCached ? null : (this.currentTurn.ttsEndTime - this.currentTurn.ttsStartTime);
-        this.currentTurn.isTtsCached = isCached;
+        if (!this.currentTurn.ttsEndTime) {
+            this.currentTurn.ttsEndTime = performance.now();
+            this.currentTurn.ttsDurationMs = isCached ? 0 : Math.max(0, Math.round(this.currentTurn.ttsEndTime - this.currentTurn.ttsStartTime));
+            this.currentTurn.isTtsCached = isCached;
+        }
     }
 
     markFirstAudioChunkSent() {
         if (!this.currentTurn) return;
         if (!this.currentTurn.firstAudioSentTime) {
-            this.currentTurn.firstAudioSentTime = Date.now();
+            this.currentTurn.firstAudioSentTime = performance.now();
             if (!this.currentTurn.ttsFirstByteTime) {
                 this.currentTurn.ttsFirstByteTime = this.currentTurn.firstAudioSentTime;
             }
             const endpoint = this.currentTurn.speechEndpointDetectedTime || this.currentTurn.vadSilenceDetectedTime || this.currentTurn.turnStartTime;
-            this.currentTurn.endpointToFirstAudioMs = this.currentTurn.firstAudioSentTime - endpoint;
+            this.currentTurn.endpointToFirstAudioMs = Math.max(0, Math.round(this.currentTurn.firstAudioSentTime - endpoint));
         }
     }
 
     markAudioDispatched() {
         if (!this.currentTurn) return;
-        this.currentTurn.audioDispatchedTime = Date.now();
-        // No audio was sent for this turn (text-to-speech failed, or the reply was cancelled): the first-audio
-        // time stays unmeasured instead of being invented from the dispatch time.
+        this.currentTurn.audioDispatchedTime = performance.now();
 
         const t = this.currentTurn;
-        // From the moment the caller's silence began to the first audio of the reply sent to Plivo.
-        // Only computed when both ends were really measured; otherwise it stays null.
         if (t.firstAudioSentTime && t.vadSilenceDetectedTime && typeof t.vadDurationMs === 'number') {
-            t.totalTurnLatencyMs = t.vadDurationMs + (t.firstAudioSentTime - t.vadSilenceDetectedTime);
+            t.totalTurnLatencyMs = Math.round(t.vadDurationMs + Math.max(0, t.firstAudioSentTime - t.vadSilenceDetectedTime));
+        } else if (typeof t.endpointToFirstAudioMs === 'number' && typeof t.vadDurationMs === 'number') {
+            t.totalTurnLatencyMs = Math.round(t.vadDurationMs + t.endpointToFirstAudioMs);
         }
+
         t.plivoFirstAudioDeliveryMs = t.endpointToFirstAudioMs;
         t.vadLatencyMs = t.vadDurationMs;
         t.endOfTurnDetectionMs = t.vadDurationMs;
         t.intentLatencyMs = t.decisionType.includes('INTENT') ? t.decisionDurationMs : null;
         t.llmTimeToFirstTokenMs = typeof t.llmFirstTokenMs === 'number' ? t.llmFirstTokenMs : null;
-        t.ttsTimeToFirstAudioMs = (t.ttsStartTime && t.ttsFirstByteTime && !t.isTtsCached) ? (t.ttsFirstByteTime - t.ttsStartTime) : null;
+        t.ttsTimeToFirstAudioMs = (t.ttsStartTime && t.ttsFirstByteTime) ? (t.isTtsCached ? 0 : Math.max(0, Math.round(t.ttsFirstByteTime - t.ttsStartTime))) : null;
 
         const fmt = (v) => (typeof v === 'number' ? `${v}ms` : 'n/a');
+        const sttDetail = t.sttFinalizeDurationMs !== null ? `${t.sttDurationMs}ms (finalize: ${t.sttFinalizeDurationMs}ms)` : fmt(t.sttDurationMs);
         console.log(
             `[LATENCY] Call ${this.callId} [Turn ${t.turnIndex}]: ` +
             `VAD=${fmt(t.vadDurationMs)} | ` +
-            `STT=${fmt(t.sttDurationMs)} | ` +
+            `STT=${sttDetail} | ` +
             `Decision=${fmt(t.decisionDurationMs)} (${t.decisionType}${typeof t.llmFirstTokenMs === 'number' ? `, TTFT: ${t.llmFirstTokenMs}ms` : ''}) | ` +
             `TTS=${t.isTtsCached ? 'cached' : fmt(t.ttsDurationMs)}${t.ttsTimeToFirstAudioMs !== null ? ` (first audio ${t.ttsTimeToFirstAudioMs}ms)` : ''} | ` +
             `EndpointToFirstAudio=${fmt(t.endpointToFirstAudioMs)} | ` +
@@ -183,6 +242,7 @@ export default class LatencyTracker {
             decisionType: t.decisionType,
             vadLatencyMs: t.vadLatencyMs,
             sttLatencyMs: t.sttDurationMs,
+            sttFinalizeLatencyMs: t.sttFinalizeDurationMs,
             decisionLatencyMs: t.decisionDurationMs,
             llmTimeToFirstTokenMs: t.llmTimeToFirstTokenMs,
             ttsTimeToFirstAudioMs: t.ttsTimeToFirstAudioMs,

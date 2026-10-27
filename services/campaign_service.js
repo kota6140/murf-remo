@@ -7,6 +7,7 @@ import PDFService from './pdf_service.js';
 import QuestionPlanner from './question_planner.js';
 import ExcelService from './excel_service.js';
 import CallQueueWorker from './call_queue_worker.js';
+import VoiceRegistry from './voice_registry.js';
 
 const UPLOAD_DIR = path.resolve('data/uploads');
 if (!fs.existsSync(UPLOAD_DIR)) {
@@ -76,6 +77,12 @@ export class CampaignService {
             } catch {}
         }
 
+        const primaryLanguage = camp.primary_language || config.primary_language || 'en-IN';
+        const primaryLocale = camp.primary_locale || config.primary_locale || primaryLanguage;
+        const voiceKey = VoiceRegistry.normalizeVoiceKey(camp.voice_id || config.voice_id || 'pooja');
+        const voiceProvider = camp.voice_provider || config.voice_provider || 'murf';
+        const voiceModel = camp.voice_model || config.voice_model || 'falcon-2.1';
+
         const context = {
             id: camp.id,
             name: camp.name,
@@ -84,6 +91,11 @@ export class CampaignService {
             extracted_data: extracted,
             question_plan: questionPlan,
             config,
+            primary_language: primaryLanguage,
+            primary_locale: primaryLocale,
+            voice_id: voiceKey,
+            voice_provider: voiceProvider,
+            voice_model: voiceModel,
             pdf_filename: camp.pdf_filename,
             pdf_path: camp.pdf_path,
             batch_id: camp.batch_id,
@@ -111,6 +123,11 @@ export class CampaignService {
         name,
         service = 'recruitment',
         description = '',
+        primary_language,
+        primary_locale,
+        voice_id,
+        voice_provider,
+        voice_model,
         config = {},
         extracted_data = null,
         question_plan = null,
@@ -123,12 +140,30 @@ export class CampaignService {
             ? service.toLowerCase()
             : 'recruitment';
 
+        const rawVoice = voice_id || config.voice_id || 'pooja';
+        const voiceKey = VoiceRegistry.normalizeVoiceKey(rawVoice);
+        const primaryLocale = VoiceRegistry.normalizeLocale(primary_locale || config.primary_locale || primary_language || config.primary_language || 'en-IN');
+        const primaryLanguage = primary_language || config.primary_language || primaryLocale;
+        const voiceProvider = voice_provider || config.voice_provider || 'murf';
+        const voiceModel = voice_model || config.voice_model || 'falcon-2.1';
+
+        // Validate voice & locale combination
+        const validation = VoiceRegistry.validateVoiceAndLocale(voiceKey, primaryLocale);
+        if (!validation.valid) {
+            throw new Error(validation.error);
+        }
+
         const initialConfig = JSON.stringify({
             ai_model: config.ai_model || 'claude-haiku-5-5',
             voice_id_english: config.voice_id_english || process.env.ELEVENLABS_VOICE_ID_SId || '0muxiGNHAVvmM1qWRtyV',
             voice_id_telugu: config.voice_id_telugu || process.env.ELEVENLABS_VOICE_ID_TELUGU || process.env.ELEVENLABS_VOICE_ID_CHAITRA || process.env.ELEVENLABS_VOICE_ID_SId || '0muxiGNHAVvmM1qWRtyV',
             screening_strictness: config.screening_strictness || 'standard',
             retry_policy: config.retry_policy || { max_attempts: 1, retry_unanswered: false },
+            primary_language: primaryLanguage,
+            primary_locale: primaryLocale,
+            voice_id: voiceKey,
+            voice_provider: voiceProvider,
+            voice_model: voiceModel,
             ...config
         });
 
@@ -137,9 +172,15 @@ export class CampaignService {
 
         await db.run(`
             INSERT INTO campaigns (
-                id, name, service, description, status, config, extracted_data, question_plan, owner_user_id, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?)
-        `, [id, name.trim(), validService, (description || '').trim(), initialConfig, initialExtracted, initialPlan, ownerUserId, now, now]);
+                id, name, service, description, status, config, extracted_data, question_plan,
+                primary_language, primary_locale, voice_id, voice_provider, voice_model,
+                owner_user_id, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+            id, name.trim(), validService, (description || '').trim(), initialConfig, initialExtracted, initialPlan,
+            primaryLanguage, primaryLocale, voiceKey, voiceProvider, voiceModel,
+            ownerUserId, now, now
+        ]);
 
         return this.getCampaign(id, ownerUserId);
     }
@@ -159,6 +200,13 @@ export class CampaignService {
         try { campaign.extracted_data = JSON.parse(campaign.extracted_data); } catch { campaign.extracted_data = null; }
         try { campaign.question_plan = JSON.parse(campaign.question_plan); } catch { campaign.question_plan = []; }
         try { campaign.config = JSON.parse(campaign.config); } catch { campaign.config = {}; }
+
+        // Backward-compatible safe defaults for language & voice
+        campaign.primary_language = campaign.primary_language || campaign.config?.primary_language || 'en-IN';
+        campaign.primary_locale = campaign.primary_locale || campaign.config?.primary_locale || campaign.primary_language;
+        campaign.voice_id = VoiceRegistry.normalizeVoiceKey(campaign.voice_id || campaign.config?.voice_id || 'pooja');
+        campaign.voice_provider = campaign.voice_provider || campaign.config?.voice_provider || 'murf';
+        campaign.voice_model = campaign.voice_model || campaign.config?.voice_model || 'falcon-2.1';
 
         // Recalculate live stats from contacts table
         const stats = await db.get(`
@@ -254,15 +302,46 @@ export class CampaignService {
             ? JSON.stringify(updateData.question_plan)
             : JSON.stringify(campaign.question_plan);
 
-        const config = updateData.config !== undefined
-            ? JSON.stringify({ ...campaign.config, ...updateData.config })
-            : JSON.stringify(campaign.config);
+        const rawVoice = updateData.voice_id !== undefined ? updateData.voice_id : (updateData.config?.voice_id !== undefined ? updateData.config.voice_id : campaign.voice_id);
+        const voiceKey = VoiceRegistry.normalizeVoiceKey(rawVoice || 'pooja');
+
+        const rawLocale = updateData.primary_locale !== undefined ? updateData.primary_locale : (updateData.config?.primary_locale !== undefined ? updateData.config.primary_locale : (updateData.primary_language !== undefined ? updateData.primary_language : campaign.primary_locale));
+        const primaryLocale = VoiceRegistry.normalizeLocale(rawLocale || 'en-IN');
+
+        const primaryLanguage = updateData.primary_language !== undefined ? updateData.primary_language : (updateData.config?.primary_language !== undefined ? updateData.config.primary_language : (campaign.primary_language || primaryLocale));
+
+        // If voice or locale are explicitly updated, validate
+        if (updateData.voice_id !== undefined || updateData.primary_locale !== undefined || updateData.primary_language !== undefined || updateData.config?.voice_id !== undefined || updateData.config?.primary_locale !== undefined) {
+            const validation = VoiceRegistry.validateVoiceAndLocale(voiceKey, primaryLocale);
+            if (!validation.valid) {
+                throw new Error(validation.error);
+            }
+        }
+
+        const voiceProvider = updateData.voice_provider || updateData.config?.voice_provider || campaign.voice_provider || 'murf';
+        const voiceModel = updateData.voice_model || updateData.config?.voice_model || campaign.voice_model || 'falcon-2.1';
+
+        const config = JSON.stringify({
+            ...campaign.config,
+            ...(updateData.config || {}),
+            primary_language: primaryLanguage,
+            primary_locale: primaryLocale,
+            voice_id: voiceKey,
+            voice_provider: voiceProvider,
+            voice_model: voiceModel
+        });
 
         await db.run(`
             UPDATE campaigns SET
-                name = ?, description = ?, status = ?, extracted_data = ?, question_plan = ?, config = ?, updated_at = ?
+                name = ?, description = ?, status = ?, extracted_data = ?, question_plan = ?, config = ?,
+                primary_language = ?, primary_locale = ?, voice_id = ?, voice_provider = ?, voice_model = ?,
+                updated_at = ?
             WHERE id = ?
-        `, [name, description, status, extractedData, questionPlan, config, now, id]);
+        `, [
+            name, description, status, extractedData, questionPlan, config,
+            primaryLanguage, primaryLocale, voiceKey, voiceProvider, voiceModel,
+            now, id
+        ]);
 
         this.invalidateCampaignContext(id);
 
@@ -455,18 +534,20 @@ export class CampaignService {
         const campaign = await this.getCampaign(campaignId, ownerUserId);
         if (!campaign) throw new Error('Campaign not found.');
 
+        // Validate voice & locale combination before starting
+        const voiceKey = campaign.voice_id || campaign.config?.voice_id || 'pooja';
+        const locale = campaign.primary_locale || campaign.config?.primary_locale || 'en-IN';
+        const voiceVal = VoiceRegistry.validateVoiceAndLocale(voiceKey, locale);
+        if (!voiceVal.valid) {
+            throw new Error(`Cannot launch campaign: ${voiceVal.error}`);
+        }
+
         if (!campaign.batch_id) {
             throw new Error('Please upload an Excel contact sheet before starting the campaign.');
         }
 
         if (campaign.service === 'recruitment' && !campaign.pdf_filename && (!campaign.extracted_data || Object.keys(campaign.extracted_data).length === 0)) {
             throw new Error('Please upload a Job Description document (PDF or Word) before starting a recruitment screening campaign.');
-        }
-
-        // Validate and pre-warm campaign context in memory cache before first call
-        const campaignCtx = await this.getCampaignContext(campaignId);
-        if (campaign.pdf_filename && (!campaignCtx || !campaignCtx.extracted_data || Object.keys(campaignCtx.extracted_data).length === 0)) {
-            throw new Error(`The uploaded campaign document "${campaign.pdf_filename}" could not be parsed or contains no usable data. Cannot run campaign with ungrounded information.`);
         }
 
         const now = utcNow();

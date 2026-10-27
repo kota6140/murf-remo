@@ -7,7 +7,11 @@ import GreetingScript from './greeting_script.js';
 const FALLBACK_TEXT = {
     'en': "I'm sorry, I don't have that information right now, but I'll make sure our team follows up with you directly.",
     'hi': "माफ़ कीजिए, मेरे पास अभी यह जानकारी उपलब्ध नहीं है, लेकिन हमारी टीम आपसे जल्द संपर्क करेगी।",
-    'te': "నన్ను క్షమించండి, ప్రస్తుతం నా వద్ద ఆ సమాచారం లేదు, కానీ మా బృందం నేరుగా మిమ్మల్ని సంప్రదిస్తుంది."
+    'te': "నన్ను క్షమించండి, ప్రస్తుతం నా వద్ద ఆ సమాచారం లేదు, కానీ మా బృందం నేరుగా మిమ్మల్ని సంప్రదిస్తుంది.",
+    'ta': "மன்னிக்கவும், என்னிடம் இப்போது அந்த தகவல் இல்லை, ஆனால் எங்கள் குழு உங்களை நேரடியாக தொடர்பு கொள்ளும்.",
+    'kn': "ಕ್ಷಮಿಸಿ, ನನ್ನ ಬಳಿ ಈಗ ಆ ಮಾಹಿತಿ ಲಭ್ಯವಿಲ್ಲ, ಆದರೆ ನಮ್ಮ ತಂಡವು ನಿಮ್ಮನ್ನು ನೇರವಾಗಿ ಸಂಪರ್ಕಿಸುತ್ತದೆ.",
+    'ml': "ക്ഷമിക്കണം, എന്റെ പക്കൽ ഇപ്പോൾ ആ വിവരമില്ല, എന്നാൽ ഞങ്ങളുടെ ടീം നിങ്ങളെ നേരിട്ട് ബന്ധപ്പെടും.",
+    'mr': "क्षमस्व, माझ्याकडे आता ती माहिती उपलब्ध नाही, परंतु आमची टीम आपल्याशी थेट संपर्क साधेल."
 };
 
 export default class GeminiService {
@@ -20,30 +24,39 @@ export default class GeminiService {
         const ctx = safeContact.campaignContext || safeContact.extracted_data || safeContact.jdCriteria || safeContact;
         const rawName = (safeContact.name || '').trim();
         const isValidName = rawName && !rawName.startsWith('Caller') && !rawName.startsWith('Candidate') && !rawName.startsWith('Contact') && !rawName.startsWith('Row');
+        const langRaw = safeContact.language || (safeContact.primaryLocale ? safeContact.primaryLocale.split('-')[0] : 'en');
+        const lang = String(langRaw || 'en').toLowerCase().trim();
 
         if (s === 'sales') {
-            const company = ctx.company_name || 'Scorelabs Inc.';
-            const product = ctx.product_name || '';
+            const company = ctx.company_name || 'Scorelabs';
+            const shortCompany = company.replace(/\s+Inc\.?$/i, '').trim() || 'Scorelabs';
 
             // If customer name is known, start with personal identity confirmation
             if (isValidName) {
+                if (lang === 'te') return `నమస్కారం, నేను ${rawName} గారితో మాట్లాడుతున్నానా?`;
+                if (lang === 'hi') return `नमस्ते, क्या मैं ${rawName} से बात कर रहा हूँ?`;
+                if (lang === 'ta') return `வணக்கம், நான் ${rawName} அவர்களிடம் பேசுகிறேனா?`;
+                if (lang === 'kn') return `ನಮಸ್ಕಾರ, ನಾನು ${rawName} ಅವರೊಂದಿಗೆ ಮಾತನಾಡುತ್ತಿದ್ದೇನೆಯೇ?`;
+                if (lang === 'ml') return `നമസ്കാരം, ഞാൻ ${rawName} ആണോ സംസാരിക്കുന്നത്?`;
+                if (lang === 'mr') return `नमस्कार, मी ${rawName} यांच्याशी बोलत आहे का?`;
                 return `Hello, am I speaking with ${rawName}?`;
             }
 
-            // Document-driven custom sales greeting when customer name is not available
-            if (product && !product.includes('Scorelabs IT') && !product.includes('Scorelabs AI Voice Automation')) {
-                return `Hello, this is Remo calling on behalf of ${company} regarding ${product}. Is this a good time to talk for a minute?`;
-            }
-
-            // Standard verified greeting for Scorelabs Inc. when customer name is not available
-            return `Hello, this is Remo calling on behalf of Scorelabs Inc. Is this a good time to talk for a minute?`;
+            // Short, natural, human-sounding opening
+            if (lang === 'te') return `నమస్తే, నేను ${shortCompany} నుండి రెమో మాట్లాడుతున్నాను. ఇప్పుడు మాట్లాడటానికి మంచి సమయమేనా?`;
+            if (lang === 'hi') return `नमस्ते, मैं ${shortCompany} से रेमो बोल रहा हूँ। क्या अभी बात करने के लिए सही समय है?`;
+            if (lang === 'ta') return `வணக்கம், நான் ${shortCompany} இலிருந்து ரெமோ பேசுகிறேன். இப்போது பேச நல்ல நேரமா?`;
+            if (lang === 'kn') return `ನಮಸ್ಕಾರ, ನಾನು ${shortCompany} ಇಂದ ರೆಮೋ ಮಾತನಾಡುತ್ತಿದ್ದೇನೆ. ಈಗ ಮಾತನಾಡಲು ಇದು ಸರಿಯಾದ ಸಮಯವೇ?`;
+            if (lang === 'ml') return `നമസ്കാരം, ഞാൻ ${shortCompany} ൽ നിന്ന് റെമോ ആണ് സംസാരിക്കുന്നത്. സംസാരിക്കാൻ ഇപ്പോൾ സൗകര്യപ്രദമായ സമയമാണോ?`;
+            if (lang === 'mr') return `नमस्कार, मी ${shortCompany} कडून रेमो बोलत आहे. आता बोलण्यासाठी योग्य वेळ आहे का?`;
+            return `Hi, this is Remo calling from ${shortCompany}. Is now a good time to talk?`;
         }
 
         if (s === 'support') {
             if (ctx.opening_greeting && typeof ctx.opening_greeting === 'string' && ctx.opening_greeting.length > 15) {
                 let docGreeting = ctx.opening_greeting.trim();
                 if (isValidName && !docGreeting.includes(rawName)) {
-                    docGreeting = `Hello, am I speaking with ${rawName}? ` + docGreeting;
+                    docGreeting = (lang === 'te' ? `నమస్కారం, నేను ${rawName} గారితో మాట్లాడుతున్నానా? ` : (lang === 'hi' ? `नमस्ते, क्या मैं ${rawName} से बात कर रहा हूँ? ` : `Hello, am I speaking with ${rawName}? `)) + docGreeting;
                 }
                 return docGreeting;
             }
@@ -54,14 +67,22 @@ export default class GeminiService {
             // Document-driven custom support greeting
             if (product && !product.includes('Scorelabs') && !product.includes('TakeRemo')) {
                 if (isValidName) {
+                    if (lang === 'te') return `నమస్కారం, నేను ${rawName} గారితో మాట్లాడుతున్నానా? నమస్తే ${rawName}, నేను ${company} కస్టమర్ సపోర్ట్ నుండి రెమో మాట్లాడుతున్నాను. ఇప్పుడు మాట్లాడటానికి మీకు అనుకూలమేనా?`;
+                    if (lang === 'hi') return `नमस्ते, क्या मैं ${rawName} से बात कर रहा हूँ? नमस्ते ${rawName}, मैं ${company} कस्टमर सपोर्ट से रेमो बोल रहा हूँ। क्या अभी बात करने के लिए सही समय है?`;
                     return `Hello, am I speaking with ${rawName}? Hi ${rawName}, this is Remo calling from ${company} customer support regarding your ${product} service inquiry. Is now a convenient time to speak?`;
                 }
+                if (lang === 'te') return `నమస్కారం, నేను ${company} కస్టమర్ సపోర్ట్ నుండి రెమో మాట్లాడుతున్నాను. ఇప్పుడు మాట్లాడటానికి మీకు అనుకూలమేనా?`;
+                if (lang === 'hi') return `नमस्ते, मैं ${company} कस्टमर सपोर्ट से रेमो बोल रहा हूँ। क्या अभी बात करने के लिए सही समय है?`;
                 return `Hello, this is Remo calling from ${company} customer support regarding your ${product} service inquiry. Is now a convenient time to speak?`;
             }
 
             if (isValidName) {
+                if (lang === 'te') return `నమస్కారం, నేను ${rawName} గారితో మాట్లాడుతున్నానా? నమస్తే ${rawName}, నేను స్కోర్‌ల్యాబ్స్ కస్టమర్ సపోర్ట్ నుండి రెమో మాట్లాడుతున్నాను. ఇప్పుడు మాట్లాడటానికి మీకు అనుకూలమేనా?`;
+                if (lang === 'hi') return `नमस्ते, क्या मैं ${rawName} से बात कर रहा हूँ? नमस्ते ${rawName}, मैं स्कोरलैब्स कस्टमर सपोर्ट से रेमो बोल रहा हूँ। क्या अभी बात करने का सही समय है?`;
                 return `Hello, am I speaking with ${rawName}? Hi ${rawName}, this is Remo calling from Scorelabs Inc. customer support. I'm following up regarding your recent support inquiry or service ticket. Is now a convenient time to speak?`;
             }
+            if (lang === 'te') return `నమస్కారం, నేను స్కోర్‌ల్యాబ్స్ ఇంక్ కస్టమర్ సపోర్ట్ నుండి రెమో మాట్లాడుతున్నాను. ఇప్పుడు మాట్లాడటానికి మీకు అనుకూలమేనా?`;
+            if (lang === 'hi') return `नमस्ते, मैं स्कोरलैब्स कस्टमर सपोर्ट से रेमो बोल रहा हूँ। क्या अभी बात करने के लिए सही समय है?`;
             return `Hello, this is Remo calling from Scorelabs Inc. customer support. I'm following up regarding your recent support inquiry or service ticket. Is now a convenient time to speak?`;
         }
 
@@ -69,6 +90,8 @@ export default class GeminiService {
         if (s === 'appointment') {
             const company = ctx.company_name || safeContact.company || 'Score Labs';
             if (safeContact.direction === 'inbound') {
+                if (lang === 'te') return `${company}కి కాల్ చేసినందుకు ధన్యవాదాలు, నేను రెమో. నేను మీకు అపాయింట్‌మెంట్ బుక్ చేయడంలో సహాయపడగలను. మీరు ఏ రోజు బుక్ చేయాలనుకుంటున్నారు?`;
+                if (lang === 'hi') return `${company} में कॉल करने के लिए धन्यवाद, मैं रेमो हूँ। मैं अपॉइंटमेंट बुक करने में आपकी मदद कर सकता हूँ। आप किस दिन के लिए बुक करना चाहते हैं?`;
                 return `Thank you for calling ${company}, this is Remo. I can help you book an appointment. What would you like to book, and for which day?`;
             }
             if (ctx.opening_greeting && typeof ctx.opening_greeting === 'string' && ctx.opening_greeting.length > 15) {
@@ -76,8 +99,12 @@ export default class GeminiService {
                 return isValidName && !docGreeting.includes(rawName) ? `Hello, am I speaking with ${rawName}? ${docGreeting}` : docGreeting;
             }
             if (isValidName) {
+                if (lang === 'te') return `నమస్కారం, నేను ${rawName} గారితో మాట్లాడుతున్నానా? నేను ${company} నుండి రెమో మాట్లాడుతున్నాను. అపాయింట్‌మెంట్ బుక్ చేయడానికి ఇది మంచి సమయమేనా?`;
+                if (lang === 'hi') return `नमस्ते, क्या मैं ${rawName} से बात कर रहा हूँ? मैं ${company} से रेमो बोल रहा हूँ। क्या अभी बात करने के लिए सही समय है?`;
                 return `Hello, am I speaking with ${rawName}? This is Remo calling from ${company} to help you book your appointment. Is now a good time to talk?`;
             }
+            if (lang === 'te') return `నమస్కారం, నేను ${company} నుండి రెమో మాట్లాడుతున్నాను. అపాయింట్‌మెంట్ బుక్ చేయడానికి ఇది మంచి సమయమేనా?`;
+            if (lang === 'hi') return `नमस्ते, मैं ${company} से रेमो बोल रहा हूँ। क्या अपॉइंटमेंट बुक करने के लिए अभी सही समय है?`;
             return `Hello, this is Remo calling from ${company} to help you book an appointment. Is now a good time to talk?`;
         }
 
@@ -88,17 +115,21 @@ export default class GeminiService {
                 if (ctx.opening_greeting && typeof ctx.opening_greeting === 'string' && ctx.opening_greeting.length > 15) {
                     return ctx.opening_greeting.trim();
                 }
+                if (lang === 'te') return `నమస్తే, నేను ${company} ఫ్రంట్ డెస్క్ నుండి రెమో మాట్లాడుతున్నాను. ఇప్పుడు మాట్లాడటానికి మంచి సమయమేనా?`;
+                if (lang === 'hi') return `नमस्ते, मैं ${company} फ्रंट डेस्क से रेमो बोल रहा हूँ। क्या अभी बात करने का सही समय है?`;
                 return `Hello, this is Remo from the ${company} front desk, following up on your enquiry. Is now a good time to talk?`;
             }
+            if (lang === 'te') return `${company}కి కాల్ చేసినందుకు ధన్యవాదాలు, నేను రెమో. నేను మీకు ఎలా సహాయపడగలను?`;
+            if (lang === 'hi') return `${company} में कॉल करने के लिए धन्यवाद, मैं रेमो हूँ। मैं आज आपकी क्या सहायता कर सकता हूँ?`;
             return `Thank you for calling ${company}, this is Remo. How may I help you today?`;
         }
 
         // Recruitment: ask for the candidate by name first (only when the name is known and verified); after they
         // confirm, Remo introduces itself and asks if it is a good time. With no verified name, Remo introduces itself directly.
         if (isValidName) {
-            return GreetingScript.identityQuestion(rawName);
+            return GreetingScript.identityQuestion(rawName, lang);
         }
-        return GreetingScript.recruitmentIntro();
+        return GreetingScript.recruitmentIntro(lang, safeContact.job_role, safeContact.company);
     }
 
     /**
@@ -392,26 +423,26 @@ ${objections ? `- Objection Handling from Document: ${objections}` : ''}
 ${SalesState.buildPromptBlock(collectedData, options.salesTracker)}
 
 CONVERSATION FLOW & STAGE PROGRESSION:
-1. GREETING: Remo introduced himself and asked to verify contact's name ("Hello, am I speaking with Priya?").
-   - If contact confirms ("Yes", "Speaking"): Transition to PERMISSION_CHECK: "Hi [Name], this is Remo calling from ${compName}. Is this a good time to talk for a minute?"
+1. GREETING: Remo introduced himself and verified contact's name ("Hello, am I speaking with Priya?") or gave natural opening ("Hi, this is Remo calling from ${compName}. Is now a good time to talk?").
+   - If contact confirms ("Yes", "Speaking"): Transition to PERMISSION_CHECK: "Hi [Name], this is Remo calling from ${compName}. Is now a good time to talk?"
    - If contact says no/wrong person: Apologize politely and end call (should_end_call: true, next_stage: "CLOSING").
 2. PERMISSION_CHECK:
-   - If contact agrees ("yes", "sure", "go ahead"): Transition to INTEREST_DISCOVERY: "Thank you! I just wanted to check if you're currently looking for any services that we could help you with?"
-   - If contact is busy / driving / in a meeting: Politely ask if another time would be better -> next_stage: "CALLBACK_TIME".
-   - If contact asks who is calling or why: Answer briefly in ONE sentence, then ask if it's a good time to speak.
-   - If unclear: Ask for clarification once.
+   - If contact agrees ("yes", "sure", "go ahead"): Transition to INTEREST_DISCOVERY: "Great, thanks! I just wanted to ask — are you currently looking for any IT or digital marketing services?"
+   - If contact is busy / driving / in a meeting: "Of course. Would another time be better?" -> next_stage: "CALLBACK_TIME".
+   - If contact asks what Scorelabs does or who is calling: "We help businesses with software development and digital marketing. Is there anything in those areas you're exploring?"
+   - If unclear: Ask one short clarifying question instead of repeating the pitch.
    - CRITICAL: DO NOT pitch or list services during PERMISSION_CHECK.
 3. INTEREST_DISCOVERY:
-   - If interested ("Yes, we need an app"): Acknowledge warmly ("Absolutely, we can help with that.") and ask what specific requirements they have -> next_stage: "QUALIFICATION".
-   - If unsure or asks what services are offered: Mention a small subset (2-3 services max conversationally): "We can help with services such as ${approvedOfferings.split(';')[0]}. Is there anything specific you're looking for?" -> next_stage: "SERVICE_DISCOVERY".
-   - If not interested ("No, not looking"): Acknowledge politely. Ask if they'd like a brief overview via email, or if they decline, thank them and end politely (should_end_call: true, next_stage: "CLOSING").
+   - If interested ("Yes, we need an app", "Yes", "Sure"): "Sure! What kind of service are you looking for?" -> next_stage: "QUALIFICATION".
+   - If caller asks what services are offered or expresses general interest: Mention only 2-3 relevant services: "We help with website and software development, mobile apps, and digital marketing. Which of these would be most useful to you?" -> next_stage: "SERVICE_DISCOVERY".
+   - If not interested ("No", "not looking", "not interested"): "No problem at all. Thanks for your time. Have a great day!" (should_end_call: true, next_stage: "CLOSING").
    - If already using another provider: Acknowledge politely without pressure: "Understood! Would you be open to exploring an alternative or keeping our details for future needs?"
    - If callback requested: Ask for a convenient callback time -> next_stage: "CALLBACK_TIME".
    - NEVER repeat the same interest question if the caller already answered.
 4. SERVICE_DISCOVERY & QUALIFICATION:
-   - Explain the specific service of interest conversationally using facts from the document above.
+   - Explain ONLY the specific service of interest conversationally using facts from the document above.
    - Ask ONE question at a time about requirements, timeline, or scope.
-   - Do NOT turn the call into a rigid questionnaire. If customer provided multiple details, remember them and do not ask again.
+   - Do NOT turn the call into a rigid questionnaire or recite the whole document.
 5. NEXT_STEP (MEETING PREFERENCE), after the discovery questions:
    - Ask exactly once: "${SalesState.meetingQuestion('en')}" Then wait for the answer.
    - The system records the answer (phone call, in person, either, undecided or declined). Never record or guess it yourself.
@@ -507,6 +538,15 @@ ${troubleshooting ? `- Troubleshooting Procedures: ${troubleshooting}` : ''}
 ${faqs ? `- Approved FAQs: ${faqs}` : ''}
 ${refundPolicy ? `- Refund / Cancellation Policy: ${refundPolicy}` : ''}
 ${escalationPolicy ? `- Escalation Policy: ${escalationPolicy}` : ''}
+- Conversation Flow:
+  1. Introduce the agent briefly:
+     - "Hi, this is Remo from ${compName} customer support. How can I help you today?"
+  2. Ask what issue the customer needs help with.
+  3. Listen to the response and address the actual issue using the document above.
+  4. Ask relevant follow-up questions individually.
+  5. Confirm whether the issue is resolved before ending the call:
+     - "Has that resolved the issue for you?"
+     - If yes: "Great! Glad I could help. Have a wonderful day!" and end call (should_end_call: true).
 - STRICT GROUNDING RULES:
   1. First understand the customer's exact issue before offering a resolution.
   2. Guide the caller step-by-step through the troubleshooting procedures above.
@@ -528,6 +568,17 @@ ${escalationPolicy ? `- Escalation Policy: ${escalationPolicy}` : ''}
             ? `\nINSTRUCTIONS FOR THIS AGENT${agentName ? ` ("${agentName}")` : ''} (follow these for tone, wording and behaviour, but never break the JSON format or the rules below):\n${agentInstructions}\n`
             : '';
 
+        const langMap = {
+            'te': 'Telugu (తెలుగు)',
+            'hi': 'Hindi (हिन्दी)',
+            'ta': 'Tamil (தமிழ்)',
+            'kn': 'Kannada (ಕನ್ನಡ)',
+            'ml': 'Malayalam (മലയാളം)',
+            'mr': 'Marathi (मराठी)',
+            'en': 'Indian English'
+        };
+        const primaryLangName = langMap[lang] || 'Indian English';
+
         const systemPrompt = `You are ${agentName || 'Remo'}, a warm, professional, human-like AI Voice Agent representing ${organizationName}.
 Mode: ${service.toUpperCase()} | Current Stage: ${currentStage} | Contact: ${contactInfo.name || 'Caller'} (${contactInfo.company || organizationName}) | Subject: ${role}${inboundNote}${agentBlock}
 
@@ -535,7 +586,11 @@ RULES:
 1. Speak in natural telephone dialogue: strictly 1-2 short sentences (under 20 words).
 2. Ask NO MORE THAN ONE question per turn.
 3. Natural acknowledgments ("Got it", "Understood", "I see"). Do not repeat the same phrase.
-4. Seamlessly match caller language: Telugu in Telugu, Hindi in Hindi, default English.
+4. PRIMARY LANGUAGE: ${primaryLangName}.
+   - The selected primary language for this call is ${primaryLangName}.
+   - You MUST formulate your spoken_response strictly in ${primaryLangName}${lang !== 'en' ? ' using its native script' : ''}.
+   - Even if campaign document details, offerings, or questions are in English, converse naturally and accurately in ${primaryLangName}.
+   - Do not invent facts, promises, or services; strictly adhere to the campaign document.
 5. If caller pauses/thinks: "Sure, take your time."
 ${service === 'appointment'
     ? '6. NEVER repeat questions or the opening pitch. If caller agreed to speak (e.g. "Yeah it works for me", "Sure"), warmly acknowledge and ask for the first missing booking detail. If caller already answered, use their answer and ask for the next missing detail.'

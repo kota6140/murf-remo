@@ -39,7 +39,7 @@ export class LLMService {
 
     static getOpenAIModel() {
         const fileEnv = getDynamicEnv();
-        const raw = (process.env.OPENAI_MODEL || fileEnv.OPENAI_MODEL || 'gpt-6 luna batch 50%').trim();
+        const raw = (process.env.OPENAI_MODEL || fileEnv.OPENAI_MODEL || 'gpt-6 luna batch 50%').trim().replace(/^["']|["']$/g, '');
         const normalized = raw.toLowerCase().replace(/[\s\-_]+/g, ' ');
         if (normalized.includes('gpt 6') && normalized.includes('luna')) {
             return 'gpt-6-luna';
@@ -61,7 +61,7 @@ export class LLMService {
     }
 
     static getClaudeModel() {
-        const raw = (process.env.CLAUDE_MODEL || 'claude-haiku-5-5').trim();
+        const raw = (process.env.CLAUDE_MODEL || 'claude-haiku-5-5').trim().replace(/^["']|["']$/g, '');
         const lower = raw.toLowerCase().replace(/\s+/g, '-');
         if (lower === 'haiku-5.5' || lower === 'claude-haiku-5.5' || lower === 'haiku-5-5') {
             return 'claude-haiku-5-5';
@@ -368,6 +368,14 @@ export class LLMService {
                 bodyPayload.max_tokens = maxTokens;
             }
             if (jsonMode) {
+                const hasJsonMention = openAiMessages.some(m => String(m.content || '').toLowerCase().includes('json'));
+                if (!hasJsonMention) {
+                    if (openAiMessages.length > 0 && openAiMessages[0].role === systemRole) {
+                        openAiMessages[0].content += '\nRespond in JSON format.';
+                    } else {
+                        openAiMessages.unshift({ role: systemRole, content: 'Respond in JSON format.' });
+                    }
+                }
                 bodyPayload.response_format = { type: 'json_object' };
             }
             if (!isModernModel && typeof temperature === 'number') {
@@ -450,6 +458,14 @@ export class LLMService {
                 bodyPayload.max_tokens = maxTokens;
             }
             if (jsonMode) {
+                const hasJsonMention = openAiMessages.some(m => String(m.content || '').toLowerCase().includes('json'));
+                if (!hasJsonMention) {
+                    if (openAiMessages.length > 0 && openAiMessages[0].role === systemRole) {
+                        openAiMessages[0].content += '\nRespond in JSON format.';
+                    } else {
+                        openAiMessages.unshift({ role: systemRole, content: 'Respond in JSON format.' });
+                    }
+                }
                 bodyPayload.response_format = { type: 'json_object' };
             }
             if (!isModernModel && typeof temperature === 'number') {

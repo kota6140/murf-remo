@@ -1,5 +1,6 @@
 import db, { utcNow } from './db.js';
 import ElevenLabsService from './elevenlabs_service.js';
+import MurfService from './murf_service.js';
 import GeminiService from './gemini_service.js';
 import IntentService from './intent_service.js';
 import AppointmentState from './appointment_state.js';
@@ -12,6 +13,7 @@ import PlivoService from './plivo_service.js';
 import CampaignService from './campaign_service.js';
 import LanguageStateMachine from './language_state_machine.js';
 import QuestionTracker, { stripAlreadySpoken, isAffirmativeMurmur, isAcknowledgement, splitSentences, topicOf, questionPart } from './question_tracker.js';
+import VoiceRegistry from './voice_registry.js';
 
 /**
  * The exact one-way promotional script spoken by Remo on "Get Instant Call".
@@ -92,6 +94,38 @@ export function decodeMulawToPcm16(mulawBuf) {
         pcm.writeInt16LE(val, i * 2);
     }
     return pcm;
+}
+
+/**
+ * Trims leading and trailing silence from 16-bit PCM buffer to reduce STT turnaround time,
+ * preserving a safety padding (default 100ms) around speech.
+ */
+export function trimSilencePcm16(pcmBuffer, sampleRate = 8000, threshold = 350, paddingMs = 100) {
+    if (!pcmBuffer || pcmBuffer.length < 4) return pcmBuffer;
+    const numSamples = Math.floor(pcmBuffer.length / 2);
+    const paddingSamples = Math.floor((sampleRate * paddingMs) / 1000);
+
+    let start = 0;
+    for (let i = 0; i < numSamples; i++) {
+        if (Math.abs(pcmBuffer.readInt16LE(i * 2)) > threshold) {
+            start = Math.max(0, i - paddingSamples);
+            break;
+        }
+    }
+
+    let end = numSamples - 1;
+    for (let i = numSamples - 1; i >= 0; i--) {
+        if (Math.abs(pcmBuffer.readInt16LE(i * 2)) > threshold) {
+            end = Math.min(numSamples - 1, i + paddingSamples);
+            break;
+        }
+    }
+
+    if (start >= end) {
+        return pcmBuffer;
+    }
+
+    return pcmBuffer.slice(start * 2, (end + 1) * 2);
 }
 
 /**
@@ -253,9 +287,9 @@ export class CallSession {
         this.agentId = params.agentId || '';
         this.direction = params.direction === 'inbound' ? 'inbound' : 'outbound';
         this.agent = null;
-        this.campaign = null;
-        this.campaignContext = null;
-        this.questionPlan = null;
+        this.campaign = params.campaign || null;
+        this.campaignContext = params.campaignContext || null;
+        this.questionPlan = params.questionPlan || null;
         this.memory = null;
         this.jdMatchScore = null;
         this.screeningResult = null;
@@ -302,6 +336,8 @@ export class CallSession {
         this.consecutiveSpeechFrames = 0;
         this.consecutiveSilenceFrames = 0;
         this.isCallerSpeaking = false;
+        this.activeSttSession = null;
+        this.activeSttTurnId = 0;
 
         // Overlap buffer (when caller speaks WHILE AI is speaking or turn is being processed)
         this.overlapMulawChunks = [];
@@ -415,17 +451,19 @@ export class CallSession {
                 if (!isNaN(parsed) && parsed >= 500 && parsed <= 5000) longMs = parsed;
             }
 
-            // Right after the greeting or "is this a good time?", the answer is a short "yes" / "of course" /
-            // "no": reply sooner (RECRUITMENT_VAD_BRIEF_SILENCE_MS, default 700ms). A real screening answer
-            // keeps the patient wait, so a thinking pause in the middle of a sentence never cuts the caller off.
+            // Right after greeting or permission question, short confirmations reply snappily (300-350ms)
             const waitingForShortAnswer = this.greetingDelivered
                 && ['GREETING', 'AVAILABILITY', 'PERMISSION_CHECK'].includes(this.currentStage)
-                && this.consecutiveSpeechFrames <= 30; // up to ~0.6s of speech so far ("yes", "yes of course")
+                && this.consecutiveSpeechFrames <= 25; // brief affirmation up to ~0.5s of speech
             if (waitingForShortAnswer) {
-                let briefMs = 700;
+                let briefMs = 320;
                 const briefEnv = parseInt(process.env.RECRUITMENT_VAD_BRIEF_SILENCE_MS, 10);
-                if (!isNaN(briefEnv) && briefEnv >= 400 && briefEnv <= 1400) briefMs = briefEnv;
+                if (!isNaN(briefEnv) && briefEnv >= 250 && briefEnv <= 1400) briefMs = briefEnv;
                 return Math.min(briefMs, longMs);
+            }
+            // For general brief utterances (<= 15 speech frames = ~300ms speech)
+            if (this.consecutiveSpeechFrames <= 15) {
+                return 320;
             }
             return longMs;
         }
@@ -437,11 +475,17 @@ export class CallSession {
             }
         }
 
-        // Adaptive natural pause tolerance for telephone conversation
-        if (this.consecutiveSpeechFrames > 15) {
-            return 450; // Allow caller to pause mid-sentence naturally without being cut off
+        // Adaptive natural pause tolerance for telephone conversation:
+        // Brief acknowledgments ("yes", "no", "sure", "speaking", <= 20 speech frames = ~400ms speech): 320ms silence
+        if (this.consecutiveSpeechFrames <= 20) {
+            return 320;
         }
-        return 350; // Snappy turn turnaround for brief affirmations
+        // Sustained explanations (> 50 speech frames = ~1000ms speech): 480ms silence to allow natural pause
+        if (this.consecutiveSpeechFrames > 50) {
+            return 480;
+        }
+        // Standard intermediate conversational turns: 380ms
+        return 380;
     }
 
     /**
@@ -521,20 +565,32 @@ export class CallSession {
         console.log(`[CallSession] [PROMO] Playing promotional script to ${this.phone || this.callId}...`);
 
         try {
-            const voiceId = ElevenLabsService.getVoiceIdForLanguage('en');
-            const modelId = ElevenLabsService.selectTtsModel({ language: 'en', text: PROMOTIONAL_DEMO_SCRIPT, voiceId });
+            const isMurf = MurfService.isConfigured();
+            const voiceId = isMurf ? MurfService.getVoiceId() : ElevenLabsService.getVoiceIdForLanguage('en');
+            const modelId = isMurf ? MurfService.getModelId() : ElevenLabsService.selectTtsModel({ language: 'en', text: PROMOTIONAL_DEMO_SCRIPT, voiceId });
 
-            // 1. Retrieve pre-cached audio or synthesize via ElevenLabs
-            let audioBuffer = ElevenLabsService.getCachedAudio(PROMOTIONAL_DEMO_SCRIPT, { voiceId, modelId, language: 'en' });
-            if (!audioBuffer && ElevenLabsService.isConfigured()) {
-                console.log('[CallSession] [PROMO] Pre-cached audio not found. Synthesizing promotional audio...');
-                audioBuffer = await ElevenLabsService.textToSpeech(PROMOTIONAL_DEMO_SCRIPT, {
-                    voiceId,
-                    modelId,
-                    language: 'en',
-                    outputFormat: 'ulaw_8000',
-                    timeoutMs: 15000
-                });
+            // 1. Retrieve pre-cached audio or synthesize via Murf (or ElevenLabs if Murf not configured)
+            let audioBuffer = isMurf
+                ? MurfService.getCachedAudio(PROMOTIONAL_DEMO_SCRIPT, { voiceId, modelId })
+                : ElevenLabsService.getCachedAudio(PROMOTIONAL_DEMO_SCRIPT, { voiceId, modelId, language: 'en' });
+
+            if (!audioBuffer) {
+                console.log(`[CallSession] [PROMO] Pre-cached audio not found. Synthesizing promotional audio via ${isMurf ? 'Murf' : 'ElevenLabs'}...`);
+                if (isMurf) {
+                    audioBuffer = await MurfService.textToSpeech(PROMOTIONAL_DEMO_SCRIPT, {
+                        voiceId,
+                        model: modelId,
+                        timeoutMs: 15000
+                    });
+                } else if (ElevenLabsService.isConfigured()) {
+                    audioBuffer = await ElevenLabsService.textToSpeech(PROMOTIONAL_DEMO_SCRIPT, {
+                        voiceId,
+                        modelId,
+                        language: 'en',
+                        outputFormat: 'ulaw_8000',
+                        timeoutMs: 15000
+                    });
+                }
             }
 
             if (!audioBuffer || audioBuffer.length === 0) {
@@ -765,7 +821,23 @@ export class CallSession {
                         if (campCtx.question_plan) {
                             this.questionPlan = campCtx.question_plan;
                         }
-                        console.log(`[CallSession] Loaded campaign "${campCtx.name}" (${campCtx.id}) — Service: ${campCtx.service} (Version: ${campCtx.version || 'v1'})`);
+
+                        // Apply campaign-configured primary language and AI voice
+                        const campLang = campCtx.primary_language || campCtx.config?.primary_language;
+                        const campLocale = campCtx.primary_locale || campCtx.config?.primary_locale || campLang;
+                        const campVoice = campCtx.voice_id || campCtx.config?.voice_id;
+
+                        if (campLocale) {
+                            this.primaryLocale = campLocale;
+                            this.primaryLanguage = campLang || campLocale;
+                            const shortCode = campLocale.split('-')[0].toLowerCase();
+                            this.setSessionLanguage(shortCode, 'CAMPAIGN_CONFIG');
+                        }
+                        if (campVoice) {
+                            this.campaignVoiceKey = VoiceRegistry.normalizeVoiceKey(campVoice);
+                        }
+
+                        console.log(`[CallSession] Loaded campaign "${campCtx.name}" (${campCtx.id}) — Service: ${campCtx.service}, Lang: ${this.primaryLocale || 'en-IN'} (${this.detectedLanguage}), Voice: ${this.campaignVoiceKey || 'pooja'}`);
                     }
                 } catch (campErr) {
                     console.warn('[CallSession] Campaign lookup note:', campErr.message);
@@ -834,12 +906,58 @@ export class CallSession {
     }
 
     /**
-     * The ElevenLabs voice for this call: the agent's own voice for English/Hindi when it has one,
-     * otherwise the default language-based voice (Telugu always keeps its Telugu voice).
+     * Resolves the full voice configuration (voiceId, model, style, locale, provider)
+     * for this call session based on campaign settings or server-side voice registry.
+     */
+    pickVoiceConfig() {
+        const isMurf = MurfService.isConfigured();
+        if (!isMurf) {
+            const voiceId = (this.agent && this.agent.voice_id && this.detectedLanguage !== 'te')
+                ? this.agent.voice_id
+                : ElevenLabsService.getVoiceIdForLanguage(this.detectedLanguage);
+            return {
+                voiceKey: 'elevenlabs',
+                voiceId,
+                provider: 'elevenlabs',
+                model: ElevenLabsService.selectTtsModel({ language: this.detectedLanguage, text: '', voiceId }),
+                style: 'Conversational',
+                locale: this.primaryLocale || 'en-IN'
+            };
+        }
+
+        const voiceKey = this.campaignVoiceKey || this.campaignContext?.voice_id || this.campaign?.voice_id || this.campaignContext?.config?.voice_id || this.campaign?.config?.voice_id || 'pooja';
+        const locale = this.primaryLocale || this.campaignContext?.primary_locale || this.campaign?.primary_locale || this.campaignContext?.config?.primary_locale || this.campaign?.config?.primary_locale || (this.detectedLanguage === 'te' ? 'te-IN' : (this.detectedLanguage === 'hi' ? 'hi-IN' : (this.detectedLanguage === 'ta' ? 'ta-IN' : (this.detectedLanguage === 'kn' ? 'kn-IN' : (this.detectedLanguage === 'ml' ? 'ml-IN' : (this.detectedLanguage === 'mr' ? 'mr-IN' : 'en-IN'))))));
+
+        try {
+            const resolved = VoiceRegistry.resolveVoice(voiceKey, locale);
+            return {
+                voiceKey: resolved.id,
+                voiceId: resolved.voiceId,
+                provider: resolved.provider,
+                model: resolved.model,
+                style: resolved.style,
+                locale: locale
+            };
+        } catch (resolveErr) {
+            console.warn(`[CallSession] Voice resolution note for "${voiceKey}" (${locale}):`, resolveErr.message);
+            return {
+                voiceKey: 'pooja',
+                voiceId: MurfService.getVoiceId(),
+                provider: 'murf',
+                model: MurfService.getModelId(),
+                style: MurfService.getStyle(),
+                locale: locale
+            };
+        }
+    }
+
+    /**
+     * Voice selection for this call: Murf voice when configured,
+     * otherwise the agent's custom voice or ElevenLabs voice.
      */
     pickVoiceId() {
-        if (this.agent && this.agent.voice_id && this.detectedLanguage !== 'te') return this.agent.voice_id;
-        return ElevenLabsService.getVoiceIdForLanguage(this.detectedLanguage);
+        const cfg = this.pickVoiceConfig();
+        return cfg.voiceId;
     }
 
     /**
@@ -903,16 +1021,27 @@ export class CallSession {
         }
 
         try {
-            // 1. Instant Cache Check (< 1ms delivery)
-            const textLang = ElevenLabsService.detectLanguageFromText(greeting, this.detectedLanguage);
-            if (textLang && textLang !== this.detectedLanguage) {
-                this.setSessionLanguage(textLang, 'GREETING_SCRIPT');
+            const voiceConfig = this.pickVoiceConfig();
+            const voiceId = voiceConfig.voiceId;
+            const isMurf = voiceConfig.provider === 'murf';
+            const ttsProvider = isMurf ? 'murf' : 'elevenlabs';
+            const modelId = isMurf ? voiceConfig.model : ElevenLabsService.selectTtsModel({ language: this.detectedLanguage, text: greeting, voiceId });
+            const locale = voiceConfig.locale;
+
+            if (!isMurf) {
+                const textLang = ElevenLabsService.detectLanguageFromText(greeting, this.detectedLanguage);
+                if (textLang && textLang !== this.detectedLanguage) {
+                    this.setSessionLanguage(textLang, 'GREETING_SCRIPT');
+                }
             }
-            const voiceId = this.pickVoiceId();
-            const modelId = ElevenLabsService.selectTtsModel({ language: this.detectedLanguage, text: greeting, voiceId });
-            const cachedAudio = ElevenLabsService.getCachedAudio(greeting, { voiceId, modelId });
+
+            // 1. Instant Cache Check (< 1ms delivery)
+            const cachedAudio = isMurf
+                ? MurfService.getCachedAudio(greeting, { voiceId, model: modelId, locale })
+                : ElevenLabsService.getCachedAudio(greeting, { voiceId, modelId });
+
             if (cachedAudio) {
-                console.log(`[CallSession] Instant cache hit for opening greeting! Dispatching audio in < 5ms.`);
+                console.log(`[CallSession] Instant cache hit for opening greeting! Dispatching audio in < 5ms via ${ttsProvider}.`);
                 this.latencyTracker.markGreetingDelivered();
                 this.greetingDelivered = true;
                 this.greetingInProgress = false;
@@ -920,8 +1049,8 @@ export class CallSession {
                 return;
             }
 
-            // 2. Synthesize audio via ElevenLabs
-            console.log(`[CallSession] Synthesizing opening greeting via ElevenLabs (${this.detectedLanguage})...`);
+            // 2. Synthesize audio via active TTS provider
+            console.log(`[CallSession] Synthesizing opening greeting via ${ttsProvider} (Lang: ${this.detectedLanguage}, Locale: ${locale}, Voice: ${voiceConfig.voiceKey || voiceId})...`);
             await this.playAiAudio(greeting, this.beginResponse(0));
             this.latencyTracker.markGreetingDelivered();
             this.greetingDelivered = true;
@@ -1247,93 +1376,120 @@ export class CallSession {
         }
 
         try {
+            const voiceConfig = this.pickVoiceConfig();
+            const voiceId = voiceConfig.voiceId;
+            const isMurf = voiceConfig.provider === 'murf';
+            const ttsProvider = isMurf ? 'murf' : 'elevenlabs';
+            const modelId = isMurf ? voiceConfig.model : ElevenLabsService.selectTtsModel({ language: this.detectedLanguage, text, voiceId });
+            const locale = voiceConfig.locale;
+            const style = voiceConfig.style;
+
             // Confirm text language and sync session if response text was in a different language
-            const textLang = ElevenLabsService.detectLanguageFromText(text, this.detectedLanguage);
-            if (textLang && textLang !== this.detectedLanguage) {
-                this.setSessionLanguage(textLang, 'RESPONSE_TEXT_SCRIPT');
+            if (!isMurf) {
+                const textLang = ElevenLabsService.detectLanguageFromText(text, this.detectedLanguage);
+                if (textLang && textLang !== this.detectedLanguage) {
+                    this.setSessionLanguage(textLang, 'RESPONSE_TEXT_SCRIPT');
+                }
             }
 
             this.currentQuestion = text;
             this.latencyTracker.markTtsStart();
 
-            const voiceId = this.pickVoiceId();
-            const modelId = ElevenLabsService.selectTtsModel({ language: this.detectedLanguage, text, voiceId });
-            const isCustomTelugu = Boolean(process.env.ELEVENLABS_VOICE_ID_CHAITRA || process.env.ELEVENLABS_VOICE_ID_TELUGU) &&
-                voiceId === (process.env.ELEVENLABS_VOICE_ID_TELUGU || process.env.ELEVENLABS_VOICE_ID_CHAITRA);
-            const voiceName = (this.agent && this.agent.voice_id && voiceId === this.agent.voice_id)
-                ? `Agent voice`
-                : (isCustomTelugu ? 'Chaitra (Telugu)' : 'Sid');
-            console.log(`[CallSession] Voice selected: ${voiceName} (VoiceID: ${voiceId}, Lang: ${this.detectedLanguage}, Model: ${modelId})`);
+            const voiceName = isMurf ? `Murf ${voiceConfig.voiceKey} (${voiceId}, ${modelId}, ${locale})` : voiceId;
+            console.log(`[CallSession] Voice selected: ${voiceName} (VoiceID: ${voiceId}, Provider: ${ttsProvider}, Model: ${modelId})`);
 
             // Check cache
-            let audioBuffer = ElevenLabsService.getCachedAudio(text, { voiceId, modelId, language: this.detectedLanguage });
+            let audioBuffer = isMurf
+                ? MurfService.getCachedAudio(text, { voiceId, model: modelId, locale })
+                : ElevenLabsService.getCachedAudio(text, { voiceId, modelId, language: this.detectedLanguage });
             const isCached = Boolean(audioBuffer);
 
             // Stream TTS audio chunks directly to Plivo in real-time as they arrive
             let firstChunkSent = false;
             let streamedBytes = 0;
 
-            if (!audioBuffer && ElevenLabsService.isConfigured()) {
+            if (!audioBuffer) {
                 // A request that takes too long is given up on, and audio that arrives after that is dropped.
                 let abandoned = false;
                 let ttsTimer = null;
                 const envTimeout = parseInt(process.env.TTS_TIMEOUT_MS, 10);
                 const ttsTimeoutMs = envTimeout >= 100 ? envTimeout : TTS_TIMEOUT_MS;
-                const ttsRequest = ElevenLabsService.textToSpeech(text, {
-                    voiceId,
-                    modelId,
-                    language: this.detectedLanguage,
-                    outputFormat: 'ulaw_8000',
-                    onChunk: (chunk) => {
-                        if (!chunk || abandoned || this.isClosed || !this.ws || this.ws.readyState !== this.ws.OPEN) return;
-                        // The caller interrupted, or a newer reply started: this reply must not play another sound.
-                        if (response && response.cancelled) return;
-                        streamedBytes += chunk.length;
-                        this.isAiSpeaking = true;
-                        this.noteSpeechChunk(chunk.length);
 
-                        // Mark first audio chunk sent for precise caller-endpoint-to-audible-response metric
-                        if (!firstChunkSent) {
-                            firstChunkSent = true;
-                            this.latencyTracker.markFirstAudioChunkSent();
-                            this.noteSpeechStarted(text, response);
-                            console.log(`[CallSession] First audio chunk streamed to Plivo (${chunk.length} bytes)`);
-                        }
+                const onChunkHandler = (chunk) => {
+                    if (!chunk || abandoned || this.isClosed || !this.ws || this.ws.readyState !== this.ws.OPEN) return;
+                    // The caller interrupted, or a newer reply started: this reply must not play another sound.
+                    if (response && response.cancelled) return;
+                    streamedBytes += chunk.length;
+                    this.isAiSpeaking = true;
+                    this.noteSpeechChunk(chunk.length);
 
-                        // Stream audio frame incrementally to Plivo
-                        const payloadBase64 = Buffer.from(chunk).toString('base64');
-                        const playMsg = {
-                            event: 'playAudio',
-                            media: {
-                                contentType: 'audio/x-mulaw',
-                                sampleRate: 8000,
-                                payload: payloadBase64
-                            }
-                        };
-                        if (this.streamId) {
-                            playMsg.streamId = this.streamId;
-                            playMsg.stream_id = this.streamId;
-                        }
-                        this.ws.send(JSON.stringify(playMsg));
+                    // Mark first audio chunk sent for precise caller-endpoint-to-audible-response metric
+                    if (!firstChunkSent) {
+                        firstChunkSent = true;
+                        this.latencyTracker.markFirstAudioChunkSent();
+                        this.noteSpeechStarted(text, response);
+                        console.log(`[CallSession] First audio chunk streamed to Plivo (${chunk.length} bytes via ${ttsProvider})`);
                     }
-                });
+
+                    // Stream audio frame incrementally to Plivo
+                    const payloadBase64 = Buffer.from(chunk).toString('base64');
+                    const playMsg = {
+                        event: 'playAudio',
+                        media: {
+                            contentType: 'audio/x-mulaw',
+                            sampleRate: 8000,
+                            payload: payloadBase64
+                        }
+                    };
+                    if (this.streamId) {
+                        playMsg.streamId = this.streamId;
+                        playMsg.stream_id = this.streamId;
+                    }
+                    this.ws.send(JSON.stringify(playMsg));
+                };
+
+                let ttsPromise;
+                if (isMurf) {
+                    ttsPromise = MurfService.textToSpeech(text, {
+                        voiceId,
+                        model: modelId,
+                        style,
+                        locale,
+                        onChunk: onChunkHandler,
+                        timeoutMs: ttsTimeoutMs
+                    });
+                } else if (ElevenLabsService.isConfigured()) {
+                    ttsPromise = ElevenLabsService.textToSpeech(text, {
+                        voiceId,
+                        modelId,
+                        language: this.detectedLanguage,
+                        outputFormat: 'ulaw_8000',
+                        onChunk: onChunkHandler,
+                        timeoutMs: ttsTimeoutMs
+                    });
+                } else {
+                    ttsPromise = Promise.resolve(null);
+                }
+
                 try {
                     audioBuffer = await Promise.race([
-                        ttsRequest,
+                        ttsPromise,
                         new Promise((resolve) => {
                             ttsTimer = setTimeout(() => {
                                 abandoned = true;
-                                console.warn(`[CallSession] Text-to-speech did not answer within ${ttsTimeoutMs}ms. Giving up on this piece of speech.`);
-                                this.logDiagnostic('tts_timeout', { responseId: response ? response.id : null, text: String(text).slice(0, 60) });
+                                console.warn(`[CallSession] Text-to-speech (${ttsProvider}) did not answer within ${ttsTimeoutMs}ms. Giving up on this piece of speech.`);
+                                this.logDiagnostic('tts_timeout', { provider: ttsProvider, responseId: response ? response.id : null, text: String(text).slice(0, 60) });
                                 resolve(null);
                             }, ttsTimeoutMs);
                         })
                     ]);
+                } catch (ttsErr) {
+                    console.error(`[CallSession] TTS Error (${ttsProvider}):`, ttsErr.message);
+                    this.logDiagnostic('tts_error', { provider: ttsProvider, error: ttsErr.message, responseId: response ? response.id : null });
                 } finally {
                     if (ttsTimer) clearTimeout(ttsTimer);
                 }
-                // The request failed on its own (no audio, nothing was sent) or was abandoned.
-                ttsRequest.catch(() => {});
+                ttsPromise.catch(() => {});
             }
 
             if (response) {
@@ -1342,6 +1498,9 @@ export class CallSession {
             this.latencyTracker.markTtsEnd(isCached);
 
             this.logDiagnostic('tts_completed', {
+                ttsProvider,
+                modelId,
+                voiceId,
                 responseId: response ? response.id : null,
                 cached: isCached,
                 audioStarted: firstChunkSent,
@@ -1355,14 +1514,12 @@ export class CallSession {
             }
 
             if (!audioBuffer && !firstChunkSent) {
-                console.warn('[CallSession] ElevenLabs TTS unavailable; simulating turn timing.');
+                console.warn(`[CallSession] ${ttsProvider} TTS unavailable; simulating turn timing.`);
                 const wordCount = text.split(/\s+/).length;
                 const simDurationMs = Math.max(wordCount * 320, 1400);
                 this.isAiSpeaking = true;
                 this.aiSpeechEndTime = Math.max(this.aiSpeechEndTime, Date.now()) + simDurationMs;
-                // Nothing was heard when a configured voice failed, so that question has not really been asked.
-                if (!ElevenLabsService.isConfigured()) this.noteSpeechStarted(text, response);
-                else this.logDiagnostic('speech_unavailable', { responseId: response ? response.id : null, text: String(text).slice(0, 60) });
+                this.logDiagnostic('speech_unavailable', { provider: ttsProvider, responseId: response ? response.id : null, text: String(text).slice(0, 60) });
                 this.scheduleSpeechEnd();
                 return;
             }
@@ -1456,7 +1613,14 @@ export class CallSession {
                     this.isAiSpeaking = false;
                     this.interruptedWithAnswer = true;
 
+                    // Clean up any old STT session on barge-in
+                    if (this.activeSttSession) {
+                        this.activeSttSession.close();
+                        this.activeSttSession = null;
+                    }
+
                     // Move overlap audio into active caller buffer
+                    const overlapCopy = [...this.overlapMulawChunks];
                     this.callerMulawChunks.push(...this.overlapMulawChunks);
                     this.overlapMulawChunks = [];
                     this.consecutiveSpeechFrames = this.overlapSpeechFrames;
@@ -1464,6 +1628,25 @@ export class CallSession {
                     this.isCallerSpeaking = true;
                     this.consecutiveSilenceFrames = 0;
                     this.setConversationState(ConversationStates.CANDIDATE_SPEAKING, 'barge_in');
+
+                    // Start continuous STT session for barge-in turn
+                    if (MurfService.isConfigured()) {
+                        const nextTurnId = this.currentTurnId + 1;
+                        this.activeSttTurnId = nextTurnId;
+                        this.activeSttSession = MurfService.createSttSession({
+                            callId: this.callId,
+                            turnId: nextTurnId,
+                            language: this.detectedLanguage,
+                            codec: 'mulaw',
+                            sampleRate: 8000,
+                            onReady: (connectMs) => {
+                                this.latencyTracker.markSttSessionReady(connectMs);
+                            }
+                        });
+                        for (const chunk of overlapCopy) {
+                            this.activeSttSession.sendAudioChunk(chunk);
+                        }
+                    }
                 }
             } else {
                 // Short noise burst (< 700ms) while AI speaking: ignore and discard
@@ -1504,8 +1687,25 @@ export class CallSession {
             if (this.conversationState === ConversationStates.LISTENING) {
                 this.setConversationState(ConversationStates.CANDIDATE_SPEAKING, 'speech_started');
                 this.logDiagnostic('candidate_speech_started', { initialRms: energy });
+                this.latencyTracker.markCallerSpeechStarted();
                 this.consecutiveSpeechFrames = 0;
                 this.consecutiveSilenceFrames = 0;
+
+                // Start continuous STT streaming session if not already active
+                if (MurfService.isConfigured() && !this.activeSttSession) {
+                    const nextTurnId = this.currentTurnId + 1;
+                    this.activeSttTurnId = nextTurnId;
+                    this.activeSttSession = MurfService.createSttSession({
+                        callId: this.callId,
+                        turnId: nextTurnId,
+                        language: this.detectedLanguage,
+                        codec: 'mulaw',
+                        sampleRate: 8000,
+                        onReady: (connectMs) => {
+                            this.latencyTracker.markSttSessionReady(connectMs);
+                        }
+                    });
+                }
             } else if (this.conversationState === ConversationStates.WAITING_FOR_END_OF_TURN) {
                 const elapsedSilenceMs = this.consecutiveSilenceFrames * 20;
                 this.logDiagnostic('silence_timer_reset_speech_resumed', { elapsedSilenceMs });
@@ -1514,6 +1714,9 @@ export class CallSession {
             }
 
             this.callerMulawChunks.push(mulawChunk);
+            if (this.activeSttSession) {
+                this.activeSttSession.sendAudioChunk(mulawChunk);
+            }
             this.consecutiveSpeechFrames++;
             this.isCallerSpeaking = true;
         } else {
@@ -1524,9 +1727,15 @@ export class CallSession {
                 const thresholdMs = this.getSilenceThresholdMs();
                 this.logDiagnostic('silence_timer_started', { thresholdMs, consecutiveSpeechFrames: this.consecutiveSpeechFrames });
                 this.callerMulawChunks.push(mulawChunk);
+                if (this.activeSttSession) {
+                    this.activeSttSession.sendAudioChunk(mulawChunk);
+                }
                 this.consecutiveSilenceFrames = 1;
             } else if (this.conversationState === ConversationStates.WAITING_FOR_END_OF_TURN) {
                 this.callerMulawChunks.push(mulawChunk);
+                if (this.activeSttSession) {
+                    this.activeSttSession.sendAudioChunk(mulawChunk);
+                }
                 this.consecutiveSilenceFrames++;
 
                 const currentSilenceMs = this.consecutiveSilenceFrames * 20;
@@ -1587,6 +1796,10 @@ export class CallSession {
         if (totalMulaw.length < this.MIN_AUDIO_BYTES) {
             this.logDiagnostic('turn_dropped_too_short', { turnId, bytes: totalMulaw.length });
             this.latencyTracker.cancelTurn();
+            if (this.activeSttSession) {
+                this.activeSttSession.close();
+                this.activeSttSession = null;
+            }
             this.isProcessingTurn = false;
             this.setConversationState(ConversationStates.LISTENING, 'click_filtered');
             this.checkAndApplyOverlapAudio();
@@ -1594,14 +1807,51 @@ export class CallSession {
         }
 
         const pcm16 = decodeMulawToPcm16(totalMulaw);
-        const wavBuffer = pcmToWav(pcm16, 8000, 1, 16);
+        const trimmedPcm = trimSilencePcm16(pcm16, 8000, 350, 100);
+        const wavBuffer = pcmToWav(trimmedPcm, 8000, 1, 16);
 
         let transcript = '';
         let detectedLanguage = this.detectedLanguage || 'en';
         let sttLanguageHint = null;
+        let sttError = null;
+        let sttFinalizeDurationMs = null;
+
+        // Take ownership of active continuous streaming STT session
+        const continuousSession = this.activeSttSession;
+        this.activeSttSession = null;
 
         try {
-            if (ElevenLabsService.isConfigured()) {
+            if (continuousSession && MurfService.isConfigured()) {
+                this.latencyTracker.markSttFinalizeSent();
+                console.log(`[CallSession] Finalizing continuous Murf STT for turn ${turnId}...`);
+                const sttResult = await continuousSession.finalize(4500);
+                if (sttResult.error) {
+                    sttError = sttResult.error;
+                }
+                transcript = (sttResult.transcript || '').trim();
+                sttFinalizeDurationMs = sttResult.durationMs || null;
+                this.latencyTracker.markSttEnd(transcript.length, sttFinalizeDurationMs);
+                continuousSession.close();
+            }
+
+            // Fallback to batch Murf STT if continuous STT did not produce a transcript
+            if (!transcript && MurfService.isConfigured()) {
+                this.latencyTracker.markSttStart();
+                const totalDurationSec = Math.round((totalMulaw.length / 8000) * 10) / 10;
+                console.log(`[CallSession] Transcribing turn ${turnId} via batch Murf STT (${totalMulaw.length} bytes, ~${totalDurationSec}s 8kHz ulaw, lang: ${this.detectedLanguage})...`);
+                const sttResult = await MurfService.speechToText(totalMulaw, {
+                    language: this.detectedLanguage,
+                    codec: 'mulaw',
+                    sampleRate: 8000,
+                    timeoutMs: 6500
+                });
+                if (sttResult.error) {
+                    sttError = sttResult.error;
+                }
+                transcript = (sttResult.transcript || '').trim();
+                sttLanguageHint = sttResult.language || null;
+                this.latencyTracker.markSttEnd(transcript.length);
+            } else if (!transcript && ElevenLabsService.isConfigured()) {
                 this.latencyTracker.markSttStart();
                 // One speech-to-text request per turn. The request already asks for the language the call has been
                 // in, so sending the same audio again with the same language would only add 1-2 seconds of delay.
@@ -1622,6 +1872,7 @@ export class CallSession {
                 this.latencyTracker.markSttEnd(transcript.length);
             }
         } catch (e) {
+            sttError = e.message;
             console.error('[CallSession] STT error:', e.message);
         }
 
@@ -1641,10 +1892,13 @@ export class CallSession {
 
         // Filter noise or handle unclear audio:
         if (!transcript || isNoiseTranscript(transcript)) {
-            // Check if this was a substantial candidate utterance (>= 8000 bytes = 1s audio at 8kHz) in recruitment
-            if (this.service === 'recruitment' && totalMulaw.length >= 8000) {
-                console.log(`[CallSession] Unclear audio detected in recruitment (${totalMulaw.length} bytes). Asking for clarification.`);
-                this.logDiagnostic('unclear_audio_detected', { turnId, bytes: totalMulaw.length });
+            const hasSubstantialAudio = totalMulaw.length >= 8000 || this.consecutiveSpeechFrames >= 15;
+            this.consecutiveUnclearTurns = (this.consecutiveUnclearTurns || 0) + 1;
+
+            // If caller actually spoke substantial audio (> 1s) or there was an STT error, provide a gentle bounded clarification
+            if (hasSubstantialAudio && this.consecutiveUnclearTurns <= 2) {
+                console.log(`[CallSession] Unclear audio or STT issue on turn ${turnId} (${totalMulaw.length} bytes, attempt ${this.consecutiveUnclearTurns}). Asking for clarification.`);
+                this.logDiagnostic('unclear_audio_detected', { turnId, bytes: totalMulaw.length, sttError, attempts: this.consecutiveUnclearTurns });
 
                 this.setConversationState(ConversationStates.GENERATING_RESPONSE, 'unclear_audio_clarification');
                 const clarification = this.detectedLanguage === 'te'
@@ -1672,13 +1926,16 @@ export class CallSession {
             }
 
             console.log(`[CallSession] Noise/empty transcript filtered: "${transcript || '(empty)'}". Resuming listening.`);
-            this.logDiagnostic('noise_transcript_filtered', { turnId, transcript, bytes: totalMulaw.length });
+            this.logDiagnostic('noise_transcript_filtered', { turnId, transcript, bytes: totalMulaw.length, sttError });
             this.latencyTracker.cancelTurn();
             this.isProcessingTurn = false;
             this.setConversationState(ConversationStates.LISTENING, 'noise_filtered');
             this.checkAndApplyOverlapAudio();
             return;
         }
+
+        // Valid transcript received -> reset unclear turn counter
+        this.consecutiveUnclearTurns = 0;
 
         // The same words arriving again while the reply to them is still active are one turn, not two
         // (a transcript finalised twice, or an echo of the caller's last words): never answer them twice.
@@ -1963,6 +2220,7 @@ export class CallSession {
                             earlySpoken.push(sentence);
                             response.isStreaming = true;
                             response.llmComplete = false;
+                            this.latencyTracker.markFirstSafePhraseReady();
                             this.latencyTracker.markDecisionEnd('LLM_STREAM');
                             console.log(`[CallSession] Early spoken phrase extracted. Streaming to TTS: "${sentence.slice(0, 50)}..."`);
                             this.setConversationState(ConversationStates.SPEAKING, 'llm_early_phrase');
@@ -2286,6 +2544,11 @@ export class CallSession {
         if (this.healthTimer) {
             clearInterval(this.healthTimer);
             this.healthTimer = null;
+        }
+
+        if (this.activeSttSession) {
+            try { this.activeSttSession.close(); } catch (_) {}
+            this.activeSttSession = null;
         }
 
         try {
@@ -2629,7 +2892,7 @@ export function handleVoicebotWebsocket(ws, request) {
 
     // Initial handshake acknowledgement
     if (ws.readyState === ws.OPEN) {
-        ws.send(JSON.stringify({ event: 'connected', service: 'Plivo-ElevenLabs-VoiceBot' }));
+        ws.send(JSON.stringify({ event: 'connected', service: 'Plivo-Murf-VoiceBot' }));
     }
 }
 
@@ -2637,22 +2900,55 @@ export function handleVoicebotWebsocket(ws, request) {
  * Pre-caches standard greetings and acknowledgments into RAM on startup.
  */
 export async function precacheStandardGreetings() {
+    // Tests set SKIP_TTS_PRECACHE=1 so loading this file never calls the paid voice service
+    if (process.env.SKIP_TTS_PRECACHE === '1') return;
+
+    const prewarmPhrases = [
+        GeminiService.getOpeningGreeting('sales', {}),
+        GeminiService.getOpeningGreeting('recruitment', { job_role: 'the open position' }),
+        "Hi, this is Remo calling from Scorelabs. Is now a good time to talk?",
+        "Great, thanks! I just wanted to ask — are you currently looking for any IT or digital marketing services?",
+        "Sure! What kind of service are you looking for?",
+        "We help with website and software development, mobile apps, and digital marketing. Which of these would be most useful to you?",
+        "No problem at all. Thanks for your time. Have a great day!",
+        "Of course. Would another time be better?",
+        "We help businesses with software development and digital marketing. Is there anything in those areas you're exploring?"
+    ];
+
+    if (MurfService.isConfigured()) {
+        try {
+            console.log('[VoicebotStream] Pre-warming standard opening greetings and fast-path responses in Murf TTS cache...');
+            const voiceId = MurfService.getVoiceId();
+            const modelId = MurfService.getModelId();
+            for (const phrase of prewarmPhrases) {
+                try {
+                    await MurfService.textToSpeech(phrase, { voiceId, model: modelId, timeoutMs: 10000 });
+                } catch (err) {
+                    // Non-fatal per phrase
+                }
+            }
+            try {
+                console.log('[VoicebotStream] Pre-warming promotional demo script in Murf TTS cache...');
+                await MurfService.textToSpeech(PROMOTIONAL_DEMO_SCRIPT, {
+                    voiceId,
+                    model: modelId,
+                    timeoutMs: 15000
+                });
+                console.log('[VoicebotStream] Promotional demo script pre-cached successfully in Murf RAM.');
+            } catch (promoErr) {
+                console.warn('[VoicebotStream] Promotional script pre-cache note:', promoErr.message);
+            }
+            console.log('[VoicebotStream] Standard greetings cached in Murf RAM successfully.');
+        } catch (e) {
+            // Non-fatal
+        }
+        return;
+    }
+
     if (!ElevenLabsService.isConfigured()) return;
     try {
         ElevenLabsService.validateConfiguration();
-        // Tests set SKIP_TTS_PRECACHE=1 so loading this file never calls the paid voice service
-        // (the configuration check above still runs, because other code relies on what it sets).
-        if (process.env.SKIP_TTS_PRECACHE === '1') return;
-        // Sequential pre-warm (concurrency = 1) to respect ElevenLabs rate limits
         console.log('[VoicebotStream] Pre-warming standard opening greetings and fast-path responses in TTS cache...');
-        const prewarmPhrases = [
-            GeminiService.getOpeningGreeting('sales', {}),
-            GeminiService.getOpeningGreeting('recruitment', { job_role: 'the open position' }),
-            "Thank you! I just wanted to check if you're currently looking for any services that we could help you with?",
-            "Great! Could you tell me a little about what you're looking for?",
-            "I understand. Thank you for your time. Have a great day."
-        ];
-
         for (const phrase of prewarmPhrases) {
             try {
                 const voiceId = ElevenLabsService.getVoiceIdForLanguage('en');
@@ -2662,7 +2958,6 @@ export async function precacheStandardGreetings() {
                 // Non-fatal per phrase
             }
         }
-        // Pre-warm the exact one-way promotional script for "Get instant call" demo
         try {
             console.log('[VoicebotStream] Pre-warming promotional demo script in TTS cache...');
             const promoVoiceId = ElevenLabsService.getVoiceIdForLanguage('en');
@@ -2678,7 +2973,6 @@ export async function precacheStandardGreetings() {
         } catch (promoErr) {
             console.warn('[VoicebotStream] Promotional script pre-cache note:', promoErr.message);
         }
-
         console.log('[VoicebotStream] Standard greetings and fast-path responses cached in RAM successfully.');
     } catch (e) {
         // Non-fatal

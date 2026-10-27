@@ -387,6 +387,20 @@ const AdminClient = {
   async getConversationRecordingInfo(id) {
     if (!id) throw new Error('Conversation ID is required');
     return this.request(`/api/admin/conversations/${encodeURIComponent(id)}/recording-info`);
+  },
+
+  /**
+   * Voice Configuration & Preview API
+   */
+  async getVoiceConfig() {
+    return this.request('/api/admin/voice/config');
+  },
+
+  async previewVoice({ voiceKey, locale, text } = {}) {
+    return this.request('/api/admin/voice/preview', {
+      method: 'POST',
+      body: JSON.stringify({ voiceKey, locale, text })
+    });
   }
 };
 

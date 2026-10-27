@@ -57,7 +57,7 @@ const DONT_KNOW_TERMS = new Set([
 export default class IntentService {
     static getSalesCompany(context = {}) {
         const cc = context.campaignContext || (context.contact && context.contact.campaignContext) || {};
-        return cc.company_name || (context.contact && context.contact.company) || 'Score Labs';
+        return cc.company_name || (context.contact && context.contact.company) || 'Scorelabs';
     }
 
     static getSalesOfferings(context = {}) {
@@ -170,6 +170,70 @@ export default class IntentService {
         }
 
         // -------------------------------------------------------------
+        // 2.7 CALLER BUSY / UNAVAILABLE / CALLBACK REQUEST (ALL SERVICES)
+        // -------------------------------------------------------------
+        if (/\b(busy|in a meeting|driving|not a good time|bad time|can't talk|cant talk|call later|call me later|after some time|baad mein|not available|unavailable|not free)\b/i.test(clean)
+            || clean.includes('busy right now') || clean.includes('in a meeting') || clean.includes('driving right now') || clean.includes('baad mein call') || clean.includes('thoda busy') || clean.includes('ippudu busy')
+            || clean.includes('not available right now') || clean.includes('im not available') || clean.includes('i am not available')
+            || clean.includes('im busy') || clean.includes('i am busy') || clean.includes('no im busy') || clean.includes('no i am busy')
+            || clean.includes('call back later') || clean.includes('call me back')) {
+            return {
+                matched: true,
+                intent: 'CALLER_BUSY',
+                spoken_response: this.localize(
+                    "Of course. Would another time be better?",
+                    "बिल्कुल। क्या कोई और समय बेहतर रहेगा?",
+                    "ఖచ్చితంగా. మరొక సమయం బాగుంటుందా?",
+                    currentLang
+                ),
+                detected_language: currentLang,
+                next_stage: 'CALLBACK_TIME',
+                classification: 'Callback Requested',
+                extracted_fields: { preferred_next_step: 'callback', call_outcome: 'Callback Requested' },
+                should_end_call: false,
+                reason: 'caller_busy'
+            };
+        }
+
+        // -------------------------------------------------------------
+        // 2.8 IDENTITY INQUIRY: "Who is this?" / "Who are you?" (ALL SERVICES)
+        // -------------------------------------------------------------
+        if (clean.includes('who is this') || clean.includes('who is calling') || clean.includes('who are you') || clean.includes('whos this') || clean.includes('who is remo') || clean.includes('kaun bol raha hai') || clean.includes('evaru matladutunnaru') || clean.includes('who speaking')) {
+            const comp = this.getSalesCompany(context);
+            let idResponse;
+            if (service === 'recruitment') {
+                idResponse = this.localize(
+                    `This is Remo calling from ${comp} regarding the ${role} position. Is this a good time to speak?`,
+                    `मैं ${comp} से ${role} पद के संदर्भ में रेमो बात कर रहा हूँ। क्या बात करने का यह सही समय है?`,
+                    `నేను ${comp} నుండి ${role} ఉద్యోగం గురించి రెమో మాట్లాడుతున్నాను. మాట్లాడటానికి ఇది మంచి సమయమేనా?`,
+                    currentLang
+                );
+            } else if (service === 'support') {
+                idResponse = this.localize(
+                    `This is Remo from customer support. Is now a convenient time to assist you?`,
+                    `मैं ग्राहक सेवा से रेमो बात कर रहा हूँ। क्या मैं अभी आपकी सहायता कर सकता हूँ?`,
+                    `నేను కస్టమర్ సపోర్ట్ నుండి రెమోను. మీకు సహాయం చేయడానికి ఇది అనుకూలమైన సమయమేనా?`,
+                    currentLang
+                );
+            } else {
+                idResponse = this.localize(
+                    `This is Remo calling from ${comp}. Is this a good time to talk for a minute?`,
+                    `मैं ${comp} से रेमो बात कर रहा हूँ। क्या आपके पास एक मिनट बात करने का समय है?`,
+                    `నేను ${comp} నుండి రెమో మాట్లాడుతున్నాను. మాట్లాడటానికి ఒక నిమిషం సమయం ఉందా?`,
+                    currentLang
+                );
+            }
+            return {
+                matched: true,
+                spoken_response: idResponse,
+                detected_language: currentLang,
+                next_stage: 'PERMISSION_CHECK',
+                should_end_call: false,
+                reason: 'identity_inquiry'
+            };
+        }
+
+        // -------------------------------------------------------------
         // 3. EXPLICIT DECLINE / NOT INTERESTED
         // -------------------------------------------------------------
         if (clean.includes('not interested') || clean.includes('no interest') || clean.includes('not looking') || clean.includes('phone rakho') || clean.includes('cut the call')) {
@@ -177,9 +241,9 @@ export default class IntentService {
                 matched: true,
                 intent: 'NOT_INTERESTED',
                 spoken_response: this.localize(
-                    "I understand. Thank you for your time. Have a great day.",
-                    "मैं समझता हूँ। आपके समय के लिए धन्यवाद। आपका दिन शुभ हो।",
-                    "నేను అర్థం చేసుకోగలను. మీ సమయానికి ధన్యవాదాలు. మంచి రోజవుగాక.",
+                    "No problem at all. Thanks for your time. Have a great day!",
+                    "कोई बात नहीं। आपके समय के लिए धन्यवाद। आपका दिन शुभ हो!",
+                    "ఏమీ పర్వాలేదు. మీ సమయానికి ధన్యవాదాలు. మంచి రోజవుగాక!",
                     currentLang
                 ),
                 detected_language: currentLang,
@@ -197,43 +261,21 @@ export default class IntentService {
         if (service === 'sales') {
             const comp = this.getSalesCompany(context);
 
-            // A. Identity Inquiry: "Who is this?" / "Who is calling?"
-            if (clean.includes('who is this') || clean.includes('who is calling') || clean.includes('who are you') || clean.includes('whos this') || clean.includes('who is remo') || clean.includes('kaun bol raha hai') || clean.includes('evaru matladutunnaru') || clean.includes('who speaking')) {
-                return {
-                    matched: true,
-                    spoken_response: this.localize(
-                        `This is Remo calling from ${comp}. Is this a good time to talk for a minute?`,
-                        `मैं ${comp} से रेमो बात कर रहा हूँ। क्या आपके पास एक मिनट बात करने का समय है?`,
-                        `నేను ${comp} నుండి రెమో మాట్లాడుతున్నాను. మాట్లాడటానికి ఒక నిమిషం సమయం ఉందా?`,
-                        currentLang
-                    ),
-                    detected_language: currentLang,
-                    next_stage: 'PERMISSION_CHECK',
-                    should_end_call: false,
-                    reason: 'sales_identity_inquiry'
-                };
-            }
-
             // B. Purpose Inquiry: "Why are you calling?" / "What is this about?" / "What is this call about?"
             const isPurposeInquiry = /\b(what (?:is|was|s) (?:this|the) (?:call )?(?:all )?(?:about|regarding|for)|why (?:are you|did you|you) (?:calling|call)|(?:what is|whats) (?:the )?purpose of (?:this |the )?call|tell me about (?:this|the) call|what do you want|what do you need)\b|kis (?:liye|baare|bare) mein|kya kaam hai|kya baat hai|deni gurinchi|denikosam|enduku call|endukani call/i.test(clean)
                 || clean.includes('why are you calling') || clean.includes('what is this regarding') || clean.includes('what is this about') || clean.includes('what is the call about') || clean.includes('what is this call about') || clean.includes('purpose of call') || clean.includes('kis liye call kiya') || clean.includes('endukani call chesaru');
 
             if (isPurposeInquiry) {
                 const cc = context.campaignContext || (context.contact && context.contact.campaignContext) || {};
-                const purpose = cc.call_objective || cc.campaign_objective || cc.purpose || cc.role_summary || (cc.product_name ? `our ${cc.product_name}` : '');
-                const purposeEn = purpose
-                    ? `I'm reaching out from ${comp} regarding ${purpose}. Do you have a brief minute?`
-                    : `I'm reaching out from ${comp} to check if you're exploring any services we could help you with. Do you have a brief minute?`;
-                const purposeHi = purpose
-                    ? `मैं ${comp} से ${purpose} के संबंध में कॉल कर रहा हूँ। क्या आपके पास एक मिनट का समय है?`
-                    : `मैं ${comp} से यह जानने के लिए कॉल कर रहा हूँ कि क्या आप किसी सेवा की तलाश में हैं। क्या आपके पास एक मिनट का समय है?`;
-                const purposeTe = purpose
-                    ? `మేము ${comp} నుండి ${purpose} సంబంధించి కాల్ చేస్తున్నాను. ఒక నిమిషం సమయం ఉందా?`
-                    : `మేము సహాయపడగల సేవల గురించి తెలుసుకోవడానికి ${comp} నుండి కాల్ చేస్తున్నాను. ఒక నిమిషం సమయం ఉందా?`;
-
+                const comp = this.getSalesCompany(context);
                 return {
                     matched: true,
-                    spoken_response: this.localize(purposeEn, purposeHi, purposeTe, currentLang),
+                    spoken_response: this.localize(
+                        `We help businesses with software development and digital marketing. Is there anything in those areas you're exploring?`,
+                        `हम व्यवसायों को सॉफ्टवेयर विकास और डिजिटल मार्केटिंग में मदद करते हैं। क्या आप इनमें से किसी सेवा पर विचार कर रहे हैं?`,
+                        `మేము వ్యాపారాలకు సాఫ్ట్‌వేర్ డెవలప్‌మెంట్ మరియు డిజిటల్ మార్కెటింగ్‌తో సహాయం చేస్తాము. మీరు వీటిలో దేని గురించైనా ఆలోచిస్తున్నారా?`,
+                        currentLang
+                    ),
                     detected_language: currentLang,
                     next_stage: 'PERMISSION_CHECK',
                     should_end_call: false,
@@ -243,13 +285,12 @@ export default class IntentService {
 
             // C. Services Inquiry: "What services do you offer?" / "What do you do?"
             if (clean.includes('what services') || clean.includes('which services') || clean.includes('what do you do') || clean.includes('what do you offer') || clean.includes('kya service') || clean.includes('services kya') || clean.includes('elaanti services')) {
-                const offerings = this.getSalesOfferings(context);
                 return {
                     matched: true,
                     spoken_response: this.localize(
-                        `We can help with services such as ${offerings}. Is there anything specific you're looking for?`,
-                        `हम ${offerings} जैसी सेवाओं में मदद कर सकते हैं। क्या आप किसी विशिष्ट सेवा की तलाश में हैं?`,
-                        `మేము ${offerings} వంటి సేవలతో సహాయం చేయగలము. మీరు ప్రత్యేకంగా దేని కోసమైనా చూస్తున్నారా?`,
+                        `We help with website and software development, mobile apps, and digital marketing. Which of these would be most useful to you?`,
+                        `हम वेबसाइट और सॉफ्टवेयर विकास, मोबाइल ऐप और डिजिटल मार्केटिंग में मदद करते हैं। इनमें से कौन सी आपके लिए सबसे उपयोगी होगी?`,
+                        `మేము వెబ్‌సైట్ మరియు సాఫ్ట్‌వేర్ డెవలప్‌మెంట్, మొబైల్ యాప్‌లు మరియు డిజిటల్ మార్కెటింగ్‌తో సహాయం చేస్తాము. వీటిలో ఏది మీకు అత్యంత ఉపయోగకరంగా ఉంటుంది?`,
                         currentLang
                     ),
                     detected_language: currentLang,
@@ -449,9 +490,9 @@ export default class IntentService {
                     matched: true,
                     intent: 'BUSY',
                     spoken_response: this.localize(
-                        "I completely understand. Would another time be better for a quick call, or would you prefer not to receive another call?",
-                        "मैं पूरी तरह समझता हूँ। क्या किसी अन्य समय बात करना बेहतर रहेगा, या आप दोबारा कॉल प्राप्त नहीं करना चाहेंगे?",
-                        "నేను పూర్తిగా అర్థం చేసుకోగలను. మరో సమయంలో మాట్లాడటం మంచిదా, లేక మళ్లీ కాల్ వద్దనుకుంటున్నారా?",
+                        "Of course. Would another time be better?",
+                        "ज़रूर। क्या कोई अन्य समय बेहतर रहेगा?",
+                        "తప్పకుండా. మరో సమయం అనుకూలంగా ఉంటుందా?",
                         currentLang
                     ),
                     detected_language: currentLang,
@@ -708,10 +749,11 @@ export default class IntentService {
                 clean.startsWith('sare') || clean.startsWith('alage') || clean.startsWith('bilkul') ||
                 clean.startsWith('of course') || clean.startsWith('certainly') || clean.startsWith('by all means')
             );
-            const isAffirmativeKeywordMatch = (words.length <= 5) && (
+            const isAffirmativeKeywordMatch = (words.length <= 8) && (
                 clean.includes('works for me') || clean.includes('work for me') || clean.includes('that works') || clean.includes('this works') ||
                 clean.includes('sounds good') || clean.includes('sounds great') || clean.includes('sounds fine') ||
                 clean.includes('have time') || clean.includes('am free') || clean.includes('im free') ||
+                clean.includes('have a few minutes') || clean.includes('have few minutes') ||
                 clean.includes('have a minute') || clean.includes('have a min') || clean.includes('have 2 minutes') || clean.includes('have two minutes') ||
                 clean.includes('i can talk') || clean.includes('go ahead') || clean.includes('go for it') || clean.includes('why not') ||
                 clean.includes('fine with me') || clean.includes('sure thing') || clean.includes('lets talk') || clean.includes('we can talk') ||
@@ -719,7 +761,17 @@ export default class IntentService {
                 clean.includes('kudurutundi') || clean.includes('kudarutundi') || clean.includes('parvaledu') || clean.includes('samayam undi') || clean.includes('time undi')
             );
 
-            const isYes = !hasNegative && (isKnownAffirmativePhrase || isShortAffirmativePrefix || isAffirmativeKeywordMatch);
+            // Identity confirmation when Remo asks "Am I speaking with [Name]?" (GREETING stage)
+            // Handles "yes, this is Anshu", "yes speaking", "speaking", "this is he/she", "that's me"
+            const isGreetingConfirmation = stage === 'GREETING' && (
+                clean.includes('speaking') ||
+                clean.includes('this is') ||
+                clean.includes('thats me') ||
+                clean.includes('that is me') ||
+                (words.length <= 6 && (clean.startsWith('yes') || clean.startsWith('yeah') || clean.startsWith('haan') || clean.startsWith('avunu')))
+            );
+
+            const isYes = !hasNegative && (isKnownAffirmativePhrase || isShortAffirmativePrefix || isAffirmativeKeywordMatch || isGreetingConfirmation);
 
             const isKnownNegativePhrase = NEGATIVE_TERMS.has(clean) || words.every(w => NEGATIVE_TERMS.has(w));
             const isShortNegativePrefix = (words.length <= 5) && (clean.startsWith('no ') || clean === 'no');
@@ -794,8 +846,8 @@ export default class IntentService {
                     return {
                         matched: true,
                         spoken_response: this.localize(
-                            `${namePrefix}this is Remo calling from ${comp}. Is this a good time to talk for a minute?`,
-                            `${namePrefix}मैं ${comp} से रेमो बात कर रहा हूँ। क्या यह बात करने के लिए अच्छा समय है?`,
+                            `${namePrefix}this is Remo calling from ${comp}. Is now a good time to talk?`,
+                            `${namePrefix}मैं ${comp} से रेमो बात कर रहा हूँ। क्या अभी बात करने का अच्छा समय है?`,
                             `${namePrefix}నేను ${comp} నుండి రెమో మాట్లాడుతున్నాను. మాట్లాడటానికి ఇది మంచి సమయమేనా?`,
                             lang
                         ),
@@ -812,14 +864,14 @@ export default class IntentService {
                     return {
                         matched: true,
                         spoken_response: this.localize(
-                            "Thank you! I just wanted to check if you're currently looking for any services that we could help you with?",
-                            "धन्यवाद! मैं बस यह जानना चाहता था कि क्या आप वर्तमान में किसी ऐसी सेवा की तलाश में हैं जिसमें हम मदद कर सकें?",
-                            "ధన్యవాదాలు! మేము సహాయపడగల ఏవైనా సేవల కోసం మీరు ప్రస్తుతం చూస్తున్నారా అని తెలుసుకోవాలనుకుంటున్నాను?",
+                            "Great, thanks! I just wanted to ask — are you currently looking for any IT or digital marketing services?",
+                            "बहुत बढ़िया, धन्यवाद! मैं बस यह जानना चाहता था — क्या आप वर्तमान में किसी आईटी या डिजिटल मार्केटिंग सेवा की तलाश में हैं?",
+                            "చాలా మంచిది, ధన్యవాదాలు! నేను కేవలం అడగాలనుకున్నాను — మీరు ప్రస్తుతం ఏవైనా ఐటీ లేదా డిజిటల్ మార్కెటింగ్ సేవల కోసం చూస్తున్నారా?",
                             lang
                         ),
                         detected_language: lang,
                         classification: 'Interested',
-                        next_stage: (stage === 'AVAILABILITY') ? 'SERVICE_INTEREST' : 'INTEREST_DISCOVERY',
+                        next_stage: 'INTEREST_DISCOVERY',
                         should_end_call: false,
                         reason: 'sales_permission_yes'
                     };
@@ -829,9 +881,9 @@ export default class IntentService {
                     return {
                         matched: true,
                         spoken_response: this.localize(
-                            "Great! Could you tell me a little about what you're looking for?",
-                            "बहुत अच्छा! क्या आप थोड़ा बता सकते हैं कि आप किस प्रकार की सेवा की तलाश में हैं?",
-                            "చాలా మంచిది! మీరు ఎలాంటి సేవల కోసం చూస్తున్నారో కాస్త చెప్పగలరా?",
+                            "Sure! What kind of service are you looking for?",
+                            "ज़रूर! आप किस प्रकार की सेवा की तलाश कर रहे हैं?",
+                            "తప్పకుండా! మీరు ఎలాంటి సేవ కోసం చూస్తున్నారు?",
                             lang
                         ),
                         detected_language: lang,
@@ -921,8 +973,10 @@ export default class IntentService {
 
             // The next planned question that has not been asked. The availability question is never asked again.
             let plannedNext = null;
-            if (questions && questions.plan.length) {
+            if (questions && typeof questions.nextUnanswered === 'function') {
                 plannedNext = questions.nextUnanswered({ isFieldKnown });
+            } else if (questions && Array.isArray(questions.plan) && questions.plan.length > 0) {
+                plannedNext = questions.plan[0];
             } else if (memory && typeof memory.getNextPlannedQuestion === 'function' && Array.isArray(questionPlan)) {
                 const withoutAvailability = questionPlan.filter(q => q && q.field_to_collect !== 'is_available' && q.stage !== 'AVAILABILITY');
                 plannedNext = memory.getNextPlannedQuestion(withoutAvailability);
@@ -933,7 +987,7 @@ export default class IntentService {
                     // "Hello, am I speaking with <name>?" -> "Yes": now Remo introduces itself and asks if it is a good time.
                     return {
                         matched: true,
-                        spoken_response: GreetingScript.recruitmentIntro(lang),
+                        spoken_response: GreetingScript.recruitmentIntro(lang, role, company),
                         detected_language: lang,
                         extracted_fields: { identity_confirmed: 'Yes' },
                         classification: 'On Hold',
@@ -1125,9 +1179,9 @@ export default class IntentService {
                         matched: true,
                         intent: 'NEGATIVE_TO_CURRENT_QUESTION',
                         spoken_response: this.localize(
-                            "I completely understand. Thank you so much for your time today, and have a wonderful day!",
-                            "मैं समझता हूँ। आज आपके समय के लिए बहुत-बहुत धन्यवाद, और आपका दिन शुभ हो!",
-                            "నేను అర్థం చేసుకోగలను. ఈ రోజు మీ సమయానికి చాలా ధన్యవాదాలు, మరియు మంచి రోజవుగాక!",
+                            "No problem at all. Thanks for your time. Have a great day!",
+                            "कोई बात नहीं। आपके समय के लिए धन्यवाद। आपका दिन शुभ हो!",
+                            "ఏమీ పర్వాలేదు. మీ సమయానికి ధన్యవాదాలు. మంచి రోజవుగాక!",
                             lang
                         ),
                         detected_language: lang,
@@ -1177,9 +1231,9 @@ export default class IntentService {
                     return {
                         matched: true,
                         spoken_response: this.localize(
-                            "Understood. Thank you for your time today. Have a great day!",
-                            "समझ गया। आज आपके समय के लिए धन्यवाद। आपका दिन शुभ हो!",
-                            "అర్థమైంది. ఈ రోజు మీ సమయానికి ధన్యవాదాలు. మంచి రోజవుగాక!",
+                            "No problem at all. Thanks for your time. Have a great day!",
+                            "कोई बात नहीं। आपके समय के लिए धन्यवाद। आपका दिन शुभ हो!",
+                            "ఏమీ పర్వాలేదు. మీ సమయానికి ధన్యవాదాలు. మంచి రోజవుగాక!",
                             lang
                         ),
                         detected_language: lang,

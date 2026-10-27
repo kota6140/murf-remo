@@ -128,6 +128,11 @@ const MYSQL_SCHEMA = [
         extracted_data LONGTEXT,
         question_plan LONGTEXT,
         config LONGTEXT,
+        primary_language VARCHAR(32) NULL DEFAULT 'en-IN',
+        primary_locale VARCHAR(32) NULL DEFAULT 'en-IN',
+        voice_id VARCHAR(64) NULL DEFAULT 'pooja',
+        voice_provider VARCHAR(32) NULL DEFAULT 'murf',
+        voice_model VARCHAR(64) NULL DEFAULT 'falcon-2.1',
         batch_id VARCHAR(64),
         total_contacts INT NOT NULL DEFAULT 0,
         valid_contacts INT NOT NULL DEFAULT 0,
@@ -249,6 +254,11 @@ const SQLITE_SCHEMA = [
         extracted_data TEXT,
         question_plan TEXT,
         config TEXT,
+        primary_language TEXT NULL DEFAULT 'en-IN',
+        primary_locale TEXT NULL DEFAULT 'en-IN',
+        voice_id TEXT NULL DEFAULT 'pooja',
+        voice_provider TEXT NULL DEFAULT 'murf',
+        voice_model TEXT NULL DEFAULT 'falcon-2.1',
         batch_id TEXT,
         total_contacts INTEGER NOT NULL DEFAULT 0,
         valid_contacts INTEGER NOT NULL DEFAULT 0,
@@ -483,6 +493,20 @@ export function ensureCampaignSchema() {
                         await mysqlPool.query(statement).catch(() => {});
                     }
                 }
+                for (const col of [
+                    'primary_language VARCHAR(32) NULL DEFAULT \'en-IN\'',
+                    'primary_locale VARCHAR(32) NULL DEFAULT \'en-IN\'',
+                    'voice_id VARCHAR(64) NULL DEFAULT \'pooja\'',
+                    'voice_provider VARCHAR(32) NULL DEFAULT \'murf\'',
+                    'voice_model VARCHAR(64) NULL DEFAULT \'falcon-2.1\''
+                ]) {
+                    const colName = col.split(' ')[0];
+                    try {
+                        await mysqlPool.query(`SELECT ${colName} FROM campaigns LIMIT 1`);
+                    } catch {
+                        await mysqlPool.query(`ALTER TABLE campaigns ADD COLUMN ${col}`).catch(() => {});
+                    }
+                }
                 for (const table of ['batches', 'conversations', 'contacts', 'call_queue']) {
                     try {
                         await mysqlPool.query(`SELECT campaign_id FROM ${table} LIMIT 1`);
@@ -494,6 +518,21 @@ export function ensureCampaignSchema() {
                 for (const statement of SQLITE_SCHEMA) {
                     if (statement.includes('campaigns')) {
                         try { sqliteDb.exec(statement); } catch {}
+                    }
+                }
+                for (const [colName, colType] of [
+                    ['primary_language', 'TEXT NULL DEFAULT "en-IN"'],
+                    ['primary_locale', 'TEXT NULL DEFAULT "en-IN"'],
+                    ['voice_id', 'TEXT NULL DEFAULT "pooja"'],
+                    ['voice_provider', 'TEXT NULL DEFAULT "murf"'],
+                    ['voice_model', 'TEXT NULL DEFAULT "falcon-2.1"']
+                ]) {
+                    try {
+                        sqliteDb.prepare(`SELECT ${colName} FROM campaigns LIMIT 1`).get();
+                    } catch {
+                        try {
+                            sqliteDb.prepare(`ALTER TABLE campaigns ADD COLUMN ${colName} ${colType}`).run();
+                        } catch {}
                     }
                 }
                 for (const table of ['batches', 'conversations', 'contacts', 'call_queue']) {

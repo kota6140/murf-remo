@@ -250,10 +250,10 @@ Rules:
 
 Return ONLY a valid JSON object matching this schema:
 {
-  "product_name": "IT Solutions (Custom Software, Web & Mobile Apps, ERP/CRM, QA Testing)",
+  "product_name": "IT & Software Solutions",
   "company_name": "Scorelabs Inc.",
   "target_audience": "Businesses seeking specialized software or IT solutions",
-  "opening_greeting": "Hello, this is Remo calling on behalf of Scorelabs Inc. We help businesses with IT solutions. Is now a convenient time for a brief conversation?",
+  "opening_greeting": "Hi, this is Remo calling from Scorelabs. Is now a good time to talk?",
   "value_propositions": [
     "Software tailored to business workflows and requirements"
   ],
@@ -498,7 +498,7 @@ ${text.slice(0, 10000)}
             product_name: prodName,
             company_name: compName,
             target_audience: "Businesses seeking specialized solutions",
-            opening_greeting: `Hello, this is Remo calling on behalf of ${compName}. We help businesses with IT solutions. Is now a convenient time for a brief conversation?`,
+            opening_greeting: `Hi, this is Remo calling from ${compName.replace(/\s+Inc\.?$/i, '')}. Is now a good time to talk?`,
             value_propositions: ["Custom solutions tailored to operational requirements"],
             key_features: extractedServices.length > 0 ? extractedServices : ["Custom Software Development", "Website & Mobile App Development", "ERP & CRM Solutions"],
             pricing_summary: pricingMatch ? pricingMatch[1].trim() : "Custom quote based on scope and timeline",

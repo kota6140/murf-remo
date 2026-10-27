@@ -3,6 +3,7 @@ import PlivoService from './plivo_service.js';
 import ExotelService from './exotel_service.js';
 import AgentService from './agent_service.js';
 import ElevenLabsService from './elevenlabs_service.js';
+import MurfService from './murf_service.js';
 import GeminiService from './gemini_service.js';
 
 export class CallQueueWorker {
@@ -211,10 +212,14 @@ export class CallQueueWorker {
                                 });
                             }
                             if (greeting) {
-                                const lang = ElevenLabsService.detectLanguageFromText(greeting, 'en');
-                                const voiceId = (agent && agent.voice_id && lang !== 'te') ? agent.voice_id : ElevenLabsService.getVoiceId(lang);
-                                const modelId = ElevenLabsService.selectTtsModel({ language: lang, text: greeting, voiceId });
-                                ElevenLabsService.textToSpeech(greeting, { voiceId, modelId, outputFormat: 'ulaw_8000', language: lang }).catch(() => {});
+                                if (MurfService.isConfigured()) {
+                                    MurfService.textToSpeech(greeting).catch(() => {});
+                                } else if (ElevenLabsService.isConfigured()) {
+                                    const lang = ElevenLabsService.detectLanguageFromText(greeting, 'en');
+                                    const voiceId = (agent && agent.voice_id && lang !== 'te') ? agent.voice_id : ElevenLabsService.getVoiceId(lang);
+                                    const modelId = ElevenLabsService.selectTtsModel({ language: lang, text: greeting, voiceId });
+                                    ElevenLabsService.textToSpeech(greeting, { voiceId, modelId, outputFormat: 'ulaw_8000', language: lang }).catch(() => {});
+                                }
                             }
                         } catch (_) {}
                     })();

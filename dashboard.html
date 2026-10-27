@@ -1355,9 +1355,9 @@
           <textarea id="camp-input-desc" class="form-input-styled" rows="2" placeholder="Campaign objective, target profiles, or special instructions..."></textarea>
         </div>
 
-        <!-- Step 3: AI Model & Voice Pipeline -->
+        <!-- Step 3: AI Model Configuration -->
         <div class="form-group-wrap" style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 14px;">
-          <label class="form-label-bold" style="margin-bottom: 8px;"><span class="form-step-badge">3</span>AI Model & Voice Configuration</label>
+          <label class="form-label-bold" style="margin-bottom: 8px;"><span class="form-step-badge">3</span>AI Model Configuration</label>
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
             <div>
               <span style="font-size: 0.72rem; color: #64748B; font-weight: 700; display: block; margin-bottom: 4px;">Primary LLM Engine:</span>
@@ -1367,12 +1367,119 @@
               </select>
             </div>
             <div>
-              <span style="font-size: 0.72rem; color: #64748B; font-weight: 700; display: block; margin-bottom: 4px;">Telugu Voice Routing:</span>
+              <span style="font-size: 0.72rem; color: #64748B; font-weight: 700; display: block; margin-bottom: 4px;">Fallback LLM Routing:</span>
               <select id="camp-input-voice" class="admin-select" style="width: 100%;">
-                <option value="auto" selected>Auto: Chaitra (Telugu) / Pari (English)</option>
-                <option value="chaitra">ElevenLabs Chaitra (Telugu Preferred)</option>
-                <option value="pari">ElevenLabs Pari (English Default)</option>
+                <option value="auto" selected>Auto: High-Availability Failover</option>
+                <option value="gemini">Gemini Direct Stream</option>
               </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Primary Language & Voice Configuration Card -->
+        <div class="form-group-wrap voice-config-card" id="camp-voice-config-card" style="margin-top: 12px; margin-bottom: 18px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+            <div>
+              <label class="form-label-bold" style="margin: 0; font-size: 0.88rem; color: #0F172A; display: flex; align-items: center; gap: 6px;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+                Primary Language &amp; Voice Configuration
+              </label>
+              <span style="font-size: 0.72rem; color: #64748B;">Controls the native language spoken by the AI and the voice persona during live calls.</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="badge-pill" style="font-size: 0.68rem; background: #EEF2FF; color: #2563EB; font-weight: 700;">MURF FALCON 2.1</span>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
+            <!-- Primary Language Selection -->
+            <div>
+              <label for="camp-input-primary-lang" style="font-size: 0.75rem; color: #334155; font-weight: 700; display: block; margin-bottom: 6px;">
+                Primary Language
+              </label>
+              <select id="camp-input-primary-lang" class="admin-select" style="width: 100%; font-size: 0.82rem; padding: 7px 10px;">
+                <option value="en-IN" selected>English (India) — en-IN</option>
+                <option value="te-IN">Telugu (తెలుగు) — te-IN</option>
+                <option value="hi-IN">Hindi (हिन्दी) — hi-IN</option>
+                <option value="ta-IN">Tamil (தமிழ்) — ta-IN</option>
+                <option value="kn-IN">Kannada (ಕನ್ನಡ) — kn-IN</option>
+                <option value="ml-IN">Malayalam (മലയാളം) — ml-IN</option>
+                <option value="mr-IN">Marathi (मराठी) — mr-IN</option>
+              </select>
+              <span style="font-size: 0.7rem; color: #64748B; margin-top: 4px; display: block;">The AI opens and conducts the entire call in this language.</span>
+            </div>
+
+            <!-- AI Voice Dropdown -->
+            <div>
+              <label for="camp-input-voice-select" style="font-size: 0.75rem; color: #334155; font-weight: 700; display: block; margin-bottom: 6px;">
+                AI Voice
+              </label>
+              <select id="camp-input-voice-select" class="admin-select" style="width: 100%; font-size: 0.82rem; padding: 7px 10px;">
+                <option value="pooja" selected>Pooja (Female Voice) — Default</option>
+                <option value="abhinav">Abhinav (Male Voice)</option>
+                <option value="samar">Samar (Male Voice)</option>
+                <option value="abirami">Abirami (Female Voice)</option>
+              </select>
+              <span style="font-size: 0.7rem; color: #64748B; margin-top: 4px; display: block;">Selectable AI persona used for all spoken responses.</span>
+            </div>
+          </div>
+
+          <!-- Selectable Voice Cards Grid -->
+          <div style="margin-bottom: 12px;">
+            <div style="font-size: 0.72rem; color: #475569; font-weight: 700; margin-bottom: 6px;">Select Voice Persona:</div>
+            <div class="voice-card-grid" id="camp-voice-card-grid">
+              <!-- Voice Card: Pooja -->
+              <div class="voice-tile selected" data-voice-key="pooja" id="voice-card-pooja">
+                <div class="voice-tile-check">✓</div>
+                <div class="voice-tile-name">Pooja</div>
+                <div class="voice-tile-desc">Female Voice</div>
+                <div class="voice-tile-meta">Default Persona</div>
+                <div class="voice-tile-status-badge supported">Supported</div>
+              </div>
+              <!-- Voice Card: Abhinav -->
+              <div class="voice-tile" data-voice-key="abhinav" id="voice-card-abhinav">
+                <div class="voice-tile-check">✓</div>
+                <div class="voice-tile-name">Abhinav</div>
+                <div class="voice-tile-desc">Male Voice</div>
+                <div class="voice-tile-meta">Conversational</div>
+                <div class="voice-tile-status-badge supported">Supported</div>
+              </div>
+              <!-- Voice Card: Samar -->
+              <div class="voice-tile" data-voice-key="samar" id="voice-card-samar">
+                <div class="voice-tile-check">✓</div>
+                <div class="voice-tile-name">Samar</div>
+                <div class="voice-tile-desc">Male Voice</div>
+                <div class="voice-tile-meta">Conversational</div>
+                <div class="voice-tile-status-badge supported">Supported</div>
+              </div>
+              <!-- Voice Card: Abirami -->
+              <div class="voice-tile" data-voice-key="abirami" id="voice-card-abirami">
+                <div class="voice-tile-check">✓</div>
+                <div class="voice-tile-name">Abirami</div>
+                <div class="voice-tile-desc">Female Voice</div>
+                <div class="voice-tile-meta">Conversational</div>
+                <div class="voice-tile-status-badge unsupported">Unsupported</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Voice Preview Bar & Compatibility Alert -->
+          <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <div style="flex: 1; min-width: 220px;">
+              <div id="camp-voice-compat-status" style="font-size: 0.75rem; color: #16A34A; display: flex; align-items: center; gap: 6px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Voice <strong id="camp-compat-voice-name">Pooja</strong> supports <strong id="camp-compat-lang-name">English (India)</strong>.</span>
+              </div>
+              <div id="camp-voice-compat-warning" style="font-size: 0.73rem; color: #DC2626; display: none; align-items: center; gap: 6px; margin-top: 2px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <span id="camp-compat-warning-text"></span>
+              </div>
+            </div>
+            <div>
+              <button type="button" class="btn-voice-preview" id="btn-camp-preview-voice" style="padding: 7px 14px; font-size: 0.775rem;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                <span>Preview Voice</span>
+              </button>
             </div>
           </div>
         </div>
@@ -1574,6 +1681,110 @@
         <div class="form-group-wrap">
           <label class="form-label-bold">Description</label>
           <textarea id="edit-camp-desc" class="form-input-styled" rows="2"></textarea>
+        </div>
+
+        <!-- Edit Modal: Primary Language & Voice Configuration Card -->
+        <div class="form-group-wrap voice-config-card" id="edit-camp-voice-config-card" style="margin-top: 10px; margin-bottom: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+            <div>
+              <label class="form-label-bold" style="margin: 0; font-size: 0.88rem; color: #0F172A; display: flex; align-items: center; gap: 6px;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+                Primary Language &amp; Voice Configuration
+              </label>
+              <span style="font-size: 0.72rem; color: #64748B;">Controls the native language spoken by the AI and the voice persona during live calls.</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="badge-pill" style="font-size: 0.68rem; background: #EEF2FF; color: #2563EB; font-weight: 700;">MURF FALCON 2.1</span>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
+            <!-- Primary Language Selection -->
+            <div>
+              <label for="edit-camp-input-primary-lang" style="font-size: 0.75rem; color: #334155; font-weight: 700; display: block; margin-bottom: 6px;">
+                Primary Language
+              </label>
+              <select id="edit-camp-input-primary-lang" class="admin-select" style="width: 100%; font-size: 0.82rem; padding: 7px 10px;">
+                <option value="en-IN" selected>English (India) — en-IN</option>
+                <option value="te-IN">Telugu (తెలుగు) — te-IN</option>
+                <option value="hi-IN">Hindi (हिन्दी) — hi-IN</option>
+                <option value="ta-IN">Tamil (தமிழ்) — ta-IN</option>
+                <option value="kn-IN">Kannada (ಕನ್ನಡ) — kn-IN</option>
+                <option value="ml-IN">Malayalam (മലയാളം) — ml-IN</option>
+                <option value="mr-IN">Marathi (मराठी) — mr-IN</option>
+              </select>
+              <span style="font-size: 0.7rem; color: #64748B; margin-top: 4px; display: block;">The AI opens and conducts the entire call in this language.</span>
+            </div>
+
+            <!-- AI Voice Dropdown -->
+            <div>
+              <label for="edit-camp-input-voice-select" style="font-size: 0.75rem; color: #334155; font-weight: 700; display: block; margin-bottom: 6px;">
+                AI Voice
+              </label>
+              <select id="edit-camp-input-voice-select" class="admin-select" style="width: 100%; font-size: 0.82rem; padding: 7px 10px;">
+                <option value="pooja" selected>Pooja (Female Voice) — Default</option>
+                <option value="abhinav">Abhinav (Male Voice)</option>
+                <option value="samar">Samar (Male Voice)</option>
+                <option value="abirami">Abirami (Female Voice)</option>
+              </select>
+              <span style="font-size: 0.7rem; color: #64748B; margin-top: 4px; display: block;">Selectable AI persona used for all spoken responses.</span>
+            </div>
+          </div>
+
+          <!-- Selectable Voice Cards Grid -->
+          <div style="margin-bottom: 12px;">
+            <div style="font-size: 0.72rem; color: #475569; font-weight: 700; margin-bottom: 6px;">Select Voice Persona:</div>
+            <div class="voice-card-grid" id="edit-camp-voice-card-grid">
+              <div class="voice-tile selected" data-voice-key="pooja" id="edit-voice-card-pooja">
+                <div class="voice-tile-check">✓</div>
+                <div class="voice-tile-name">Pooja</div>
+                <div class="voice-tile-desc">Female Voice</div>
+                <div class="voice-tile-meta">Default Persona</div>
+                <div class="voice-tile-status-badge supported">Supported</div>
+              </div>
+              <div class="voice-tile" data-voice-key="abhinav" id="edit-voice-card-abhinav">
+                <div class="voice-tile-check">✓</div>
+                <div class="voice-tile-name">Abhinav</div>
+                <div class="voice-tile-desc">Male Voice</div>
+                <div class="voice-tile-meta">Conversational</div>
+                <div class="voice-tile-status-badge supported">Supported</div>
+              </div>
+              <div class="voice-tile" data-voice-key="samar" id="edit-voice-card-samar">
+                <div class="voice-tile-check">✓</div>
+                <div class="voice-tile-name">Samar</div>
+                <div class="voice-tile-desc">Male Voice</div>
+                <div class="voice-tile-meta">Conversational</div>
+                <div class="voice-tile-status-badge supported">Supported</div>
+              </div>
+              <div class="voice-tile" data-voice-key="abirami" id="edit-voice-card-abirami">
+                <div class="voice-tile-check">✓</div>
+                <div class="voice-tile-name">Abirami</div>
+                <div class="voice-tile-desc">Female Voice</div>
+                <div class="voice-tile-meta">Conversational</div>
+                <div class="voice-tile-status-badge unsupported">Unsupported</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Voice Preview Bar & Compatibility Alert -->
+          <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <div style="flex: 1; min-width: 220px;">
+              <div id="edit-camp-voice-compat-status" style="font-size: 0.75rem; color: #16A34A; display: flex; align-items: center; gap: 6px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Voice <strong id="edit-camp-compat-voice-name">Pooja</strong> supports <strong id="edit-camp-compat-lang-name">English (India)</strong>.</span>
+              </div>
+              <div id="edit-camp-voice-compat-warning" style="font-size: 0.73rem; color: #DC2626; display: none; align-items: center; gap: 6px; margin-top: 2px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <span id="edit-camp-compat-warning-text"></span>
+              </div>
+            </div>
+            <div>
+              <button type="button" class="btn-voice-preview" id="btn-edit-camp-preview-voice" style="padding: 7px 14px; font-size: 0.775rem;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                <span>Preview Voice</span>
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- Attached Instructions Document Area -->
@@ -3278,8 +3489,207 @@
           });
         }
 
+        // Setup Primary Language & Voice Configuration Handlers
+        setupVoiceConfigListeners('camp');
+        setupVoiceConfigListeners('edit-camp');
+        updateVoiceCompatibilityUI('camp');
+        updateVoiceCompatibilityUI('edit-camp');
+
         // Initial Load
         loadCampaigns('all');
+      }
+
+      // ======================================================================
+      // PRIMARY LANGUAGE & AI VOICE CONTROLLER
+      // ======================================================================
+      const VOICE_COMPAT_MATRIX = {
+        pooja: { name: 'Pooja', gender: 'Female Voice', locales: ['en-IN', 'te-IN', 'hi-IN', 'ta-IN', 'kn-IN'] },
+        abhinav: { name: 'Abhinav', gender: 'Male Voice', locales: ['en-IN', 'hi-IN', 'ml-IN', 'mr-IN'] },
+        samar: { name: 'Samar', gender: 'Male Voice', locales: ['en-IN', 'te-IN', 'hi-IN', 'ta-IN', 'kn-IN', 'mr-IN'] },
+        abirami: { name: 'Abirami', gender: 'Female Voice', locales: ['ta-IN', 'te-IN', 'hi-IN'] }
+      };
+
+      const LANG_NAME_MAP = {
+        'te-IN': 'Telugu (తెలుగు)',
+        'en-IN': 'English (India)',
+        'hi-IN': 'Hindi (हिन्दी)',
+        'ta-IN': 'Tamil (தமிழ்)',
+        'kn-IN': 'Kannada (ಕನ್ನಡ)',
+        'ml-IN': 'Malayalam (മലയാളം)',
+        'mr-IN': 'Marathi (मराठी)'
+      };
+
+      let activePreviewAudio = null;
+
+      function updateVoiceCompatibilityUI(prefix) {
+        const langSelect = document.getElementById(`${prefix}-input-primary-lang`);
+        const voiceSelect = document.getElementById(`${prefix}-input-voice-select`);
+        const compatStatus = document.getElementById(`${prefix}-voice-compat-status`);
+        const compatWarning = document.getElementById(`${prefix}-voice-compat-warning`);
+        const warningText = document.getElementById(`${prefix}-compat-warning-text`);
+        const voiceNameEl = document.getElementById(`${prefix}-compat-voice-name`);
+        const langNameEl = document.getElementById(`${prefix}-compat-lang-name`);
+        const previewBtn = document.getElementById(`btn-${prefix}-preview-voice`);
+
+        if (!langSelect || !voiceSelect) return true;
+
+        const selectedLocale = langSelect.value || 'en-IN';
+        const selectedVoiceKey = voiceSelect.value || 'pooja';
+        const voiceInfo = VOICE_COMPAT_MATRIX[selectedVoiceKey] || { name: selectedVoiceKey, gender: '', locales: [] };
+        const langLabel = LANG_NAME_MAP[selectedLocale] || selectedLocale;
+
+        // Update voice cards in grid
+        const gridId = prefix === 'camp' ? 'camp-voice-card-grid' : 'edit-camp-voice-card-grid';
+        const grid = document.getElementById(gridId);
+        if (grid) {
+          grid.querySelectorAll('.voice-tile').forEach(tile => {
+            const vKey = tile.getAttribute('data-voice-key');
+            const vConf = VOICE_COMPAT_MATRIX[vKey];
+            const isSupported = vConf ? vConf.locales.includes(selectedLocale) : false;
+            const badge = tile.querySelector('.voice-tile-status-badge');
+            
+            if (vKey === selectedVoiceKey) {
+              tile.classList.add('selected');
+            } else {
+              tile.classList.remove('selected');
+            }
+
+            if (badge) {
+              if (isSupported) {
+                badge.textContent = 'Supported';
+                badge.className = 'voice-tile-status-badge supported';
+              } else {
+                badge.textContent = 'Unsupported';
+                badge.className = 'voice-tile-status-badge unsupported';
+              }
+            }
+
+            if (isSupported) {
+              tile.classList.remove('disabled');
+            } else {
+              tile.classList.add('disabled');
+            }
+          });
+        }
+
+        const isCompatible = voiceInfo.locales.includes(selectedLocale);
+
+        if (isCompatible) {
+          if (compatStatus) {
+            compatStatus.style.display = 'flex';
+            if (voiceNameEl) voiceNameEl.textContent = voiceInfo.name;
+            if (langNameEl) langNameEl.textContent = langLabel;
+          }
+          if (compatWarning) compatWarning.style.display = 'none';
+          if (previewBtn) previewBtn.disabled = false;
+        } else {
+          if (compatStatus) compatStatus.style.display = 'none';
+          if (compatWarning) {
+            compatWarning.style.display = 'flex';
+            const supportedVoices = Object.entries(VOICE_COMPAT_MATRIX)
+              .filter(([_, v]) => v.locales.includes(selectedLocale))
+              .map(([_, v]) => v.name)
+              .join(', ');
+            if (warningText) {
+              warningText.innerHTML = `<strong>${voiceInfo.name}</strong> is not supported for <strong>${langLabel}</strong>. Compatible voices: <strong>${supportedVoices || 'None'}</strong>.`;
+            }
+          }
+          if (previewBtn) previewBtn.disabled = true;
+        }
+
+        return isCompatible;
+      }
+
+      function setupVoiceConfigListeners(prefix) {
+        const langSelect = document.getElementById(`${prefix}-input-primary-lang`);
+        const voiceSelect = document.getElementById(`${prefix}-input-voice-select`);
+        const previewBtn = document.getElementById(`btn-${prefix}-preview-voice`);
+        const gridId = prefix === 'camp' ? 'camp-voice-card-grid' : 'edit-camp-voice-card-grid';
+        const grid = document.getElementById(gridId);
+
+        if (langSelect) {
+          langSelect.addEventListener('change', () => {
+            updateVoiceCompatibilityUI(prefix);
+          });
+        }
+
+        if (voiceSelect) {
+          voiceSelect.addEventListener('change', () => {
+            updateVoiceCompatibilityUI(prefix);
+          });
+        }
+
+        if (grid) {
+          grid.querySelectorAll('.voice-tile').forEach(tile => {
+            tile.addEventListener('click', () => {
+              const vKey = tile.getAttribute('data-voice-key');
+              if (voiceSelect) {
+                voiceSelect.value = vKey;
+                updateVoiceCompatibilityUI(prefix);
+              }
+            });
+          });
+        }
+
+        if (previewBtn) {
+          previewBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const selectedLocale = langSelect ? langSelect.value : 'en-IN';
+            const selectedVoiceKey = voiceSelect ? voiceSelect.value : 'pooja';
+
+            if (!updateVoiceCompatibilityUI(prefix)) {
+              alert(`The selected voice is not compatible with ${LANG_NAME_MAP[selectedLocale] || selectedLocale}. Please choose a compatible voice.`);
+              return;
+            }
+
+            if (activePreviewAudio) {
+              activePreviewAudio.pause();
+              activePreviewAudio = null;
+            }
+
+            const origHtml = previewBtn.innerHTML;
+            previewBtn.disabled = true;
+            previewBtn.classList.add('playing');
+            previewBtn.innerHTML = `<span class="auth-spinner" style="width:11px;height:11px;margin-right:4px;"></span><span>Playing...</span>`;
+
+            try {
+              const res = await AdminClient.previewVoice({
+                voiceKey: selectedVoiceKey,
+                locale: selectedLocale
+              });
+
+              if (!res || !res.audio) {
+                throw new Error(res?.message || 'No audio returned by voice provider.');
+              }
+
+              const audio = new Audio(`data:audio/wav;base64,${res.audio}`);
+              activePreviewAudio = audio;
+
+              audio.onended = () => {
+                previewBtn.disabled = false;
+                previewBtn.classList.remove('playing');
+                previewBtn.innerHTML = origHtml;
+                activePreviewAudio = null;
+              };
+
+              audio.onerror = () => {
+                previewBtn.disabled = false;
+                previewBtn.classList.remove('playing');
+                previewBtn.innerHTML = origHtml;
+                activePreviewAudio = null;
+              };
+
+              await audio.play();
+            } catch (err) {
+              console.warn('[VoicePreview] Failed:', err);
+              alert(`Voice preview failed: ${err.message}`);
+              previewBtn.disabled = false;
+              previewBtn.classList.remove('playing');
+              previewBtn.innerHTML = origHtml;
+              activePreviewAudio = null;
+            }
+          });
+        }
       }
 
       function updateCreateModalLabels(service) {
@@ -3350,6 +3760,13 @@
 
         // Reset Document preview
         resetStagedDocument();
+
+        // Reset Primary Language and Voice to defaults
+        const langInput = document.getElementById('camp-input-primary-lang');
+        const voiceSelectInput = document.getElementById('camp-input-voice-select');
+        if (langInput) langInput.value = 'en-IN';
+        if (voiceSelectInput) voiceSelectInput.value = 'pooja';
+        updateVoiceCompatibilityUI('camp');
 
         // Reset Excel preview
         const excelInput = document.getElementById('camp-excel-file-input');
@@ -3624,12 +4041,27 @@
         const serviceInput = document.getElementById('camp-input-service');
         const modelInput = document.getElementById('camp-input-model');
         const voiceInput = document.getElementById('camp-input-voice');
+        const primaryLangInput = document.getElementById('camp-input-primary-lang');
+        const voiceSelectInput = document.getElementById('camp-input-voice-select');
 
         const name = (nameInput?.value || '').trim();
         const description = (descInput?.value || '').trim();
         const service = serviceInput?.value || 'recruitment';
         const primaryModel = modelInput?.value || 'claude-haiku-5-5';
         const voiceRouting = voiceInput?.value || 'auto';
+        const primaryLocale = primaryLangInput?.value || 'en-IN';
+        const voiceId = voiceSelectInput?.value || 'pooja';
+
+        // Check Voice & Language Compatibility
+        const voiceConf = VOICE_COMPAT_MATRIX[voiceId];
+        if (voiceConf && !voiceConf.locales.includes(primaryLocale)) {
+          if (alertBox) {
+            alertBox.className = 'admin-alert-banner error';
+            alertBox.textContent = `Voice "${voiceConf.name}" does not support ${LANG_NAME_MAP[primaryLocale] || primaryLocale}. Please select a compatible voice before proceeding.`;
+            alertBox.style.display = 'flex';
+          }
+          return;
+        }
 
         if (!name) {
           if (alertBox) {
@@ -3723,14 +4155,24 @@
             }
           }
 
-          // 2. Create Campaign record
+          // 2. Create Campaign record with Language & Voice configuration
           const campRes = await AdminClient.createCampaign({
             name,
             service,
             description,
+            primary_language: primaryLocale,
+            primary_locale: primaryLocale,
+            voice_id: voiceId,
+            voice_provider: 'murf',
+            voice_model: 'falcon-2.1',
             config: {
               primaryModel,
-              voiceRouting
+              voiceRouting,
+              primary_language: primaryLocale,
+              primary_locale: primaryLocale,
+              voice_id: voiceId,
+              voice_provider: 'murf',
+              voice_model: 'falcon-2.1'
             }
           });
           const campaign = campRes.campaign;
@@ -4044,6 +4486,8 @@
                   <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">
                     <span class="badge-pill ${sBadge}">${sLabel}</span>
                     <span class="badge-camp-status badge-camp-${c.status || 'DRAFT'}">${c.status || 'DRAFT'}</span>
+                    <span class="badge-pill" style="background:#F1F5F9; color:#334155; font-size:0.68rem; font-weight:600;"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline-block; vertical-align:middle; margin-right:3px;"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>${c.primary_language || c.primary_locale || 'en-IN'}</span>
+                    <span class="badge-pill" style="background:#EFF6FF; color:#1D4ED8; font-size:0.68rem; font-weight:600;"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline-block; vertical-align:middle; margin-right:3px;"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>${c.voice_id ? (c.voice_id.charAt(0).toUpperCase() + c.voice_id.slice(1)) : 'Pooja'}</span>
                   </div>
                   <h4 class="camp-card-title" title="${c.name}">${c.name}</h4>
                   <div class="camp-card-meta">
@@ -4262,6 +4706,13 @@
           document.getElementById('edit-camp-name').value = c.name;
           document.getElementById('edit-camp-desc').value = c.description || '';
 
+          // Setup Primary Language & AI Voice in Edit Modal
+          const editLangInput = document.getElementById('edit-camp-input-primary-lang');
+          const editVoiceInput = document.getElementById('edit-camp-input-voice-select');
+          if (editLangInput) editLangInput.value = c.primary_locale || c.primary_language || 'en-IN';
+          if (editVoiceInput) editVoiceInput.value = c.voice_id || 'pooja';
+          updateVoiceCompatibilityUI('edit-camp');
+
           // Setup Document Area in Edit Modal
           const docBadge = document.getElementById('edit-camp-doc-badge');
           const docName = document.getElementById('edit-camp-doc-name');
@@ -4428,14 +4879,33 @@
         const id = document.getElementById('edit-camp-id')?.value;
         const name = document.getElementById('edit-camp-name')?.value.trim();
         const description = document.getElementById('edit-camp-desc')?.value.trim();
+        const editLangInput = document.getElementById('edit-camp-input-primary-lang');
+        const editVoiceInput = document.getElementById('edit-camp-input-voice-select');
 
         if (!id || !name) {
           alert('Campaign name is required.');
           return;
         }
 
+        const primaryLocale = editLangInput?.value || 'en-IN';
+        const voiceId = editVoiceInput?.value || 'pooja';
+
+        const voiceConf = VOICE_COMPAT_MATRIX[voiceId];
+        if (voiceConf && !voiceConf.locales.includes(primaryLocale)) {
+          alert(`Voice "${voiceConf.name}" does not support ${LANG_NAME_MAP[primaryLocale] || primaryLocale}. Please select a compatible voice before saving.`);
+          return;
+        }
+
         try {
-          const updateData = { name, description };
+          const updateData = { 
+            name, 
+            description,
+            primary_language: primaryLocale,
+            primary_locale: primaryLocale,
+            voice_id: voiceId,
+            voice_provider: 'murf',
+            voice_model: 'falcon-2.1'
+          };
 
           // If recruitment fields are visible, update extracted_data
           const recFields = document.getElementById('edit-camp-recruitment-fields');
