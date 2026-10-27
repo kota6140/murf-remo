@@ -10,6 +10,7 @@ import ConversationMemory from './conversation_memory.js';
 import ScreeningEvaluator from './screening_evaluator.js';
 import AgentService, { ensureAgentSchema } from './agent_service.js';
 import PlivoService from './plivo_service.js';
+import RecordingService from './recording_service.js';
 import CampaignService from './campaign_service.js';
 import LanguageStateMachine from './language_state_machine.js';
 import QuestionTracker, { stripAlreadySpoken, isAffirmativeMurmur, isAcknowledgement, splitSentences, topicOf, questionPart } from './question_tracker.js';
@@ -2655,8 +2656,8 @@ export class CallSession {
 
             const convId = `conv_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
             await db.run(`
-                INSERT INTO conversations (id, contact_id, batch_id, campaign_id, service, phone, contact_name, status, started_at, ended_at, duration_seconds, summary, classification, created_at, owner_user_id, provider_call_id, recording_url, recording_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO conversations (id, contact_id, batch_id, campaign_id, service, phone, contact_name, status, started_at, ended_at, duration_seconds, summary, classification, created_at, owner_user_id, provider_call_id, recording_url, recording_id, recording_expires_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `, [
                 convId,
                 this.contactId || this.contact?.id || 'direct',
@@ -2674,7 +2675,9 @@ export class CallSession {
                 ownerId,
                 this.callId || null,
                 existingRecUrl,
-                existingRecId
+                existingRecId,
+                // The recording is deleted 30 days after the call ended.
+                (existingRecUrl || existingRecId) ? RecordingService.expiryFor({ ended_at: now }) : null
             ]);
 
             // Record which agent took the call and whether it was incoming or outgoing.

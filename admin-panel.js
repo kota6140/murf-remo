@@ -577,11 +577,25 @@
         sheets: [['', 'All statuses'], ['ready', 'Ready'], ['in_progress', 'In progress'], ['completed', 'Completed'], ['cancelled', 'Cancelled']]
     };
 
+    // Call recording: player, download and the "available until" notice (recordings are deleted 30 days after the call).
+    function recordingHtml(rec) {
+        if (!rec) return '';
+        let body = '<div class="muted">No recording is available for this call.</div>';
+        if (rec.available) {
+            body = `<audio controls preload="none" src="${esc(rec.audio_url)}" style="width:100%"></audio>
+                <div class="muted"><a href="${esc(rec.download_url)}" download>Download</a>${rec.expires_at ? ` · Available until ${esc(fmtDate(rec.expires_at))}` : ''}</div>`;
+        } else if (rec.status === 'expired') {
+            body = `<div class="muted">Recording expired (${esc(rec.retention_days)}-day limit)</div>`;
+        }
+        return `<div><h4>Call recording</h4>${body}</div>`;
+    }
+
     function convDetailHtml(d, backId, backLabel) {
         const c = d.conversation;
         const row = (k, v) => v ? `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>` : '';
         return `<div><button class="btn sm" id="${backId}">&larr; ${esc(backLabel)}</button></div>
             <dl class="kv">${row('Contact', c.contact_name)}${row('Phone', c.phone)}${row('Service', String(c.service || '').replace(/_/g, ' '))}${row('Status', c.status)}${row('Started', fmtDate(c.started_at))}${row('Duration', fmtDur(c.duration_seconds))}${row('Language', c.language)}${row('Sentiment', c.sentiment)}${row('Outcome', c.classification)}${row('Summary', c.summary)}${row('Contact sheet', c.batch_file)}</dl>
+            ${recordingHtml(d.recording)}
             <div><h4>Transcript</h4>${d.transcript.length ? `<div class="chat">${d.transcript.map(m => {
                 const agent = !/^(user|customer|candidate|caller|human)/i.test(m.speaker || '');
                 return `<div class="bubble ${agent ? 'agent' : 'user'}"><small>${esc(m.speaker)}</small>${esc(m.text)}</div>`;

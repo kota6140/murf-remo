@@ -189,6 +189,7 @@ app.use((err, req, res, next) => {
 });
 
 import { handleVoicebotWebsocket } from './services/voicebot_stream_service.js';
+import RecordingService from './services/recording_service.js';
 
 // Configure WebSockets
 const wss = new WebSocketServer({ noServer: true });
@@ -221,4 +222,6 @@ server.listen(PORT, () => {
     console.log(`  Agent Hari Node.js Server running on http://localhost:${PORT}`);
     console.log(`  Plivo & ElevenLabs Audio Stream Active on /voicebot`);
     console.log("===============================================");
+    // Daily deletion of recordings older than 30 days, and recovery of missed recording links.
+    RecordingService.startMaintenance();
 });

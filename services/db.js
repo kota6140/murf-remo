@@ -564,12 +564,21 @@ export function ensureRecordingSchema() {
                         await mysqlPool.query(`ALTER TABLE conversations ADD COLUMN ${col}`).catch(() => {});
                     }
                 }
-                for (const col of ['recording_url TEXT NULL', 'recording_id VARCHAR(128) NULL']) {
+                for (const col of ['recording_url TEXT NULL', 'recording_id VARCHAR(128) NULL', 'recording_expires_at VARCHAR(64) NULL']) {
                     const colName = col.split(' ')[0];
                     try {
                         await mysqlPool.query(`SELECT ${colName} FROM contacts LIMIT 1`);
                     } catch {
                         await mysqlPool.query(`ALTER TABLE contacts ADD COLUMN ${col}`).catch(() => {});
+                    }
+                }
+                // Retention: when the audio is deleted (30 days after the call ends) and when it was.
+                for (const col of ['recording_expires_at VARCHAR(64) NULL', 'recording_deleted_at VARCHAR(64) NULL']) {
+                    const colName = col.split(' ')[0];
+                    try {
+                        await mysqlPool.query(`SELECT ${colName} FROM conversations LIMIT 1`);
+                    } catch {
+                        await mysqlPool.query(`ALTER TABLE conversations ADD COLUMN ${col}`).catch(() => {});
                     }
                 }
             } else {
@@ -580,11 +589,18 @@ export function ensureRecordingSchema() {
                         try { sqliteDb.prepare(`ALTER TABLE conversations ADD COLUMN ${colName} TEXT NULL`).run(); } catch {}
                     }
                 }
-                for (const colName of ['recording_url', 'recording_id']) {
+                for (const colName of ['recording_url', 'recording_id', 'recording_expires_at']) {
                     try {
                         sqliteDb.prepare(`SELECT ${colName} FROM contacts LIMIT 1`).get();
                     } catch {
                         try { sqliteDb.prepare(`ALTER TABLE contacts ADD COLUMN ${colName} TEXT NULL`).run(); } catch {}
+                    }
+                }
+                for (const colName of ['recording_expires_at', 'recording_deleted_at']) {
+                    try {
+                        sqliteDb.prepare(`SELECT ${colName} FROM conversations LIMIT 1`).get();
+                    } catch {
+                        try { sqliteDb.prepare(`ALTER TABLE conversations ADD COLUMN ${colName} TEXT NULL`).run(); } catch {}
                     }
                 }
             }

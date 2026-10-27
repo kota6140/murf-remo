@@ -1179,6 +1179,18 @@
 
       <!-- Scrollable Inner Content Area -->
       <div class="conv-modal-scrollable-body" id="conv-modal-scroll-area">
+        <!-- Call Recording: play, download and expiry notice -->
+        <div class="conv-section-block" id="conv-section-recording" style="display: none;">
+          <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 12px 14px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;">
+              <span style="font-size: 0.78rem; font-weight: 700; text-transform: uppercase; color: #1E293B; letter-spacing: 0.04em;">Call Recording</span>
+              <a id="conv-modal-recording-download" href="#" download style="display: none; font-size: 0.78rem; font-weight: 600; color: #2563EB; text-decoration: none;">Download</a>
+            </div>
+            <audio id="conv-modal-recording-audio" controls preload="none" style="display: none; width: 100%;"></audio>
+            <div id="conv-modal-recording-note" style="font-size: 0.75rem; color: #64748B;"></div>
+          </div>
+        </div>
+
         <!-- AI Summary Block -->
         <div class="conv-section-block" id="conv-section-summary">
           <div class="conv-summary-box">
@@ -1304,7 +1316,7 @@
        8. MULTI-CAMPAIGN CREATION MODAL
        ====================================================================== -->
   <div class="modal-backdrop-layer" id="modal-campaign-create">
-    <div class="modal-dialog-card" style="max-width: 760px; width: 95%; max-height: 90vh; overflow-y: auto;">
+    <div class="modal-dialog-card" style="max-width: 1180px; width: 96%; max-height: 90vh; overflow-y: auto;">
       <button type="button" class="modal-close-x" id="modal-camp-create-close" aria-label="Close modal">×</button>
       
       <div style="margin-bottom: 20px;">
@@ -5124,6 +5136,13 @@
         return `${m}:${rem < 10 ? '0' : ''}${rem}`;
       }
 
+      // Recordings are deleted this many days after the call ends (server side: RecordingService.RETENTION_DAYS).
+      const RECORDING_RETENTION_DAYS = 30;
+      function formatRecordingDate(iso) {
+        const d = new Date(iso);
+        return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      }
+
       function getAvatarColor(name) {
         const palettes = [
           { bg: '#DCFCE7', text: '#166534' }, // Green
@@ -5276,7 +5295,17 @@
                 <button type="button" class="conv-audio-vol-btn" title="Mute/Unmute" aria-label="Toggle mute">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
                 </button>
+                <a class="conv-audio-vol-btn" href="${AdminClient.getConversationDownloadUrl(c.id)}" download title="Download recording${c.recording_expires_at ? ' (available until ' + formatRecordingDate(c.recording_expires_at) + ')' : ''}" aria-label="Download recording" style="text-decoration:none; display:inline-flex; align-items:center;">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                </a>
               </div>
+            `;
+          } else if (c.recording_status === 'expired') {
+            recordingHtml = `
+              <span class="conv-audio-unavailable" title="Recordings are deleted ${RECORDING_RETENTION_DAYS} days after the call">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                Recording expired (${RECORDING_RETENTION_DAYS}-day limit)
+              </span>
             `;
           } else if (isPending) {
             recordingHtml = `
@@ -5772,9 +5801,51 @@
       const convModal = document.getElementById('conversation-detail-modal');
       const convModalClose = document.getElementById('conv-modal-close');
 
+      // Recording block of the conversation modal: player, download button and "available until" notice.
+      let convRecordingRequest = 0;
+      function stopConversationRecording() {
+        const audioEl = document.getElementById('conv-modal-recording-audio');
+        if (audioEl) audioEl.pause();
+      }
+
+      async function loadConversationRecording(id) {
+        const section = document.getElementById('conv-section-recording');
+        const audioEl = document.getElementById('conv-modal-recording-audio');
+        const downloadEl = document.getElementById('conv-modal-recording-download');
+        const noteEl = document.getElementById('conv-modal-recording-note');
+        if (!section || !audioEl || !downloadEl || !noteEl) return;
+
+        const request = ++convRecordingRequest;
+        audioEl.pause();
+        audioEl.removeAttribute('src');
+        audioEl.style.display = 'none';
+        downloadEl.style.display = 'none';
+        section.style.display = 'block';
+        noteEl.textContent = 'Checking recording...';
+
+        try {
+          const info = await AdminClient.getConversationRecordingInfo(id);
+          if (request !== convRecordingRequest) return;
+          if (info.available) {
+            audioEl.src = info.audio_url;
+            audioEl.style.display = 'block';
+            downloadEl.href = info.download_url;
+            downloadEl.style.display = 'inline';
+            noteEl.textContent = info.expires_at ? `Available until ${formatRecordingDate(info.expires_at)}` : '';
+          } else if (info.status === 'expired') {
+            noteEl.textContent = `Recording expired (${info.retention_days || RECORDING_RETENTION_DAYS}-day limit)`;
+          } else {
+            noteEl.textContent = 'No recording is available for this call.';
+          }
+        } catch (err) {
+          if (request === convRecordingRequest) noteEl.textContent = 'Recording unavailable';
+        }
+      }
+
       async function openConversationModal(id) {
         if (!convModal) return;
         convModal.classList.add('open');
+        loadConversationRecording(id);
 
         const contactEl = document.getElementById('conv-modal-contact');
         const submetaEl = document.getElementById('conv-modal-submeta');
@@ -5905,6 +5976,7 @@
 
       if (convModalClose) {
         convModalClose.addEventListener('click', () => {
+          stopConversationRecording();
           convModal.classList.remove('open');
         });
       }

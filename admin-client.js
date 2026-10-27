@@ -384,6 +384,10 @@ const AdminClient = {
     return `/api/admin/conversations/${encodeURIComponent(id)}/audio`;
   },
 
+  getConversationDownloadUrl(id) {
+    return `/api/admin/conversations/${encodeURIComponent(id)}/audio?download=1`;
+  },
+
   async getConversationRecordingInfo(id) {
     if (!id) throw new Error('Conversation ID is required');
     return this.request(`/api/admin/conversations/${encodeURIComponent(id)}/recording-info`);

@@ -224,11 +224,70 @@ export default class PlivoService {
                 console.log(`[PlivoService] Call recording started for ${callUuid}:`, data.recording_id || data.url);
                 return { success: true, recordingId: data.recording_id, url: data.url };
             } else {
-                console.warn(`[PlivoService] Failed to start recording for ${callUuid}:`, data.error || data.message);
-                return { success: false, error: data.error || data.message };
+                const reason = data.error || data.message || `HTTP ${res.status}`;
+                console.warn(`[PlivoService] Failed to start recording for ${callUuid} (HTTP ${res.status}):`, reason);
+                return { success: false, error: reason, alreadyRecording: /already/i.test(String(reason)) };
             }
         } catch (err) {
             console.error('[PlivoService] Error starting call recording:', err.message);
+            return { success: false, error: err.message };
+        }
+    }
+
+    /**
+     * Starts the recording, trying again if Plivo refuses it. Right after the answer webhook the call
+     * may not be "in progress" at Plivo yet, so the first attempt can fail. Runs in the background.
+     */
+    static async startCallRecordingWithRetry(callUuid, options = {}) {
+        const delaysMs = options.delaysMs || [1500, 4000];
+        let result = { success: false, error: 'Recording was not attempted' };
+        let attempt = 0;
+        while (true) {
+            attempt++;
+            result = await this.startCallRecording(callUuid, options);
+            if (result.success || result.alreadyRecording) return { ...result, success: true, attempts: attempt };
+            if (!this.isConfigured() || attempt > delaysMs.length) break;
+            await new Promise(resolve => setTimeout(resolve, delaysMs[attempt - 1]));
+        }
+        console.error(`[PlivoService] Call ${callUuid} could not be recorded after ${attempt} attempt(s): ${result.error}`);
+        return { ...result, attempts: attempt };
+    }
+
+    /**
+     * All recordings Plivo holds for a call.
+     * @returns {Promise<object[]>}
+     */
+    static async fetchRecordingsByCallUuid(callUuid) {
+        if (!callUuid || !this.isConfigured()) return [];
+        try {
+            const cfg = this.getConfig();
+            const authHeader = 'Basic ' + Buffer.from(`${cfg.authId}:${cfg.authToken}`).toString('base64');
+            const url = `https://api.plivo.com/v1/Account/${cfg.authId}/Recording/?call_uuid=${encodeURIComponent(callUuid)}`;
+            const res = await fetch(url, { headers: { 'Authorization': authHeader } });
+            if (!res.ok) return [];
+            const data = await res.json().catch(() => ({}));
+            return Array.isArray(data.objects) ? data.objects : [];
+        } catch (err) {
+            console.warn(`[PlivoService] Error listing recordings for ${callUuid}:`, err.message);
+            return [];
+        }
+    }
+
+    /**
+     * Permanently deletes a recording at Plivo. A recording that is already gone counts as deleted.
+     * @returns {Promise<{success: boolean, notFound?: boolean, error?: string}>}
+     */
+    static async deleteRecording(recordingId) {
+        if (!recordingId || !this.isConfigured()) return { success: false, error: 'Plivo not configured or no recording ID' };
+        try {
+            const cfg = this.getConfig();
+            const authHeader = 'Basic ' + Buffer.from(`${cfg.authId}:${cfg.authToken}`).toString('base64');
+            const url = `https://api.plivo.com/v1/Account/${cfg.authId}/Recording/${encodeURIComponent(recordingId)}/`;
+            const res = await fetch(url, { method: 'DELETE', headers: { 'Authorization': authHeader } });
+            if (res.status === 404) return { success: true, notFound: true };
+            if (res.ok) return { success: true };
+            return { success: false, error: `HTTP ${res.status}` };
+        } catch (err) {
             return { success: false, error: err.message };
         }
     }

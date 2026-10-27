@@ -8,8 +8,6 @@
 
 import express from 'express';
 import path from 'path';
-import fs from 'fs';
-import { Readable } from 'stream';
 import multer from 'multer';
 import { requireAdmin } from '../middleware/auth.js';
 import { readUsers } from '../users_store.js';
@@ -29,6 +27,7 @@ import { DocumentService } from '../services/document_service.js';
 import { QuestionPlanner } from '../services/question_planner.js';
 import { CallQueueWorker } from '../services/call_queue_worker.js';
 import PlivoService from '../services/plivo_service.js';
+import RecordingService from '../services/recording_service.js';
 import ElevenLabsService from '../services/elevenlabs_service.js';
 import MurfService from '../services/murf_service.js';
 import AgentService from '../services/agent_service.js';
@@ -251,158 +250,20 @@ router.get('/conversations/:id', wrap(async (req, res) => {
     res.json({ success: true, conversation, ...conversation });
 }));
 
-// Stream call recording audio securely (with HTTP Range seeking support)
+// Call recordings: an admin only reaches their own calls (and unassigned ones), see RecordingService.
+// ?download=1 sends the audio as a file. A call that is not theirs looks the same as one that does not exist.
 router.get('/conversations/:id/audio', wrap(async (req, res) => {
-    const convId = req.params.id;
-    const row = await db.get(`
-        SELECT c.*, ct.provider_call_id as contact_call_id, ct.recording_url as contact_recording_url
-        FROM conversations c
-        LEFT JOIN contacts ct ON c.contact_id = ct.id
-        WHERE c.id = ?
-    `, [convId]);
-
+    const row = await RecordingService.findConversation(req.params.id, { adminId: req.user.id });
     if (!row) return fail(res, 404, 'Conversation not found.');
-
-    let recordingUrl = row.recording_url || row.contact_recording_url || '';
-    const callUuid = row.provider_call_id || row.contact_call_id || '';
-
-    // If recording URL not stored, attempt to fetch from provider
-    if (!recordingUrl && callUuid && PlivoService.isConfigured()) {
-        try {
-            const plivoRec = await PlivoService.fetchRecordingByCallUuid(callUuid);
-            if (plivoRec && (plivoRec.recording_url || plivoRec.url)) {
-                recordingUrl = plivoRec.recording_url || plivoRec.url;
-                await db.run('UPDATE conversations SET recording_url = ?, recording_id = ? WHERE id = ?', [recordingUrl, plivoRec.recording_id || '', convId]).catch(() => {});
-                await db.run('UPDATE contacts SET recording_url = ?, recording_id = ? WHERE provider_call_id = ?', [recordingUrl, plivoRec.recording_id || '', callUuid]).catch(() => {});
-            }
-        } catch (fetchErr) {
-            console.warn(`[AudioProxy] Provider lookup note for ${callUuid}:`, fetchErr.message);
-        }
-    }
-
-    if (!recordingUrl) {
-        return res.status(404).json({ success: false, error: 'Recording unavailable for this call.' });
-    }
-
-    if (recordingUrl.startsWith('http://') || recordingUrl.startsWith('https://')) {
-        let targetUrl = recordingUrl;
-        const headers = {};
-        if (req.headers.range) {
-            headers['Range'] = req.headers.range;
-        }
-
-        try {
-            // Plivo media URLs respond with a 302 Found redirect to an Amazon S3 presigned URL.
-            // Standard fetch forwarding 'Authorization: Basic ...' to S3 causes:
-            // "400 Bad Request: Only one auth mechanism allowed".
-            // Resolve Plivo redirect manually and strip Authorization header before fetching from S3.
-            if (targetUrl.includes('plivo.com')) {
-                const cfg = PlivoService.getConfig();
-                const plivoHeaders = {
-                    ...headers,
-                    'Authorization': 'Basic ' + Buffer.from(`${cfg.authId}:${cfg.authToken}`).toString('base64')
-                };
-                const redirectProbe = await fetch(targetUrl, {
-                    method: 'GET',
-                    headers: plivoHeaders,
-                    redirect: 'manual'
-                });
-                if ([301, 302, 303, 307, 308].includes(redirectProbe.status)) {
-                    const loc = redirectProbe.headers.get('location');
-                    if (loc) {
-                        targetUrl = loc;
-                    }
-                }
-            }
-
-            const audioRes = await fetch(targetUrl, { headers });
-            if (!audioRes.ok && audioRes.status !== 206) {
-                return res.status(audioRes.status).json({ success: false, error: `Upstream error fetching audio: ${audioRes.statusText}` });
-            }
-
-            res.status(audioRes.status);
-            const contentType = audioRes.headers.get('content-type') || 'audio/mpeg';
-            res.setHeader('Content-Type', contentType);
-            const acceptRanges = audioRes.headers.get('accept-ranges');
-            if (acceptRanges) res.setHeader('Accept-Ranges', acceptRanges);
-            const contentRange = audioRes.headers.get('content-range');
-            if (contentRange) res.setHeader('Content-Range', contentRange);
-            const contentLength = audioRes.headers.get('content-length');
-            if (contentLength) res.setHeader('Content-Length', contentLength);
-
-            if (audioRes.body && typeof audioRes.body.pipe === 'function') {
-                audioRes.body.pipe(res);
-            } else if (audioRes.body) {
-                Readable.fromWeb(audioRes.body).pipe(res);
-            } else {
-                res.end();
-            }
-        } catch (err) {
-            console.error(`[AudioProxy] Error streaming audio for ${convId}:`, err.message);
-            res.status(502).json({ success: false, error: 'Failed to retrieve audio stream' });
-        }
-    } else if (fs.existsSync(recordingUrl)) {
-        const stat = fs.statSync(recordingUrl);
-        const fileSize = stat.size;
-        const range = req.headers.range;
-
-        if (range) {
-            const parts = range.replace(/bytes=/, "").split("-");
-            const start = parseInt(parts[0], 10);
-            const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-            const chunksize = (end - start) + 1;
-            const file = fs.createReadStream(recordingUrl, { start, end });
-            res.writeHead(206, {
-                'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-                'Accept-Ranges': 'bytes',
-                'Content-Length': chunksize,
-                'Content-Type': 'audio/mpeg',
-            });
-            file.pipe(res);
-        } else {
-            res.writeHead(200, {
-                'Content-Length': fileSize,
-                'Content-Type': 'audio/mpeg',
-            });
-            fs.createReadStream(recordingUrl).pipe(res);
-        }
-    } else {
-        return res.status(404).json({ success: false, error: 'Recording file not found on server.' });
-    }
+    await RecordingService.serve(req, res, row, { download: req.query.download === '1' });
 }));
 
-// Check recording availability and metadata
+// Whether a recording can be played, until when, and the links to play / download it
 router.get('/conversations/:id/recording-info', wrap(async (req, res) => {
-    const convId = req.params.id;
-    const row = await db.get(`
-        SELECT c.*, ct.provider_call_id as contact_call_id, ct.recording_url as contact_recording_url
-        FROM conversations c
-        LEFT JOIN contacts ct ON c.contact_id = ct.id
-        WHERE c.id = ?
-    `, [convId]);
-
+    const row = await RecordingService.findConversation(req.params.id, { adminId: req.user.id });
     if (!row) return fail(res, 404, 'Conversation not found.');
-
-    let recordingUrl = row.recording_url || row.contact_recording_url || '';
-    const callUuid = row.provider_call_id || row.contact_call_id || '';
-
-    if (!recordingUrl && callUuid && PlivoService.isConfigured()) {
-        try {
-            const plivoRec = await PlivoService.fetchRecordingByCallUuid(callUuid);
-            if (plivoRec && (plivoRec.recording_url || plivoRec.url)) {
-                recordingUrl = plivoRec.recording_url || plivoRec.url;
-                await db.run('UPDATE conversations SET recording_url = ?, recording_id = ? WHERE id = ?', [recordingUrl, plivoRec.recording_id || '', convId]).catch(() => {});
-                await db.run('UPDATE contacts SET recording_url = ?, recording_id = ? WHERE provider_call_id = ?', [recordingUrl, plivoRec.recording_id || '', callUuid]).catch(() => {});
-            }
-        } catch {}
-    }
-
-    res.json({
-        success: true,
-        available: Boolean(recordingUrl),
-        audio_url: recordingUrl ? `/api/admin/conversations/${convId}/audio` : null,
-        duration_seconds: row.duration_seconds || 0
-    });
+    const recording = RecordingService.describe(await RecordingService.resolve(row), '/api/admin');
+    res.json({ success: true, ...recording });
 }));
 
 router.delete('/conversations/:id', wrap(async (req, res) => {
@@ -789,21 +650,27 @@ router.get('/campaigns/:id/conversations', wrap(async (req, res) => {
         } catch {}
 
         const callId = r.resolved_call_id || r.provider_call_id || r.contact_call_id || '';
-        const recUrl = r.resolved_recording_url || r.recording_url || r.contact_recording_url || '';
-        const recId = r.resolved_recording_id || r.recording_id || r.contact_recording_id || '';
-        const hasRec = Boolean(recUrl);
+        const recStatus = RecordingService.statusOf(RecordingService.normalize(r));
+        const hasRec = recStatus === 'available';
         const isRecent = r.ended_at && (Date.now() - new Date(r.ended_at).getTime() < 120000);
-        const isPending = !hasRec && (r.status === 'in-progress' || isRecent);
+        const isPending = recStatus === 'unavailable' && (r.status === 'in-progress' || isRecent);
 
         return {
             ...r,
             contact_company: company,
             contact_role: role,
             provider_call_id: callId,
-            recording_url: recUrl,
-            recording_id: recId,
+            // The raw Plivo links stay on the server; the browser only gets the checked audio route.
+            recording_url: undefined,
+            recording_id: undefined,
+            contact_recording_url: undefined,
+            contact_recording_id: undefined,
+            resolved_recording_url: undefined,
+            resolved_recording_id: undefined,
             audio_url: hasRec ? `/api/admin/conversations/${r.id}/audio` : null,
             has_recording: hasRec,
+            recording_status: recStatus,
+            recording_expires_at: recStatus === 'unavailable' ? null : RecordingService.expiryFor(r),
             recording_pending: isPending
         };
     });
@@ -980,9 +847,9 @@ export async function handlePlivoAnswer(req, res) {
     const recordCallbackUrl = `${serverUrl}/api/plivo/recording?contactId=${encodeURIComponent(contactId)}&callUuid=${encodeURIComponent(callUuid)}`;
     const xml = PlivoService.generateAnswerXml(streamWsUrl, extraHeaders);
 
-    // Also trigger Plivo REST API call recording asynchronously for maximum reliability
+    // Start the Plivo recording in the background (retried: the call may not be live at Plivo yet). Never delays the call.
     if (callUuid && PlivoService.isConfigured()) {
-        PlivoService.startCallRecording(callUuid, { callbackUrl: recordCallbackUrl }).catch(err => {
+        PlivoService.startCallRecordingWithRetry(callUuid, { callbackUrl: recordCallbackUrl }).catch(err => {
             console.warn('[Plivo Answer] startCallRecording async notice:', err.message);
         });
     }
@@ -1146,22 +1013,12 @@ export async function handlePlivoRecording(req, res) {
     const duration = parseInt(body.RecordingDuration || body.recording_duration || (body.RecordingDurationMs ? Math.round(body.RecordingDurationMs / 1000) : '0'), 10);
     const contactId = body.contactId || body.contact_id || '';
 
-    console.log(`[Plivo Recording Webhook] CallUUID: ${callUuid}, Contact: ${contactId}, ID: ${recordingId}, URL: ${recordingUrl}, Duration: ${duration}s`);
+    console.log(`[Plivo Recording Webhook] CallUUID: ${callUuid}, Contact: ${contactId}, ID: ${recordingId}, Duration: ${duration}s`);
 
-    if (recordingUrl || recordingId) {
-        try {
-            const now = utcNow();
-            if (callUuid) {
-                await db.run('UPDATE contacts SET recording_url = ?, recording_id = ?, updated_at = ? WHERE provider_call_id = ?', [recordingUrl, recordingId, now, callUuid]);
-                await db.run('UPDATE conversations SET recording_url = ?, recording_id = ? WHERE provider_call_id = ?', [recordingUrl, recordingId, callUuid]);
-            }
-            if (contactId) {
-                await db.run('UPDATE contacts SET recording_url = ?, recording_id = ?, updated_at = ? WHERE id = ?', [recordingUrl, recordingId, now, contactId]);
-                await db.run('UPDATE conversations SET recording_url = ?, recording_id = ? WHERE contact_id = ?', [recordingUrl, recordingId, contactId]);
-            }
-        } catch (e) {
-            console.error('[Plivo Recording] Error updating database:', e.message);
-        }
+    try {
+        await RecordingService.saveFromWebhook({ callUuid, contactId, recordingUrl, recordingId });
+    } catch (e) {
+        console.error('[Plivo Recording] Error updating database:', e.message);
     }
     res.status(200).send('OK');
 }

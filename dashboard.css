@@ -3230,6 +3230,66 @@ body.dashboard-body {
   box-shadow: 0 6px 18px rgba(252, 36, 21, 0.35);
 }
 
+/* Campaign popup action buttons: Start Campaign / Save Changes (primary) and Save as Draft (secondary) */
+.btn-camp-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  border-radius: 10px;
+  font-family: inherit;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-camp-action:focus-visible {
+  outline: 2px solid var(--dash-primary-blue);
+  outline-offset: 2px;
+}
+
+.btn-camp-action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-camp-primary {
+  background: #FC2415;
+  color: #FFFFFF;
+  border: 1.5px solid #FC2415;
+  box-shadow: 0 4px 14px rgba(252, 36, 21, 0.25);
+}
+
+.btn-camp-primary:hover:not(:disabled) {
+  background: #D11F11;
+  border-color: #D11F11;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(252, 36, 21, 0.35);
+}
+
+.btn-camp-secondary {
+  background: #FFFFFF;
+  color: #FC2415;
+  border: 1.5px solid #FC2415;
+}
+
+.btn-camp-secondary:hover:not(:disabled) {
+  background: #FFF1F0;
+  border-color: #D11F11;
+  color: #D11F11;
+}
+
+/* Footer of the Create Campaign popup: buttons keep their own width (Cancel must not stretch) */
+#form-create-campaign #btn-camp-cancel {
+  flex: 0 0 auto;
+  min-height: 42px;
+  border-radius: 10px;
+}
+
 .btn-refresh-campaigns {
   display: inline-flex;
   align-items: center;
@@ -3782,6 +3842,13 @@ body.dashboard-body {
   border-color: #FC2415;
   background: #FFF1F0;
   box-shadow: 0 0 0 2px rgba(252, 36, 21, 0.15);
+}
+
+/* Create Campaign popup is wide: all five workflows sit in one row (wrap again on narrow screens). */
+@media (min-width: 900px) {
+  #modal-campaign-create .service-selector-row {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
 }
 
 .service-choice-icon { font-size: 1.3rem; }

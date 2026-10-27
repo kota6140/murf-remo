@@ -3,6 +3,7 @@
  *
  *   GET  /users/:id/conversations | calls | scheduled | batches
  *   GET  /conversations/:id          DELETE /conversations/:id
+ *   GET  /conversations/:id/audio[?download=1]   GET /conversations/:id/recording-info
  *   POST /queue/:id/cancel           POST /users/:id/scheduled/cancel-all
  *   GET  /batches                    PUT /batches/:id/owner
  *   GET  /conversations-unassigned   PUT /conversations/:id/owner
@@ -14,6 +15,7 @@
 import express from 'express';
 import { readUsers } from '../users_store.js';
 import callDb, { utcNow, ensureOwnerColumns } from '../services/db.js';
+import RecordingService from '../services/recording_service.js';
 
 const router = express.Router();
 const fail = (res, code, message) => res.status(code).json({ success: false, message });
@@ -64,7 +66,23 @@ router.get('/conversations/:id', route(async (req, res) => {
     if (!conv) return fail(res, 404, 'Conversation not found.');
     const transcript = await callDb.all(
         'SELECT speaker, text, timestamp FROM transcript_messages WHERE conversation_id = ? ORDER BY id ASC', [req.params.id]);
-    res.json({ success: true, conversation: conv, transcript });
+    const recordingRow = await RecordingService.findConversation(req.params.id);
+    const recording = recordingRow ? RecordingService.describe(await RecordingService.resolve(recordingRow), '/api/owner') : null;
+    // The raw Plivo link stays on the server; the page uses the checked audio route in `recording`.
+    res.json({ success: true, conversation: { ...conv, recording_url: undefined, recording_id: undefined }, transcript, recording });
+}));
+
+// Call recordings: the owner can hear and download every call (an admin only their own, see routes/admin.js).
+router.get('/conversations/:id/audio', route(async (req, res) => {
+    const row = await RecordingService.findConversation(req.params.id);
+    if (!row) return fail(res, 404, 'Conversation not found.');
+    await RecordingService.serve(req, res, row, { download: req.query.download === '1' });
+}));
+
+router.get('/conversations/:id/recording-info', route(async (req, res) => {
+    const row = await RecordingService.findConversation(req.params.id);
+    if (!row) return fail(res, 404, 'Conversation not found.');
+    res.json({ success: true, ...RecordingService.describe(await RecordingService.resolve(row), '/api/owner') });
 }));
 
 router.delete('/conversations/:id', route(async (req, res) => {
