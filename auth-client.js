@@ -231,6 +231,29 @@ const AuthClient = {
       container.innerHTML = '';
       container.style.display = 'none';
     }
+  },
+
+  /**
+   * "Come back here after login": only same-site paths are accepted. The page is kept in sessionStorage
+   * so it survives sign up and onboarding as well as sign in.
+   */
+  isSafeNext(path) {
+    return typeof path === 'string' && /^\/(?![\/\\])/.test(path) && !/[\r\n]/.test(path);
+  },
+
+  setNext(path) {
+    if (!this.isSafeNext(path)) return;
+    try { sessionStorage.setItem('authNext', path); } catch (e) { /* storage blocked */ }
+  },
+
+  takeNext() {
+    try {
+      const path = sessionStorage.getItem('authNext');
+      sessionStorage.removeItem('authNext');
+      return this.isSafeNext(path) ? path : null;
+    } catch (e) {
+      return null;
+    }
   }
 };
 
@@ -272,6 +295,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         </a>
       `;
     }
+  }
+
+  // 1b. Remember where to send the visitor after sign in / sign up (e.g. /signin?next=%2F%23instant-call-demo)
+  if (document.getElementById('signin-form') || document.getElementById('signup-form')) {
+    const nextParam = new URLSearchParams(window.location.search).get('next');
+    if (nextParam) AuthClient.setNext(nextParam);
   }
 
   // 2. Google OAuth UI Button Handler (Placeholder Only)
@@ -399,7 +428,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         setTimeout(() => {
           if (result.user && result.user.profileCompleted) {
             const isAdmin = (result.user.role || 'user').toLowerCase() === 'admin';
-            window.location.href = isAdmin ? '/dashboard' : '/user-dashboard';
+            window.location.href = AuthClient.takeNext() || (isAdmin ? '/dashboard' : '/user-dashboard');
           } else {
             window.location.href = '/onboarding';
           }
@@ -473,7 +502,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         setTimeout(() => {
           if (result.user && result.user.profileCompleted) {
             const isAdmin = (result.user.role || 'user').toLowerCase() === 'admin';
-            window.location.href = isAdmin ? '/dashboard' : '/user-dashboard';
+            window.location.href = AuthClient.takeNext() || (isAdmin ? '/dashboard' : '/user-dashboard');
           } else {
             window.location.href = '/onboarding';
           }

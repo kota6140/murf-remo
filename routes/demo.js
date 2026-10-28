@@ -10,6 +10,7 @@ import crypto from 'crypto';
 import { sendEmail, escapeHtml } from '../services/email_service.js';
 import { addDemoRequest, readDemoRequests, writeDemoRequests } from '../demo_store.js';
 import PlivoService from '../services/plivo_service.js';
+import { authenticateJwt } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -230,7 +231,8 @@ setInterval(() => {
 
 // ---- POST /api/demo/instant ----
 // The "Get instant call" box on the landing page: triggers a one-way promotional call.
-router.post('/instant', async (req, res) => {
+// Only signed-in visitors can use it; the landing page sends everyone else to sign in first.
+router.post('/instant', authenticateJwt, async (req, res) => {
     if (clean(req.body && req.body.website, 200)) return res.status(200).json({ success: true });
 
     const digits = String(req.body?.phone ?? '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');

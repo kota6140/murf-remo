@@ -656,10 +656,34 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 2000);
   };
 
+  // Instant call needs a signed-in visitor: send everyone else to sign in, then back to this section.
+  const INSTANT_CALL_RETURN = '/#instant-call-demo';
+  let instantLoggedIn = null; // null until /api/auth/me answers
+  const sendToLoginForInstantCall = () => {
+    showInstantFeedback('Please log in first to get your instant call. Taking you to sign in…', 'info');
+    setTimeout(() => {
+      window.location.href = `/signin?next=${encodeURIComponent(INSTANT_CALL_RETURN)}`;
+    }, 900);
+  };
+
   if (instantCallForm && instantMobileInput) {
+    fetch('/api/auth/me', { credentials: 'include', headers: { Accept: 'application/json' } })
+      .then((r) => { instantLoggedIn = r.ok; })
+      .catch(() => { /* unknown: the server still checks */ });
+
+    // The click comes before the browser's own form validation, so a logged-out visitor is sent to sign in
+    // even with an empty number.
+    instantTriggerBtn.addEventListener('click', (e) => {
+      if (instantLoggedIn === false) {
+        e.preventDefault();
+        sendToLoginForInstantCall();
+      }
+    });
+
     instantCallForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (instantTriggerBtn.disabled) return;
+      if (instantLoggedIn === false) return sendToLoginForInstantCall();
 
       const rawNum = instantMobileInput.value.trim();
       const cleanDigits = rawNum.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
@@ -689,6 +713,14 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         const data = await response.json().catch(() => ({}));
+
+        if (response.status === 401) {
+          // Session missing or expired
+          instantLoggedIn = false;
+          instantTriggerBtn.innerHTML = origBtnContent;
+          instantTriggerBtn.disabled = false;
+          return sendToLoginForInstantCall();
+        }
 
         if (response.ok && data.success) {
           showInstantFeedback(data.message || 'Call initiated! Your phone will ring in a few seconds.', 'success');

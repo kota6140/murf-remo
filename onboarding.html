@@ -245,7 +245,7 @@
           const freshUser = await AuthClient.getCurrentUser();
           setTimeout(() => {
             const isAdmin = freshUser && (freshUser.role || 'user').toLowerCase() === 'admin';
-            window.location.href = isAdmin ? '/dashboard' : '/user-dashboard';
+            window.location.href = AuthClient.takeNext() || (isAdmin ? '/dashboard' : '/user-dashboard');
           }, 600);
         } catch (err) {
           AuthClient.showAlert('onboarding-alert-container', err.message);
