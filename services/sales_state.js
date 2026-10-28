@@ -1,10 +1,10 @@
 /**
  * services/sales_state.js
  *
- * Code-side deterministic state tracking for Remo AI Sales calling agent (Scorelabs Inc.).
+ * Code-side deterministic state tracking for Remo AI Sales calling agent.
  * Enforces the 7-step natural conversation discovery flow:
  *   1. GREETING: Confirm customer identity ("Hi, am I speaking with [Name]?")
- *   2. PERMISSION_CHECK: Permission to speak ("Hi [Name], this is Remo calling from Scorelabs Inc. Is this a good time to talk for a minute?")
+ *   2. PERMISSION_CHECK: Permission to speak ("Hi [Name], this is Remo calling from [company, only if the campaign names one]. Is this a good time to talk for a minute?")
  *   3. SERVICE_DISCOVERY: Discover service needed ("I just wanted to check if there's any service or project you're currently looking for help with.")
  *   4. PROJECT_DESCRIPTION: One brief follow-up ("Sure, could you tell me a little more about what you're looking for?") - skipped if already answered
  *   5. TECH_PREFERENCE: Optional tech stack question ("Do you have any specific technical preferences, or would you like our team to recommend the best approach?")
@@ -390,7 +390,7 @@ export function buildPromptBlock(collected = {}, tracker = { field: null, count:
     if (has(collected, 'followup_preference')) got.push(`followup_preference: "${collected.followup_preference}"`);
 
     const lines = [
-        '### SCORELABS INC. SALES STATE & ANTI-REPETITION STATUS:',
+        '### SALES STATE & ANTI-REPETITION STATUS:',
         `- Information Already Collected (STRICTLY DO NOT ASK AGAIN): ${got.length ? got.join(', ') : 'None yet.'}`
     ];
 

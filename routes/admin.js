@@ -342,7 +342,7 @@ router.post('/test-call', async (req, res) => {
                 job_role: 'Senior Software Engineer',
                 experience: '4 years',
                 skills: 'Node.js, React, Voice AI',
-                company: 'Score Labs',
+                company: '',
                 notes: 'Live test call initiated from Admin Dashboard'
             };
 

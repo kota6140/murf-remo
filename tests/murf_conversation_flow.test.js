@@ -62,7 +62,9 @@ console.log('================================================================\n'
 runSync('Scenario 1: Call connected -> immediate short natural greeting', () => {
     // A. Greeting without contact name
     const greetingAnon = GeminiService.getOpeningGreeting('sales', {});
-    assert.strictEqual(greetingAnon, 'Hi, this is Remo calling from Scorelabs. Is now a good time to talk?');
+    assert.strictEqual(greetingAnon, 'Hi, this is Remo calling. Is now a good time to talk?', 'no company is built in');
+    assert.strictEqual(GeminiService.getOpeningGreeting('sales', { campaignContext: { company_name: 'Axis Bank' } }),
+        'Hi, this is Remo calling from Axis Bank. Is now a good time to talk?', 'the campaign document\'s company is named');
     assert.ok(!greetingAnon.toLowerCase().includes('custom software development'), 'Must not dump services catalogue in opening');
     assert.ok(!greetingAnon.toLowerCase().includes('qa and software testing'), 'Must not list testing');
     assert.ok(!greetingAnon.toLowerCase().includes('digital marketing services'), 'Must not list digital marketing');
@@ -79,7 +81,7 @@ runSync('Scenario 1: Call connected -> immediate short natural greeting', () => 
         contact: { name: 'Priya Sharma' }
     });
     assert.strictEqual(greetingConfirm.matched, true);
-    assert.ok(greetingConfirm.spoken_response.includes('Hi Priya Sharma, this is Remo calling from Scorelabs. Is now a good time to talk?'));
+    assert.ok(greetingConfirm.spoken_response.includes('Hi Priya Sharma, this is Remo calling. Is now a good time to talk?'));
 });
 
 // ---------------------------------------------------------------------

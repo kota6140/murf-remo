@@ -284,6 +284,29 @@ export default class AgentService {
             .trim();
     }
 
+    /**
+     * Opening for an agent that has no greeting of its own: it names only the agent, never a company.
+     */
+    static neutralOpening(agentName, { name = '', lang = 'en', inbound = false } = {}) {
+        const agent = String(agentName || '').trim() || 'Remo';
+        const who = String(name || '').trim();
+        const l = String(lang || 'en').toLowerCase();
+        if (inbound) {
+            if (l === 'te') return `కాల్ చేసినందుకు ధన్యవాదాలు, నేను ${agent} మాట్లాడుతున్నాను. నేను మీకు ఎలా సహాయపడగలను?`;
+            if (l === 'hi') return `कॉल करने के लिए धन्यवाद, मैं ${agent} बोल रहा हूँ। मैं आपकी कैसे सहायता कर सकता हूँ?`;
+            return `Thank you for calling, this is ${agent}. How may I help you today?`;
+        }
+        if (l === 'te') {
+            return `${who ? `నమస్కారం, నేను ${who} గారితో మాట్లాడుతున్నానా? ` : 'నమస్కారం, '}నేను ${agent} మాట్లాడుతున్నాను. ఇప్పుడు మాట్లాడటానికి మంచి సమయమేనా?`;
+        }
+        if (l === 'hi') {
+            return `${who ? `नमस्ते, क्या मैं ${who} से बात कर रहा हूँ? ` : 'नमस्ते, '}मैं ${agent} बोल रहा हूँ। क्या अभी बात करने का सही समय है?`;
+        }
+        return who
+            ? `Hello, am I speaking with ${who}? This is ${agent}. Is now a good time to talk?`
+            : `Hi, this is ${agent}. Is now a good time to talk?`;
+    }
+
     /** What an admin may see about their agents (no other admin's data). */
     static publicView(a) {
         return {

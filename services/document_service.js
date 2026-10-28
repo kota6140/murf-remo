@@ -191,7 +191,7 @@ Rules:
 Return ONLY a valid JSON object matching this schema:
 {
   "job_title": "Senior SAP FICO Consultant",
-  "company_name": "Scorelabs Inc.",
+  "company_name": "<company named in the document, or an empty string if it names none>",
   "required_skills": ["SAP FICO", "S/4HANA", "General Ledger", "Asset Accounting"],
   "preferred_skills": ["ABAP debugging", "BAPI", "Treasury"],
   "min_experience_years": 5,
@@ -251,9 +251,9 @@ Rules:
 Return ONLY a valid JSON object matching this schema:
 {
   "product_name": "IT & Software Solutions",
-  "company_name": "Scorelabs Inc.",
+  "company_name": "<company named in the document, or an empty string if it names none>",
   "target_audience": "Businesses seeking specialized software or IT solutions",
-  "opening_greeting": "Hi, this is Remo calling from Scorelabs. Is now a good time to talk?",
+  "opening_greeting": "Hi, this is Remo calling from <company>. Is now a good time to talk? (leave out \\"from <company>\\" if the document names no company)",
   "value_propositions": [
     "Software tailored to business workflows and requirements"
   ],
@@ -458,7 +458,7 @@ ${text.slice(0, 10000)}
 
         return {
             job_title: jobTitle,
-            company_name: "Scorelabs Inc.",
+            company_name: "",
             required_skills: ["Core technical competency in required stack"],
             preferred_skills: ["Relevant industry experience"],
             min_experience_years: expMatch ? parseInt(expMatch[1], 10) : 3,
@@ -491,14 +491,14 @@ ${text.slice(0, 10000)}
         }
 
         const prodName = prodMatch ? prodMatch[1].trim() : (cleanName || "IT & Software Solutions");
-        const compName = compMatch ? compMatch[1].trim() : "Scorelabs Inc.";
+        const compName = compMatch ? compMatch[1].trim() : "";
         const cta = outcomeMatch ? outcomeMatch[1].trim() : "Schedule a brief exploratory discovery session with our technical team";
 
         return {
             product_name: prodName,
             company_name: compName,
             target_audience: "Businesses seeking specialized solutions",
-            opening_greeting: `Hi, this is Remo calling from ${compName.replace(/\s+Inc\.?$/i, '')}. Is now a good time to talk?`,
+            opening_greeting: `Hi, this is Remo calling${compName ? ` from ${compName.replace(/\s+Inc\.?$/i, '')}` : ''}. Is now a good time to talk?`,
             value_propositions: ["Custom solutions tailored to operational requirements"],
             key_features: extractedServices.length > 0 ? extractedServices : ["Custom Software Development", "Website & Mobile App Development", "ERP & CRM Solutions"],
             pricing_summary: pricingMatch ? pricingMatch[1].trim() : "Custom quote based on scope and timeline",
@@ -518,7 +518,7 @@ ${text.slice(0, 10000)}
         const hoursMatch = text.match(/(?:Working Hours|Opening Hours|Hours|Timings?)\s*[:\-]\s*([^\n\r]+)/i);
         const locMatch = text.match(/(?:Location|Address)\s*[:\-]\s*([^\n\r]+)/i);
         const servMatch = text.match(/(?:Services|Treatments|Offerings)\s*[:\-]\s*([^\n\r]+)/i);
-        const compName = compMatch ? compMatch[1].trim() : (cleanName || 'Score Labs');
+        const compName = compMatch ? compMatch[1].trim() : (cleanName || '');
 
         const base = {
             company_name: compName,
@@ -534,13 +534,13 @@ ${text.slice(0, 10000)}
             return {
                 ...base,
                 booking_rules: '',
-                opening_greeting: `Hello, this is Remo calling from ${compName} to help you book your appointment. Is now a good time to talk?`
+                opening_greeting: `Hello, this is Remo calling${compName ? ` from ${compName}` : ''} to help you book your appointment. Is now a good time to talk?`
             };
         }
         return {
             ...base,
             message_policy: 'Take the caller name, number and reason, and say the team will call back.',
-            opening_greeting: `Hello, this is Remo from the ${compName} front desk. Is now a good time to talk?`
+            opening_greeting: `Hello, this is Remo from the ${compName ? `${compName} ` : ''}front desk. Is now a good time to talk?`
         };
     }
 
@@ -561,12 +561,12 @@ ${text.slice(0, 10000)}
         }
 
         const prodName = prodMatch ? prodMatch[1].trim() : (cleanName || "Customer Support");
-        const compName = compMatch ? compMatch[1].trim() : "Scorelabs Inc.";
+        const compName = compMatch ? compMatch[1].trim() : "";
 
         return {
             product_name: prodName,
             company_name: compName,
-            opening_greeting: `Hello, this is Remo from ${compName} Support regarding ${prodName}. How can I assist you today?`,
+            opening_greeting: `Hello, this is Remo from ${compName ? `${compName} ` : ''}Support regarding ${prodName}. How can I assist you today?`,
             supported_topics: ["General Inquiries", "Service Diagnostics", "Account Access"],
             troubleshooting_steps: steps.length ? steps : ["Step 1: Verify power & network connectivity", "Step 2: Restart application", "Step 3: Clear cache"],
             approved_faqs: [

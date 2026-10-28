@@ -548,7 +548,7 @@ export default class ExcelService {
             } else if (cleanService === 'sales') {
                 rowData.push(
                     extracted.customer_interest || extracted.interest_level || r.classification || '',
-                    extracted.product_discussed || 'Scorelabs IT & Software Solutions',
+                    extracted.product_discussed || '',
                     extracted.objections || 'None noted',
                     extracted.next_action || (r.call_status === 'COMPLETED' ? 'Schedule discovery demo' : 'Follow up'),
                     r.call_outcome || r.classification || '',

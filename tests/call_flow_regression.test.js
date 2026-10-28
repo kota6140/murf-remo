@@ -264,7 +264,8 @@ await test('1. greeting, then identity, then availability: each spoken once, in 
     assert.strictEqual(s.currentStage, 'GREETING');
     await callerSays(s, 'Yes');
     await playbackDone(s);
-    assert.strictEqual(ttsLog[1], 'Hi, this is Remo, an AI calling assistant from ScoreLabs Inc. Is this a good time to speak for a minute?');
+    assert.ok(ttsLog[1].startsWith('Hi, this is Remo') && ttsLog[1].endsWith('Is now a good time to speak for a minute?'), `unexpected introduction: ${ttsLog[1]}`);
+    assert.ok(!/score ?labs/i.test(ttsLog[1]), 'no built-in company is named');
     assert.strictEqual(s.currentStage, 'AVAILABILITY');
     await callerSays(s, 'Yes');
     await playbackDone(s);
@@ -280,7 +281,7 @@ await test('1b. with no verified name Remo introduces itself directly and "yes" 
     const s = makeSession('recruitment', { callerName: '' });
     await s.deliverOpeningGreeting();
     await playbackDone(s);
-    assert.ok(ttsLog[0].startsWith('Hi, this is Remo, an AI calling assistant from ScoreLabs Inc.'));
+    assert.ok(ttsLog[0].startsWith('Hi, this is Remo') && !/score ?labs/i.test(ttsLog[0]), `unexpected introduction: ${ttsLog[0]}`);
     assert.strictEqual(s.currentStage, 'AVAILABILITY');
     await callerSays(s, 'Yeah sure');
     await playbackDone(s);

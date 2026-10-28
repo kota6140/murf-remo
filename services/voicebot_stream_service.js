@@ -399,7 +399,7 @@ export class CallSession {
                 : (this.service === 'support' ? 'Technical Support'
                     : (this.service === 'appointment' ? 'your appointment'
                         : (this.service === 'receptionist' ? 'your enquiry' : 'the open position')))),
-            company: this.companyName || (this.service === 'sales' ? 'Scorelabs Inc.' : 'Score Labs'),
+            company: this.companyName || '',
             preferred_language: 'en'
         };
     }
@@ -982,7 +982,19 @@ export class CallSession {
                 agent: this.agent.name
             })
             : '';
-        const greeting = agentGreeting || GeminiService.getOpeningGreeting(this.service, {
+        // An agent with no greeting of its own opens with its own name only. A named sales contact is only asked
+        // for their name, which names no company, and a campaign document that names its company still wins.
+        const namedSalesContact = this.service === 'sales' && this.hasRealCallerName();
+        const neutralOpening = !agentGreeting && this.agent
+            && this.service !== 'recruitment' && !namedSalesContact
+            && !(this.campaignContext && this.campaignContext.company_name)
+            ? AgentService.neutralOpening(this.agent.name, {
+                name: this.hasRealCallerName() ? this.contact.name : '',
+                lang: this.detectedLanguage,
+                inbound: this.direction === 'inbound'
+            })
+            : '';
+        const greeting = agentGreeting || neutralOpening || GeminiService.getOpeningGreeting(this.service, {
             ...this.contact,
             campaignContext: this.campaignContext
         });
@@ -2081,6 +2093,7 @@ export class CallSession {
             campaignContext: this.campaignContext,
             memory: this.memory,
             questions: this.questions,
+            agentInstructions: this.agent ? this.agent.instructions : '',
             turnKind
         };
 
@@ -2909,7 +2922,7 @@ export async function precacheStandardGreetings() {
     const prewarmPhrases = [
         GeminiService.getOpeningGreeting('sales', {}),
         GeminiService.getOpeningGreeting('recruitment', { job_role: 'the open position' }),
-        "Hi, this is Remo calling from Scorelabs. Is now a good time to talk?",
+        "Hi, this is Remo calling. Is now a good time to talk?",
         "Great, thanks! I just wanted to ask — are you currently looking for any IT or digital marketing services?",
         "Sure! What kind of service are you looking for?",
         "We help with website and software development, mobile apps, and digital marketing. Which of these would be most useful to you?",

@@ -53,7 +53,7 @@ async function main() {
         assert.strictEqual(greeting, 'Hello, am I speaking with Anshu?');
 
         const greetingAnon = GeminiService.getOpeningGreeting('sales', {});
-        assert.strictEqual(greetingAnon, 'Hi, this is Remo calling from Scorelabs. Is now a good time to talk?');
+        assert.strictEqual(greetingAnon, 'Hi, this is Remo calling. Is now a good time to talk?');
     });
 
     // ---------------------------------------------------------------------

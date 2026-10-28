@@ -86,7 +86,7 @@ Return ONLY a valid JSON array matching this format:
   {
     "id": "q_candidate_questions",
     "stage": "CANDIDATE_QUESTIONS",
-    "text": "Before we wrap up, do you have any questions for me about the role or Scorelabs?",
+    "text": "Before we wrap up, do you have any questions for me about the role or the company?",
     "field_to_collect": "candidate_inquiry",
     "mandatory": false
   }
@@ -155,24 +155,24 @@ Return ONLY a valid JSON array matching this format:
      * Generates a tailored outbound sales qualification question plan grounded in document knowledge.
      */
     static generateSalesPlan(salesKnowledge = {}) {
-        const prod = salesKnowledge.product_name || 'Scorelabs IT & Software Development';
-        const isScorelabs = !salesKnowledge.product_name || salesKnowledge.product_name.includes('Scorelabs');
-        const cta = salesKnowledge.call_to_action || (isScorelabs ? 'schedule a brief 15-minute technical discovery session' : 'schedule a quick 15-minute walkthrough');
+        const prod = salesKnowledge.product_name || 'our IT & software development services';
+        const isDefaultPlan = !salesKnowledge.product_name; // no product given: the built-in IT / software plan
+        const cta = salesKnowledge.call_to_action || (isDefaultPlan ? 'schedule a brief 15-minute technical discovery session' : 'schedule a quick 15-minute walkthrough');
         const features = Array.isArray(salesKnowledge.key_features) && salesKnowledge.key_features.length ? salesKnowledge.key_features.slice(0, 2).join(' or ') : '';
 
-        const introText = isScorelabs
+        const introText = isDefaultPlan
             ? "Do you have a quick moment to speak about your current software or engineering initiatives?"
             : `Do you have a quick moment to speak about your initiatives regarding ${prod}?`;
 
-        const discoveryText = isScorelabs
+        const discoveryText = isDefaultPlan
             ? "Are you currently looking to build new custom software, modernize existing systems, or scale up your engineering team?"
             : `Are you currently exploring solutions for ${prod}${features ? `, such as ${features}` : ''}?`;
 
-        const ctaText = isScorelabs
+        const ctaText = isDefaultPlan
             ? `Would it be helpful to ${cta} with our senior solutions architect this week?`
             : `Would it be helpful to ${cta} with our team this week?`;
 
-        const questionsText = isScorelabs
+        const questionsText = isDefaultPlan
             ? "Do you have any specific technical questions about our delivery model or past case studies?"
             : `Do you have any specific questions about ${prod} or our implementation timeline?`;
 
@@ -219,15 +219,15 @@ Return ONLY a valid JSON array matching this format:
      * Generates a tailored customer support diagnostic question plan grounded in document knowledge.
      */
     static generateSupportPlan(supportKnowledge = {}) {
-        const prod = supportKnowledge.product_name || 'Scorelabs Support';
-        const isScorelabs = !supportKnowledge.product_name || supportKnowledge.product_name.includes('Scorelabs') || supportKnowledge.product_name.includes('TakeRemo');
+        const prod = supportKnowledge.product_name || 'customer support';
+        const isDefaultPlan = !supportKnowledge.product_name || supportKnowledge.product_name.includes('TakeRemo'); // no product given: the built-in generic plan
         const diagStep = Array.isArray(supportKnowledge.troubleshooting_steps) && supportKnowledge.troubleshooting_steps.length ? supportKnowledge.troubleshooting_steps[0] : null;
 
         return [
             {
                 id: "q_support_greeting",
                 stage: "ISSUE_IDENTIFICATION",
-                text: isScorelabs 
+                text: isDefaultPlan 
                     ? "Could you describe the issue or error you are currently encountering?"
                     : `Could you describe the issue you are experiencing with ${prod}?`,
                 field_to_collect: "issue_description",

@@ -10,7 +10,7 @@ import { isYesNoQuestion, topicOf, questionPart } from './question_tracker.js';
  * Evaluates short caller utterances ("yes", "no", "okay", "repeat that", "can you hear me",
  * "speak in Hindi", objection scripts, etc.) in context of the active service:
  * - Recruitment (candidate screening for job roles)
- * - Sales / Business Development (Scorelabs Inc. IT solutions & 15-minute meeting booking)
+ * - Sales / Business Development (IT solutions & 15-minute meeting booking)
  * - Customer Support (issue diagnosis & technical assistance)
  */
 
@@ -57,7 +57,8 @@ const DONT_KNOW_TERMS = new Set([
 export default class IntentService {
     static getSalesCompany(context = {}) {
         const cc = context.campaignContext || (context.contact && context.contact.campaignContext) || {};
-        return cc.company_name || (context.contact && context.contact.company) || 'Scorelabs';
+        // No company is built in: '' means the scripts name none.
+        return cc.company_name || (context.contact && context.contact.company) || '';
     }
 
     static getSalesOfferings(context = {}) {
@@ -68,19 +69,56 @@ export default class IntentService {
         if (Array.isArray(cc.value_propositions) && cc.value_propositions.length > 0) {
             return cc.value_propositions.slice(0, 2).join(' and ');
         }
-        if (cc.product_name && !cc.product_name.includes('Scorelabs')) {
+        if (cc.product_name) {
             return cc.product_name;
         }
         return "web development, custom software, and digital solutions";
     }
 
     /**
+     * Fast-path replies that say nothing about the business (opt-outs, wrong number, language, repeat,
+     * callbacks, plain thanks). They stay even when an agent has its own instructions.
+     */
+    static AGENT_SAFE_REASONS = new Set([
+        'do_not_call', 'do_not_call_opt_out', 'wrong_contact', 'caller_busy', 'not_interested',
+        'language_switch_hindi', 'language_switch_telugu', 'language_switch_english',
+        'audibility_check', 'repeat_request',
+        'sales_callback_time_noted', 'sales_busy_callback', 'sales_wrong_person', 'sales_availability_no',
+        'sales_permission_no', 'sales_interest_no', 'sales_callback_no', 'sales_generic_no',
+        'appointment_availability_yes', 'appointment_availability_no', 'support_yes'
+    ]);
+
+    /** Recruitment screening stays on its question plan; only replies that name the company or topics go to the AI. */
+    static AGENT_RECRUITMENT_BLOCKED_REASONS = new Set([
+        'identity_inquiry', 'recruitment_identity_inquiry', 'recruitment_purpose_inquiry', 'dont_know_followup'
+    ]);
+
+    /**
+     * An agent with its own instructions decides what is said about the business. Fixed replies that
+     * carry the built-in company, services or pitch are skipped for it, so the AI answers from those
+     * instructions instead.
+     */
+    static speaksForAgent(result, context = {}) {
+        if (!result || !result.matched || !String(context.agentInstructions || '').trim()) return false;
+        const reason = String(result.reason || '');
+        if ((context.service || 'recruitment').toLowerCase() === 'recruitment') {
+            return this.AGENT_RECRUITMENT_BLOCKED_REASONS.has(reason);
+        }
+        return !this.AGENT_SAFE_REASONS.has(reason) && !reason.startsWith('sales_meeting_');
+    }
+
+    /**
      * Determines if a caller's utterance can be handled by fast-path deterministic logic.
      * @param {string} text - Caller speech transcript
-     * @param {object} context - Current conversation context
+     * @param {object} context - Current conversation context (agentInstructions: the agent's own script, if any)
      * @returns {{ matched: boolean, spoken_response?: string, detected_language?: string, extracted_fields?: object, classification?: string, should_end_call?: boolean, next_stage?: string, reason?: string }}
      */
     static matchIntent(text, context = {}) {
+        const result = this.matchBuiltInIntent(text, context);
+        return this.speaksForAgent(result, context) ? { matched: false } : result;
+    }
+
+    static matchBuiltInIntent(text, context = {}) {
         if (!text || typeof text !== 'string') {
             return { matched: false };
         }
@@ -203,9 +241,9 @@ export default class IntentService {
             let idResponse;
             if (service === 'recruitment') {
                 idResponse = this.localize(
-                    `This is Remo calling from ${comp} regarding the ${role} position. Is this a good time to speak?`,
-                    `मैं ${comp} से ${role} पद के संदर्भ में रेमो बात कर रहा हूँ। क्या बात करने का यह सही समय है?`,
-                    `నేను ${comp} నుండి ${role} ఉద్యోగం గురించి రెమో మాట్లాడుతున్నాను. మాట్లాడటానికి ఇది మంచి సమయమేనా?`,
+                    `This is Remo calling${GreetingScript.fromCompany(comp, 'en')} regarding the ${role} position. Is this a good time to speak?`,
+                    `मैं${GreetingScript.fromCompany(comp, 'hi')} ${role} पद के संदर्भ में रेमो बात कर रहा हूँ। क्या बात करने का यह सही समय है?`,
+                    `నేను${GreetingScript.fromCompany(comp, 'te')} ${role} ఉద్యోగం గురించి రెమో మాట్లాడుతున్నాను. మాట్లాడటానికి ఇది మంచి సమయమేనా?`,
                     currentLang
                 );
             } else if (service === 'support') {
@@ -217,9 +255,9 @@ export default class IntentService {
                 );
             } else {
                 idResponse = this.localize(
-                    `This is Remo calling from ${comp}. Is this a good time to talk for a minute?`,
-                    `मैं ${comp} से रेमो बात कर रहा हूँ। क्या आपके पास एक मिनट बात करने का समय है?`,
-                    `నేను ${comp} నుండి రెమో మాట్లాడుతున్నాను. మాట్లాడటానికి ఒక నిమిషం సమయం ఉందా?`,
+                    `This is Remo calling${GreetingScript.fromCompany(comp, 'en')}. Is this a good time to talk for a minute?`,
+                    `मैं${GreetingScript.fromCompany(comp, 'hi')} रेमो बात कर रहा हूँ। क्या आपके पास एक मिनट बात करने का समय है?`,
+                    `నేను${GreetingScript.fromCompany(comp, 'te')} రెమో మాట్లాడుతున్నాను. మాట్లాడటానికి ఒక నిమిషం సమయం ఉందా?`,
                     currentLang
                 );
             }
@@ -535,7 +573,7 @@ export default class IntentService {
             if (opening && /\b(who is this|who is calling|who are you|whos this|who is speaking|which company|what company|where are you calling from|kaun bol raha)\b/.test(clean)) {
                 return {
                     matched: true,
-                    spoken_response: GreetingScript.whoIsCalling(currentLang),
+                    spoken_response: GreetingScript.whoIsCalling(currentLang, this.getSalesCompany(context)),
                     detected_language: currentLang,
                     next_stage: 'AVAILABILITY',
                     should_end_call: false,
@@ -544,14 +582,14 @@ export default class IntentService {
             }
             if (opening && (/\b(what (?:is|was|s) (?:this|the) (?:call )?(?:all )?(?:about|regarding|for)|why (?:are you|did you|you) (?:calling|call)|(?:what is|whats) (?:the )?purpose of (?:this |the )?call|what is this for)\b|kis (?:liye|baare|bare) mein|deni gurinchi|denikosam|enduku call|endukani call/i.test(clean))) {
                 const cc = context.campaignContext || (context.contact && context.contact.campaignContext) || {};
-                const compName = cc.company_name || (context.contact && context.contact.company) || 'ScoreLabs';
+                const compName = cc.company_name || (context.contact && context.contact.company) || '';
                 const targetRole = cc.job_title || role || 'the open position';
                 return {
                     matched: true,
                     spoken_response: this.localize(
-                        `I'm calling from ${compName} regarding your job application for the ${targetRole} role. Is this a good time to speak for a minute?`,
-                        `मैं ${compName} से ${targetRole} पद के लिए आपके जॉब आवेदन के संबंध में कॉल कर रहा हूँ। क्या अभी एक मिनट बात करने का समय है?`,
-                        `నేను ${compName} నుండి ${targetRole} ఉద్యోగ దరఖాస్తు సంబంధించి కాల్ చేస్తున్నాను. మాట్లాడటానికి ఒక నిమిషం సమయం ఉందా?`,
+                        `I'm calling${GreetingScript.fromCompany(compName, 'en')} regarding your job application for the ${targetRole} role. Is this a good time to speak for a minute?`,
+                        `मैं${GreetingScript.fromCompany(compName, 'hi')} ${targetRole} पद के लिए आपके जॉब आवेदन के संबंध में कॉल कर रहा हूँ। क्या अभी एक मिनट बात करने का समय है?`,
+                        `నేను${GreetingScript.fromCompany(compName, 'te')} ${targetRole} ఉద్యోగ దరఖాస్తు సంబంధించి కాల్ చేస్తున్నాను. మాట్లాడటానికి ఒక నిమిషం సమయం ఉందా?`,
                         currentLang
                     ),
                     detected_language: currentLang,
@@ -598,9 +636,9 @@ export default class IntentService {
                 return {
                     matched: true,
                     spoken_response: service === 'recruitment'
-                        ? `ज़रूर, मैं हिंदी में बातचीत जारी रखते हैं। मैं स्कोर लैब्स से ${role} पद के लिए कॉल कर रहा हूँ। क्या आपके पास बात करने के लिए दो मिनट का समय है?`
+                        ? `ज़रूर, मैं हिंदी में बातचीत जारी रखते हैं। मैं ${role} पद के लिए कॉल कर रहा हूँ। क्या आपके पास बात करने के लिए दो मिनट का समय है?`
                         : (service === 'sales'
-                            ? `ज़रूर, हम हिंदी में बातचीत जारी रखते हैं। मैं स्कोरलैब्स इंक से कॉल कर रहा हूँ। क्या आपकी कंपनी किसी नए सॉफ्टवेयर प्रोजेक्ट या आईटी समाधान पर विचार कर रही है?`
+                            ? `ज़रूर, हम हिंदी में बातचीत जारी रखते हैं। क्या आपकी कंपनी किसी नए सॉफ्टवेयर प्रोजेक्ट या आईटी समाधान पर विचार कर रही है?`
                             : (service === 'appointment'
                                 ? `ज़रूर, हम हिंदी में बात करते हैं। आपकी अपॉइंटमेंट के लिए कौन सा दिन और समय सुविधाजनक रहेगा?`
                                 : (service === 'receptionist'
@@ -617,9 +655,9 @@ export default class IntentService {
                 return {
                     matched: true,
                     spoken_response: service === 'recruitment'
-                        ? `ఖచ్చితంగా, మనం తెలుగులోనే మాట్లాడగలను. నేను స్కోర్ ల్యాబ్స్ నుండి ${role} రోల్ గురించి మాట్లాడుతున్నాను. మాట్లాడటానికి రెండు నిమిషాలు సమయం ఉందా?`
+                        ? `ఖచ్చితంగా, మనం తెలుగులోనే మాట్లాడగలను. నేను ${role} రోల్ గురించి మాట్లాడుతున్నాను. మాట్లాడటానికి రెండు నిమిషాలు సమయం ఉందా?`
                         : (service === 'sales'
-                            ? `ఖచ్చితంగా, మనం తెలుగులోనే మాట్లాడగలను. నేను స్కోర్‌ల్యాబ్స్ ఇంక్ నుండి మాట్లాడుతున్నాను. మీ సంస్థ ఏదైనా కొత్త సాఫ్ట్‌వేర్ ప్రాజెక్ట్ లేదా ఐటీ భాగస్వామి కోసం చూస్తోందా?`
+                            ? `ఖచ్చితంగా, మనం తెలుగులోనే మాట్లాడగలను. మీ సంస్థ ఏదైనా కొత్త సాఫ్ట్‌వేర్ ప్రాజెక్ట్ లేదా ఐటీ భాగస్వామి కోసం చూస్తోందా?`
                             : (service === 'appointment'
                                 ? `ఖచ్చితంగా, మనం తెలుగులోనే మాట్లాడదాం. మీ అపాయింట్‌మెంట్ కోసం ఏ రోజు మరియు సమయం అనుకూలంగా ఉంటుంది?`
                                 : (service === 'receptionist'
@@ -846,9 +884,9 @@ export default class IntentService {
                     return {
                         matched: true,
                         spoken_response: this.localize(
-                            `${namePrefix}this is Remo calling from ${comp}. Is now a good time to talk?`,
-                            `${namePrefix}मैं ${comp} से रेमो बात कर रहा हूँ। क्या अभी बात करने का अच्छा समय है?`,
-                            `${namePrefix}నేను ${comp} నుండి రెమో మాట్లాడుతున్నాను. మాట్లాడటానికి ఇది మంచి సమయమేనా?`,
+                            `${namePrefix}this is Remo calling${GreetingScript.fromCompany(comp, 'en')}. Is now a good time to talk?`,
+                            `${namePrefix}मैं${GreetingScript.fromCompany(comp, 'hi')} रेमो बात कर रहा हूँ। क्या अभी बात करने का अच्छा समय है?`,
+                            `${namePrefix}నేను${GreetingScript.fromCompany(comp, 'te')} రెమో మాట్లాడుతున్నాను. మాట్లాడటానికి ఇది మంచి సమయమేనా?`,
                             lang
                         ),
                         detected_language: lang,

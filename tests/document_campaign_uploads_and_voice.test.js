@@ -184,10 +184,10 @@ async function runTests() {
 
     await test('Default opening greetings preserved when no document is attached', () => {
         const salesDefault = GeminiService.getOpeningGreeting('sales', null);
-        assert.ok(salesDefault.includes('Scorelabs Inc.'));
+        assert.ok(salesDefault.includes('Remo') && !/score ?labs/i.test(salesDefault), 'default opening names no built-in company');
 
         const supportDefault = GeminiService.getOpeningGreeting('support', null);
-        assert.ok(supportDefault.includes('Scorelabs'));
+        assert.ok(supportDefault.includes('customer support') && !/score ?labs/i.test(supportDefault), 'default opening names no built-in company');
     });
 
     await test('Prompt contains strict grounding instructions preventing hallucinated pricing & features', async () => {

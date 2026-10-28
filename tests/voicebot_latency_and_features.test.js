@@ -66,8 +66,10 @@ async function main() {
         });
 
         // No verified candidate name: Remo introduces itself and asks the availability question in one go.
-        assert.ok(greeting.startsWith('Hi, this is Remo, an AI calling assistant from ScoreLabs Inc.'), 'Must start with the exact identity phrase');
-        assert.ok(greeting.endsWith('Is this a good time to speak for a minute?'), 'Must ask the availability question');
+        assert.ok(greeting.startsWith('Hi, this is Remo calling from Score Labs'), 'Must start with the identity phrase and the company the contact sheet gives');
+        assert.ok(greeting.endsWith('Is now a good time to speak for a minute?'), 'Must ask the availability question');
+        assert.strictEqual(GeminiService.getOpeningGreeting('recruitment', { job_role: 'Senior React Engineer' }),
+            'Hi, this is Remo calling regarding the Senior React Engineer position. Is now a good time to speak for a minute?', 'no company is built in');
 
         // With a verified name, the first words only ask who is speaking.
         const named = GeminiService.getOpeningGreeting('recruitment', { name: 'Priya Sharma' });
@@ -254,7 +256,7 @@ async function main() {
         const salGreeting = GeminiService.getOpeningGreeting('sales', { name: 'Rahul', company: 'FinCorp' });
         const supGreeting = GeminiService.getOpeningGreeting('support', {});
 
-        assert.ok(recGreeting.includes('ScoreLabs Inc.') && recGreeting.includes('good time'));
+        assert.ok(recGreeting.includes('good time') && !/score ?labs/i.test(recGreeting));
         assert.ok(salGreeting.includes('Rahul'), 'Sales greeting should address the contact naturally');
         assert.ok(supGreeting.includes('customer support'));
         assert.notStrictEqual(recGreeting, salGreeting);
@@ -263,8 +265,8 @@ async function main() {
 
     runTest('Sales has valid, dedicated Telugu fallback without recycling recruitment prompts', () => {
         const teSalesFallback = GeminiService.getUniversalFallback('te', 'sales');
-        assert.ok(teSalesFallback.includes('స్కోర్‌ల్యాబ్స్'));
-        assert.ok(teSalesFallback.includes('కస్టమ్ సాఫ్ట్‌వేర్'));
+        assert.ok(/[ఀ-౿]/.test(teSalesFallback), 'Telugu text');
+        assert.ok(!teSalesFallback.includes('స్కోర్'), 'no company is built in');
         assert.ok(!teSalesFallback.includes('జాబ్ అప్లికేషన్'), 'Sales fallback must never reference recruitment jobs');
     });
 
@@ -277,13 +279,13 @@ async function main() {
 
         const greetingWithoutName = GeminiService.getOpeningGreeting('sales', { name: 'Contact (Row 2)' });
         assert.ok(!greetingWithoutName.includes('Contact (Row 2)'), 'Must not speak raw spreadsheet row label as a name');
-        assert.ok(greetingWithoutName.includes('Scorelabs Inc.') || greetingWithoutName.includes('Score Labs'));
+        assert.ok(!/score ?labs/i.test(greetingWithoutName), 'no company is built in');
     });
 
     runTest('Support opening greeting addresses ticket/query and never asks recruitment questions', () => {
         const greeting = GeminiService.getOpeningGreeting('support', { name: 'pooja' });
         assert.ok(greeting.includes('pooja'));
-        assert.ok(greeting.includes('Scorelabs Inc. customer support'));
+        assert.ok(greeting.includes('customer support') && !/score ?labs/i.test(greeting));
         assert.ok(greeting.includes('ticket') || greeting.includes('inquiry'));
         assert.ok(!greeting.includes('open position'));
         assert.ok(!greeting.includes('application for'));
@@ -349,7 +351,7 @@ async function main() {
 
     runTest('parseModelResponse handles empty or blank response with universal fallback', () => {
         const parsed = GeminiService.parseModelResponse('', 'en', 'recruitment');
-        assert.ok(parsed.spoken_response.includes('Score Labs'));
+        assert.ok(parsed.spoken_response.length > 10 && !/score ?labs/i.test(parsed.spoken_response), 'a usable fallback that names no company');
         assert.strictEqual(parsed.classification, 'On Hold');
     });
 

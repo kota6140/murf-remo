@@ -236,12 +236,12 @@ async function runScenarios() {
     // Scenario 9: Sales campaign with no uploaded document uses approved default Sales configuration
     await test('Scenario 9: Sales campaign without document uses approved default configuration', () => {
         const greeting = GeminiService.getOpeningGreeting('sales', null);
-        assert.ok(greeting.includes('Scorelabs Inc.') || greeting.includes('Score Labs'));
+        assert.ok(!/score ?labs/i.test(greeting), 'no company is built in');
         assert.ok(greeting.includes('good time to talk') || greeting.includes('Remo'));
         assert.ok(!greeting.includes('custom software development'), 'Does not dump services in turn 1');
 
         const fallback = GeminiService.getUniversalFallback('en', 'sales');
-        assert.ok(fallback.includes('Scorelabs') || fallback.includes('Score Labs'));
+        assert.ok(!/score ?labs/i.test(fallback), 'no company is built in');
         assert.ok(!fallback.includes('recruitment') && !fallback.includes('open position'));
     });
 
