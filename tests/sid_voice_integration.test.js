@@ -1,3 +1,4 @@
+import './_local_db_only.js'; // keep first: tests must never touch the live database
 import 'dotenv/config';
 import assert from 'assert';
 import ElevenLabsService from '../services/elevenlabs_service.js';

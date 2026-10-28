@@ -19,6 +19,7 @@ process.env.PLIVO_AUTH_TOKEN = 'test-token';
 process.env.PLIVO_VIRTUAL_NUMBER = '918000000000';
 process.env.SERVER_URL = 'https://example.test';
 
+import './_local_db_only.js'; // keep first: tests must never touch the live database
 import assert from 'assert';
 import db, { initDb } from '../services/db.js';
 import AgentService, { ensureAgentSchema } from '../services/agent_service.js';
@@ -46,7 +47,8 @@ const ADMIN_B = 'usr_test_admin_b';
 const created = [];
 
 async function cleanup() {
-    await db.run("DELETE FROM agents WHERE id LIKE 'agt_%' AND name LIKE 'TEST %'");
+    // GLOB is case-sensitive (SQLite only; MySQL has no GLOB, so this fails instead of matching a real "Test ..." agent).
+    await db.run("DELETE FROM agents WHERE id GLOB 'agt_*' AND name GLOB 'TEST *'");
     await db.run("DELETE FROM contacts WHERE id LIKE 'cnt_agenttest_%'");
     await db.run("DELETE FROM batches WHERE id LIKE 'batch_agenttest_%'");
 }

@@ -10,6 +10,7 @@
  * - Safe preview generation without telephony
  */
 
+import './_local_db_only.js'; // keep first: tests must never touch the live database
 import 'dotenv/config';
 import assert from 'assert';
 import { VoiceRegistry } from '../services/voice_registry.js';

@@ -1,3 +1,4 @@
+import './_local_db_only.js'; // keep first: tests must never touch the live database
 import 'dotenv/config';
 import assert from 'assert';
 import { CallSession, PROMOTIONAL_DEMO_SCRIPT } from '../services/voicebot_stream_service.js';

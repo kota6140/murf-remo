@@ -18,6 +18,7 @@
  * - Non-regression: Sales and Support service thresholds preserved
  */
 
+import './_local_db_only.js'; // keep first: tests must never touch the live database
 import assert from 'assert';
 import { CallSession, ConversationStates } from '../services/voicebot_stream_service.js';
 import IntentService from '../services/intent_service.js';

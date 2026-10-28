@@ -7,6 +7,7 @@
  */
 process.env.DB_ENGINE = 'sqlite'; // never reach the real database from this test
 
+import './_local_db_only.js'; // keep first: tests must never touch the live database
 import assert from 'assert';
 import fs from 'fs';
 import { AGENT_LIMITS, AgentError, cleanFields } from '../services/agent_service.js';

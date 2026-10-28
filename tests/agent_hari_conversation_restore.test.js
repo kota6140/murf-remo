@@ -14,6 +14,7 @@
  * 10. Call ends while generation or playback is in progress.
  */
 
+import './_local_db_only.js'; // keep first: tests must never touch the live database
 import assert from 'assert';
 import IntentService from '../services/intent_service.js';
 import { QuestionTracker, isClarificationRequest } from '../services/question_tracker.js';

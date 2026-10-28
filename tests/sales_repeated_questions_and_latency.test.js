@@ -16,6 +16,7 @@
  * 12. End-to-end latency measurement: Fast path (< 1ms decision, ~500ms target).
  */
 
+import './_local_db_only.js'; // keep first: tests must never touch the live database
 import assert from 'assert';
 import GeminiService from '../services/gemini_service.js';
 import IntentService from '../services/intent_service.js';

@@ -16,6 +16,7 @@
  * 12. Campaign lifecycle: Draft -> Start -> Pause -> Resume -> Archive
  */
 
+import './_local_db_only.js'; // keep first: tests must never touch the live database
 import assert from 'assert';
 import db, { initDb, ensureCampaignSchema } from '../services/db.js';
 import CampaignService from '../services/campaign_service.js';

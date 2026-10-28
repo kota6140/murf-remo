@@ -11,6 +11,7 @@
  * 7. Live ElevenLabs TTS API synthesis verification for Telugu, Hindi, and English
  */
 
+import './_local_db_only.js'; // keep first: tests must never touch the live database
 import assert from 'assert';
 import ElevenLabsService from '../services/elevenlabs_service.js';
 import { CallSession } from '../services/voicebot_stream_service.js';

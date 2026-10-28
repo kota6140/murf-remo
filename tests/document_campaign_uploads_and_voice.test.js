@@ -11,6 +11,7 @@
  * 7. Fast-path intent matching, anti-repetition, and turn-taking grounding.
  */
 
+import './_local_db_only.js'; // keep first: tests must never touch the live database
 import assert from 'assert';
 import fs from 'fs';
 import path from 'path';

@@ -16,6 +16,7 @@
  * 12. Existing recruitment, sales, and customer-support workflows remain intact.
  */
 
+import './_local_db_only.js'; // keep first: tests must never touch the live database
 import assert from 'assert';
 import MurfService from '../services/murf_service.js';
 import { LLMService } from '../services/llm_service.js';

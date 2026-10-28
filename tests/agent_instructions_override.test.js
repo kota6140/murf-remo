@@ -11,6 +11,7 @@
 process.env.SKIP_TTS_PRECACHE = '1';
 process.env.DB_ENGINE = 'sqlite'; // never reach the real database from this test
 
+import './_local_db_only.js'; // keep first: tests must never touch the live database
 import assert from 'assert';
 import AgentService from '../services/agent_service.js';
 import IntentService from '../services/intent_service.js';

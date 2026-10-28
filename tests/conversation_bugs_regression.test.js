@@ -12,6 +12,7 @@
  * Run with: node tests/conversation_bugs_regression.test.js
  */
 
+import './_local_db_only.js'; // keep first: tests must never touch the live database
 import assert from 'assert';
 import { isNoiseTranscript, isBackchannelOnly, decodeMulawToPcm16, pcmToWav } from '../services/voicebot_stream_service.js';
 import IntentService from '../services/intent_service.js';

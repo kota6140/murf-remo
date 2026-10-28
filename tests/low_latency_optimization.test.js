@@ -23,6 +23,7 @@
 
 process.env.SKIP_TTS_PRECACHE = '1';
 
+import './_local_db_only.js'; // keep first: tests must never touch the live database
 import assert from 'assert';
 import MurfService, { MurfSttStreamSession } from '../services/murf_service.js';
 import IntentService from '../services/intent_service.js';

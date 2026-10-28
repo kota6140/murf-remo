@@ -23,6 +23,7 @@
  *
  * Run:  node tests/call_flow_regression.test.js
  */
+import './_local_db_only.js'; // keep first: tests must never touch the live database
 import assert from 'assert';
 
 // Never touch a real database or the paid voice service from this test.

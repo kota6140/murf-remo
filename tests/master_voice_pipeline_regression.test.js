@@ -48,6 +48,7 @@
  * Run with: node tests/master_voice_pipeline_regression.test.js
  */
 
+import './_local_db_only.js'; // keep first: tests must never touch the live database
 import assert from 'assert';
 import LanguageStateMachine from '../services/language_state_machine.js';
 import IntentService from '../services/intent_service.js';

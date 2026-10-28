@@ -20,6 +20,7 @@
  * 15. Benchmark greeting latency (< 500ms) and conversational latency.
  */
 
+import './_local_db_only.js'; // keep first: tests must never touch the live database
 import assert from 'assert';
 import db, { utcNow } from '../services/db.js';
 import IntentService from '../services/intent_service.js';

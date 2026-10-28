@@ -18,6 +18,7 @@ process.env.USE_LOCAL_DB = 'true';
 process.env.PLIVO_AUTH_ID = '';
 process.env.PLIVO_AUTH_TOKEN = '';
 
+import './_local_db_only.js'; // keep first: tests must never touch the live database
 import assert from 'assert';
 import fs from 'fs';
 import * as xlsx from 'xlsx';

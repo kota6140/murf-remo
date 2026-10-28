@@ -18,6 +18,7 @@ process.env.PLIVO_AUTH_ID = 'MATESTAUTHID';
 process.env.PLIVO_AUTH_TOKEN = 'test-token';
 process.env.SERVER_URL = 'https://example.test';
 
+import './_local_db_only.js'; // keep first: tests must never touch the live database
 import assert from 'assert';
 
 // Loaded after the environment above is set. (Static imports run first, and the voice module would then
