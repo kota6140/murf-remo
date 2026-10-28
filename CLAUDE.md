@@ -59,6 +59,8 @@ Key rules to keep in mind:
 - `RECRUITMENT_VAD_SILENCE_MS` (default 1400, valid 500–5000) sets the silence wait for recruitment calls.
   Right after the greeting ("is this a good time?") a short answer is answered sooner: `RECRUITMENT_VAD_BRIEF_SILENCE_MS` (default 700, valid 400–1400).
 - Reply lifecycle: every caller turn has one response (`beginResponse`). Speech is queued so sentences play in order (`playAiAudio`), a barge-in or a newer response cancels the rest (`cancelActiveResponse`), and the state goes back to `LISTENING` only when the audio has really finished (`completePlayback`, ended by Plivo's `playedStream` checkpoint or by the audio-length timer). Never set `LISTENING` right after `playAiAudio`; use `finishTurn`.
+- Murf speech: the text frame carries `end: true` and Murf answers `{ final: true }` when everything is spoken. A clip is complete (and cached) only on that message; a timer, error or closed connection still ends the request with what arrived, but the clip is never cached (`tests/murf_stream_completion.test.js`). Never end a Murf clip by guessing at a pause.
+- Interrupting the AI (barge-in): the caller needs `BARGE_IN_ENERGY_THRESHOLD` loudness (default 850, valid 450–3000) for 60 frames (80 during the opening greeting); a quiet gap of up to 8 frames inside speech does not restart the count. A campaign's language read from the database never clears the audio that is playing (`setSessionLanguage`, reason `CAMPAIGN_CONFIG`).
 - `TTS_TIMEOUT_MS` (default 8000) gives up on a text-to-speech request. `PLIVO_PLAYBACK_CHECKPOINTS=off` turns off the Plivo playback checkpoints.
 - Missing latency measurements are `null`, never `0` (`latency_tracker.js`).
 

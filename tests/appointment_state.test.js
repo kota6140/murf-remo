@@ -144,7 +144,7 @@ await test('other work types are unchanged', async () => {
         LLMService.generate = realGenerate;
     }
     assert.ok(seen.systemPrompt.includes('INTEREST_DISCOVERY'));
-    assert.strictEqual(seen.maxTokens, 110);
+    assert.strictEqual(seen.maxTokens, 250, 'room for one or two spoken sentences plus the JSON envelope');
     assert.ok(!seen.systemPrompt.includes('BOOKING STATUS'));
 });
 

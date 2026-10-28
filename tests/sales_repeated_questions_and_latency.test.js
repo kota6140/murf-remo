@@ -234,7 +234,8 @@ async function run() {
         const session = new CallSession(mockWs, { service: 'sales' });
         session.streamId = 'stream_test_barge_in';
         session.isAiSpeaking = true;
-        session.overlapSpeechFrames = 35; // >= MIN_INTERRUPT_FRAMES (700ms)
+        // One frame short of the limit for the opening turn (~1600ms); the next loud frame is the one that interrupts
+        session.overlapSpeechFrames = session.MIN_GREETING_INTERRUPT_FRAMES - 1;
 
         // Simulate incoming speech frame triggering barge-in
         const dummyMulaw = Buffer.alloc(160, 0x80);

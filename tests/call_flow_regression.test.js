@@ -391,11 +391,11 @@ await test('6. the caller interrupts: the rest of the reply is cancelled and the
     const playing = s.playAiAudio('This is a long reply that the caller will interrupt part of the way through.', response);
     s.playAiAudio('And this is a second sentence that must never be heard.', response).catch(() => {});
     await waitFor(() => audioMessages(s).length >= 3);
-    await feed(s, speechFrame, 36);                // 0.72s of sustained speech while Remo is talking
+    await feed(s, speechFrame, s.MIN_GREETING_INTERRUPT_FRAMES);   // sustained speech while Remo is talking (turn 0: 1.6s)
     assert.strictEqual(response.cancelled, true);
     assert.ok(s.ws.sent.some(m => m.event === 'clearAudio'), 'Plivo is told to drop queued audio');
     assert.strictEqual(s.conversationState, ConversationStates.CANDIDATE_SPEAKING);
-    assert.ok(s.callerMulawChunks.length >= 35, 'the caller\'s words are kept');
+    assert.ok(s.callerMulawChunks.length >= s.MIN_GREETING_INTERRUPT_FRAMES, 'the caller\'s words are kept');
     const clearedAt = s.ws.sent.findIndex(m => m.event === 'clearAudio');
     await playing;
     await sleep(60);

@@ -871,8 +871,11 @@ export async function handlePlivoAnswer(req, res) {
         });
     }
 
-    // Pre-warm opening greeting TTS into in-memory RAM cache so WebSocket playback begins in < 5ms
-    if (MurfService.isConfigured() || ElevenLabsService.isConfigured()) {
+    // Pre-warm opening greeting TTS into in-memory RAM cache so WebSocket playback begins in < 5ms.
+    // ElevenLabs only: a Murf pre-warm would not use the agent's / campaign's voice and language (so its saved
+    // copy would not match the call), and it would add a second Murf request at the same moment as the real
+    // greeting, which counts against Murf's limit on simultaneous requests and can slow the real one down.
+    if (ElevenLabsService.isConfigured()) {
         (async () => {
             try {
                 const rawName = String(name || '').trim();
@@ -898,14 +901,10 @@ export async function handlePlivoAnswer(req, res) {
                     });
                 }
                 if (greeting) {
-                    if (MurfService.isConfigured()) {
-                        MurfService.textToSpeech(greeting).catch(() => {});
-                    } else if (ElevenLabsService.isConfigured()) {
-                        const lang = ElevenLabsService.detectLanguageFromText(greeting, 'en');
-                        const voiceId = ElevenLabsService.getVoiceId(lang);
-                        const modelId = ElevenLabsService.selectTtsModel({ language: lang, text: greeting, voiceId });
-                        ElevenLabsService.textToSpeech(greeting, { voiceId, modelId, outputFormat: 'ulaw_8000', language: lang }).catch(() => {});
-                    }
+                    const lang = ElevenLabsService.detectLanguageFromText(greeting, 'en');
+                    const voiceId = ElevenLabsService.getVoiceId(lang);
+                    const modelId = ElevenLabsService.selectTtsModel({ language: lang, text: greeting, voiceId });
+                    ElevenLabsService.textToSpeech(greeting, { voiceId, modelId, outputFormat: 'ulaw_8000', language: lang }).catch(() => {});
                 }
             } catch (_) {}
         })();

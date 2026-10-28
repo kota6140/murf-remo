@@ -59,6 +59,14 @@ export function convertPcm24kToMulaw8k(pcm24kBuffer) {
     return mulawBuffer;
 }
 
+// Fallback waits (ms) used only when Murf does not send its { final: true } message.
+// While Murf is expected to send it, the wait is long, so a pause inside a sentence never ends the clip early.
+// After a request that ended without the message, the shorter waits are used, so one broken stream does not
+// slow every later sentence down.
+const IDLE_FALLBACK_WHEN_FINAL_EXPECTED_MS = 4000;
+const IDLE_FALLBACK_BEFORE_MIN_MS = 1600;
+const IDLE_FALLBACK_AFTER_MIN_MS = 700;
+
 export function getMinExpectedAudioBytes(text) {
     if (!text) return 0;
     const str = String(text).trim();
@@ -74,6 +82,9 @@ function getCacheKey(text, voiceId, modelId, locale) {
 }
 
 export default class MurfService {
+    /** True while Murf is trusted to send { final: true } at the end of each request (see the idle fallback in textToSpeech). */
+    static finalMessageExpected = true;
+
     static isConfigured() {
         return Boolean((process.env.MURF_API_KEY || '').trim());
     }
@@ -235,7 +246,10 @@ export default class MurfService {
 
             let idleTimer = null;
 
-            const finish = (resultBuffer) => {
+            // complete=true only when Murf itself said the text was fully spoken ({ final: true }).
+            // Anything finished by a timer, an error or a closed connection may be cut short, so it is played
+            // but never kept in the cache (a cut clip would be replayed on every later call).
+            const finish = (resultBuffer, { complete = false } = {}) => {
                 if (settled) return;
                 settled = true;
                 if (timer) clearTimeout(timer);
@@ -247,17 +261,34 @@ export default class MurfService {
                 if (resultBuffer && resultBuffer.length > 0) {
                     const totalMs = Date.now() - startTime;
                     const audioDurationMs = Math.round((resultBuffer.length / 8000) * 1000);
-                    console.log(`[MurfService] Audio complete: ${resultBuffer.length} bytes in ${totalMs}ms (Model: ${modelId}, ~${audioDurationMs}ms audio)`);
-                    MurfService.precacheAudio(trimmed, resultBuffer, { voiceId, model: modelId, locale });
+                    console.log(`[MurfService] Audio ${complete ? 'complete' : 'ended without a final message'}: ${resultBuffer.length} bytes in ${totalMs}ms (Model: ${modelId}, ~${audioDurationMs}ms audio)`);
+                    if (complete) {
+                        MurfService.precacheAudio(trimmed, resultBuffer, { voiceId, model: modelId, locale });
+                    }
                     resolve(resultBuffer);
                 } else {
                     resolve(null);
                 }
             };
 
+            const collectedAudio = () => (collectedMulawChunks.length > 0 ? Buffer.concat(collectedMulawChunks) : null);
+
+            // The last few PCM bytes that did not make a whole 8 kHz sample yet
+            const flushRemainder = () => {
+                if (remainderPcm.length >= 2) {
+                    const lastSample = remainderPcm.readInt16LE(0);
+                    const lastMulaw = Buffer.from([linear16ToMulaw(lastSample)]);
+                    collectedMulawChunks.push(lastMulaw);
+                    if (onChunk) {
+                        try { onChunk(lastMulaw); } catch (_) {}
+                    }
+                    remainderPcm = Buffer.alloc(0);
+                }
+            };
+
             timer = setTimeout(() => {
                 console.warn(`[MurfService] TTS request timed out after ${timeoutMs}ms.`);
-                finish(collectedMulawChunks.length > 0 ? Buffer.concat(collectedMulawChunks) : null);
+                finish(collectedAudio());
             }, timeoutMs);
 
             try {
@@ -288,9 +319,11 @@ export default class MurfService {
                     };
                     ws.send(JSON.stringify(voiceConfigMsg));
 
-                    // Send text frame
+                    // Send text frame. "end: true" closes the context, so Murf answers with { final: true } when
+                    // everything has been spoken; that message is how we know the audio is complete.
                     const textMsg = {
-                        text: trimmed
+                        text: trimmed,
+                        end: true
                     };
                     ws.send(JSON.stringify(textMsg));
                 } catch (sendErr) {
@@ -303,15 +336,25 @@ export default class MurfService {
                 if (settled) return;
 
                 let audioBase64 = null;
+                let isFinalFrame = false;
                 if (!isBinary) {
                     try {
                         const parsed = JSON.parse(data.toString());
                         if (parsed.error) {
-                            console.error('[MurfService] API Error Message:', parsed.error);
+                            console.error(`[MurfService] API Error Message${parsed.error_code ? ` (${parsed.error_code})` : ''}:`, parsed.error);
+                            // A fatal error ends the request: use what arrived (it is not cached).
+                            if (parsed.fatal) finish(collectedAudio());
                             return;
+                        }
+                        if (parsed.warning) {
+                            console.warn(`[MurfService] API Warning${parsed.warning_code ? ` (${parsed.warning_code})` : ''}:`, parsed.warning);
                         }
                         if (parsed.audio) {
                             audioBase64 = parsed.audio;
+                        }
+                        if (parsed.final === true) {
+                            isFinalFrame = true;
+                            MurfService.finalMessageExpected = true;
                         }
                     } catch (_) {}
                 } else if (isBinary) {
@@ -319,7 +362,14 @@ export default class MurfService {
                     audioBase64 = data.toString('base64');
                 }
 
-                if (!audioBase64) return;
+                if (!audioBase64) {
+                    // { final: true } without audio: Murf has spoken everything.
+                    if (isFinalFrame) {
+                        flushRemainder();
+                        finish(collectedAudio(), { complete: true });
+                    }
+                    return;
+                }
 
                 let pcmChunk = Buffer.from(audioBase64, 'base64');
                 if (pcmChunk.length === 0) return;
@@ -356,20 +406,31 @@ export default class MurfService {
                     }
                 }
 
+                // The final frame arrived together with the last audio: the clip is complete.
+                if (isFinalFrame) {
+                    flushRemainder();
+                    finish(collectedAudio(), { complete: true });
+                    return;
+                }
+
                 let totalCollectedBytes = 0;
                 for (let i = 0; i < collectedMulawChunks.length; i++) {
                     totalCollectedBytes += collectedMulawChunks[i].length;
                 }
                 const minExpected = getMinExpectedAudioBytes(trimmed);
-                // If we haven't reached the minimum expected audio length yet, Murf is still synthesizing
-                // subsequent clauses/sentences; give it up to 1600ms between chunks so speech isn't cut off.
-                // Once minimum audio has arrived, 700ms of idle confirms the stream has completed.
-                const idleDelay = totalCollectedBytes < minExpected ? 1600 : 700;
 
-                // Debounce idle timer: when audio pauses for idleDelay ms, stream has finished
+                // Fallback only, for when Murf never sends { final: true }: finish after a silence between audio
+                // pieces. Longer while less audio than the text needs has arrived (Murf is still working on the
+                // next clause), shorter once enough has arrived. Audio finished this way is played but not cached.
+                const idleDelay = MurfService.finalMessageExpected
+                    ? IDLE_FALLBACK_WHEN_FINAL_EXPECTED_MS
+                    : (totalCollectedBytes < minExpected ? IDLE_FALLBACK_BEFORE_MIN_MS : IDLE_FALLBACK_AFTER_MIN_MS);
                 if (idleTimer) clearTimeout(idleTimer);
                 idleTimer = setTimeout(() => {
-                    finish(collectedMulawChunks.length > 0 ? Buffer.concat(collectedMulawChunks) : null);
+                    console.warn(`[MurfService] No final message from Murf; finishing after ${idleDelay}ms of silence (${totalCollectedBytes} bytes so far).`);
+                    // Murf did not send it this time: do not wait for it on the next requests.
+                    MurfService.finalMessageExpected = false;
+                    finish(collectedAudio());
                 }, idleDelay);
             });
 
@@ -379,17 +440,16 @@ export default class MurfService {
             });
 
             ws.on('close', (code, reason) => {
-                // Process any final remaining bytes if possible
-                if (remainderPcm.length >= 2) {
-                    const lastSample = remainderPcm.readInt16LE(0);
-                    const lastMulaw = Buffer.from([linear16ToMulaw(lastSample)]);
-                    collectedMulawChunks.push(lastMulaw);
-                    if (onChunk) {
-                        try { onChunk(lastMulaw); } catch (_) {}
-                    }
-                    remainderPcm = Buffer.alloc(0);
+                if (settled) return;
+                // 4029: more requests were open at once than the Murf plan allows
+                if (code === 4029) {
+                    console.warn('[MurfService] Murf closed the connection: too many requests at the same time (concurrency limit).');
+                } else if (code && code !== 1000) {
+                    console.warn(`[MurfService] Murf closed the connection before the final message (code ${code}).`);
                 }
-                finish(collectedMulawChunks.length > 0 ? Buffer.concat(collectedMulawChunks) : null);
+                // Process any final remaining bytes if possible, then use what arrived (not cached)
+                flushRemainder();
+                finish(collectedAudio());
             });
         });
     }

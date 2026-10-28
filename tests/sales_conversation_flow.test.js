@@ -207,9 +207,10 @@ async function runScenarios() {
         session.streamId = 'test_stream_1';
         session.isAiSpeaking = true;
 
-        // Simulate 40 speech frames (~800ms) with loud speech while AI speaking
+        // Simulate sustained loud speech while the AI is speaking. In the opening turn it takes 80 frames
+        // (~1600ms) to count as an interruption, so a connect click or "hello?" does not cut the greeting.
         const loudSpeechChunk = Buffer.alloc(160, 0x00); // 0x00 = maximum amplitude peak in G.711 mu-law
-        for (let i = 0; i < 40; i++) {
+        for (let i = 0; i < session.MIN_GREETING_INTERRUPT_FRAMES; i++) {
             await session.handleInboundAudio(loudSpeechChunk);
         }
 

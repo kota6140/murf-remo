@@ -1,6 +1,6 @@
 import db, { utcNow } from './db.js';
 import ElevenLabsService from './elevenlabs_service.js';
-import MurfService from './murf_service.js';
+import MurfService, { getMinExpectedAudioBytes } from './murf_service.js';
 import GeminiService from './gemini_service.js';
 import IntentService from './intent_service.js';
 import AppointmentState from './appointment_state.js';
@@ -350,8 +350,14 @@ export class CallSession {
 
         // VAD parameters (20ms frames = 160 mulaw bytes at 8kHz)
         this.ENERGY_THRESHOLD = 450;             // Minimum RMS to count as speech when AI is listening
-        this.BARGE_IN_ENERGY_THRESHOLD = 850;   // Higher threshold while AI speaks to prevent speaker echo / background noise from cutting AI off
+        // Higher threshold while AI speaks to prevent speaker echo / background noise from cutting AI off.
+        // BARGE_IN_ENERGY_THRESHOLD (450-3000) can lower it for callers on a quiet line.
+        const envBargeIn = parseInt(process.env.BARGE_IN_ENERGY_THRESHOLD, 10);
+        this.BARGE_IN_ENERGY_THRESHOLD = envBargeIn >= 450 && envBargeIn <= 3000 ? envBargeIn : 850;
         this.MIN_INTERRUPT_FRAMES = 60;          // ~1200ms of sustained speech while AI speaks triggers barge-in
+        this.MIN_GREETING_INTERRUPT_FRAMES = 80; // ~1600ms during the opening greeting
+        this.BARGE_IN_GAP_FRAMES = 8;            // a quiet gap of up to ~160ms inside speech does not reset the count
+        this.overlapQuietFrames = 0;
         this.MIN_AUDIO_BYTES = 1600;             // 200ms of audio minimum to avoid discarding short answers
 
         // FIX-1 & FIX-6: isProcessingTurn is ONLY cleared after playAiAudio completes.
@@ -1054,10 +1060,8 @@ export class CallSession {
                 ? MurfService.getCachedAudio(greeting, { voiceId, model: modelId, locale })
                 : ElevenLabsService.getCachedAudio(greeting, { voiceId, modelId });
 
-            const minExpectedGreetingBytes = Math.min(
-                greeting.split(/\s+/).filter(Boolean).length * 1400,
-                greeting.length * 150
-            );
+            // The same "how short can a complete clip be" rule the Murf service uses before it keeps a clip.
+            const minExpectedGreetingBytes = getMinExpectedAudioBytes(greeting);
 
             if (cachedAudio && cachedAudio.length >= minExpectedGreetingBytes) {
                 console.log(`[CallSession] Instant cache hit for opening greeting (${cachedAudio.length} bytes)! Dispatching audio in < 5ms via ${ttsProvider}.`);
@@ -1331,25 +1335,32 @@ export class CallSession {
             const oldLanguage = this.detectedLanguage;
             console.log(`[CallSession] Language switch detected: ${oldLanguage} -> ${normalized} (Reason: ${reason})`);
 
-            // Clear any queued / in-flight Plivo playback buffer from the previous language
-            if (this.streamId && this.ws && this.ws.readyState === this.ws.OPEN) {
-                try {
-                    this.ws.send(JSON.stringify({
-                        event: 'clearAudio',
-                        streamId: this.streamId
-                    }));
-                } catch (wsErr) {
-                    // Non-fatal
+            // The campaign's language is a setting that is read from the database while the opening greeting is
+            // already playing. It only decides the language of what comes next, so what is being said must not be
+            // stopped. A language the caller actually switched to does stop the old language's audio.
+            const settingOnly = reason === 'CAMPAIGN_CONFIG';
+
+            if (!settingOnly) {
+                // Clear any queued / in-flight Plivo playback buffer from the previous language
+                if (this.streamId && this.ws && this.ws.readyState === this.ws.OPEN) {
+                    try {
+                        this.ws.send(JSON.stringify({
+                            event: 'clearAudio',
+                            streamId: this.streamId
+                        }));
+                    } catch (wsErr) {
+                        // Non-fatal
+                    }
                 }
-            }
 
-            // Cancel any active speech timer
-            if (this.activeSpeechTimer) {
-                clearTimeout(this.activeSpeechTimer);
-                this.activeSpeechTimer = null;
-            }
+                // Cancel any active speech timer
+                if (this.activeSpeechTimer) {
+                    clearTimeout(this.activeSpeechTimer);
+                    this.activeSpeechTimer = null;
+                }
 
-            this.isAiSpeaking = false;
+                this.isAiSpeaking = false;
+            }
             this.detectedLanguage = normalized;
             // Keep the language state machine and the question record on the same language.
             if (this.languageStateMachine) this.languageStateMachine.currentLanguage = normalized;
@@ -1604,13 +1615,14 @@ export class CallSession {
         // SCENARIO 1: AI IS CURRENTLY SPEAKING (Barge-In Handling)
         if (this.isAiSpeaking || this.conversationState === ConversationStates.SPEAKING) {
             const hasBargeInSpeech = energy >= (this.BARGE_IN_ENERGY_THRESHOLD || 850);
+            // Sustained speech (>= 1200ms) triggers barge-in. During the opening greeting (turn 0) it takes
+            // at least 80 frames (~1600ms), so line connect clicks and the caller's "hello?" do not cut it.
+            const minBargeInFrames = (this.greetingInProgress || this.currentTurnId === 0) ? this.MIN_GREETING_INTERRUPT_FRAMES : this.MIN_INTERRUPT_FRAMES;
             if (hasBargeInSpeech) {
+                this.overlapQuietFrames = 0;
                 this.overlapMulawChunks.push(mulawChunk);
                 this.overlapSpeechFrames++;
 
-                // If candidate speaks sustained speech (>= 1200ms), trigger barge-in!
-                // During opening greeting (turn 0), require at least 80 frames (~1600ms) to ensure line connect clicks do not cut greeting
-                const minBargeInFrames = (this.greetingInProgress || this.currentTurnId === 0) ? 80 : this.MIN_INTERRUPT_FRAMES;
                 if (this.overlapSpeechFrames >= minBargeInFrames) {
                     console.log(`[CallSession] Caller sustained speech detected (${this.overlapSpeechFrames * 20}ms). Stopping AI speech (Barge-in).`);
                     this.logDiagnostic('candidate_speech_started', { reason: 'barge_in', frames: this.overlapSpeechFrames });
@@ -1649,6 +1661,7 @@ export class CallSession {
                     this.overlapMulawChunks = [];
                     this.consecutiveSpeechFrames = this.overlapSpeechFrames;
                     this.overlapSpeechFrames = 0;
+                    this.overlapQuietFrames = 0;
                     this.isCallerSpeaking = true;
                     this.consecutiveSilenceFrames = 0;
                     this.setConversationState(ConversationStates.CANDIDATE_SPEAKING, 'barge_in');
@@ -1672,11 +1685,15 @@ export class CallSession {
                         }
                     }
                 }
-            } else {
-                // Short noise burst (< 700ms) while AI speaking: ignore and discard
-                if (this.overlapSpeechFrames > 0 && this.overlapSpeechFrames < this.MIN_INTERRUPT_FRAMES) {
+            } else if (this.overlapSpeechFrames > 0) {
+                // Speech has natural dips between words, so a short quiet gap does not start the count over.
+                // A longer gap means it was only a noise burst (shorter than the limit): ignore and discard it.
+                this.overlapQuietFrames++;
+                this.overlapMulawChunks.push(mulawChunk); // keep the gap, so the words stay whole if this becomes a barge-in
+                if (this.overlapQuietFrames > this.BARGE_IN_GAP_FRAMES) {
                     this.overlapMulawChunks = [];
                     this.overlapSpeechFrames = 0;
+                    this.overlapQuietFrames = 0;
                 }
             }
             return;
