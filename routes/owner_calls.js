@@ -14,15 +14,21 @@
  */
 import express from 'express';
 import { readUsers } from '../users_store.js';
-import callDb, { utcNow, ensureOwnerColumns } from '../services/db.js';
+import callDb, { utcNow, ensureOwnerColumns, ensureCampaignSchema } from '../services/db.js';
 import RecordingService from '../services/recording_service.js';
 
 const router = express.Router();
 const fail = (res, code, message) => res.status(code).json({ success: false, message });
 
+// The campaign a call belongs to: set on the call itself, on its contact, or on its contact sheet (batch).
+const CAMPAIGN_OF_CONV = "COALESCE(NULLIF(c.campaign_id, ''), NULLIF(ct.campaign_id, ''), NULLIF(b.campaign_id, ''))";
+const CAMPAIGN_OF_CONTACT = "COALESCE(NULLIF(ct.campaign_id, ''), NULLIF(b.campaign_id, ''))";
+const CAMPAIGN_COLS = 'camp.name AS campaign_name, camp.owner_user_id AS campaign_owner_user_id';
+
 const route = (fn) => async (req, res) => {
     try {
         await ensureOwnerColumns();
+        await ensureCampaignSchema();
         await fn(req, res);
     } catch (e) {
         console.error('[OWNER_CALLS]', e);
@@ -50,20 +56,23 @@ router.get('/users/:id/conversations', route(async (req, res) => {
     if (!userExists(req, res)) return;
     const rows = await callDb.all(
         `SELECT c.id, c.service, c.contact_name, c.phone, c.status, c.started_at, c.duration_seconds,
-                c.language, c.summary, c.classification, c.sentiment
+                c.language, c.summary, c.classification, c.sentiment, ${CAMPAIGN_COLS}
          FROM conversations c
          LEFT JOIN contacts ct ON ct.id = c.contact_id
          LEFT JOIN batches b ON b.id = ct.batch_id
+         LEFT JOIN campaigns camp ON camp.id = ${CAMPAIGN_OF_CONV}
          WHERE c.owner_user_id = ? OR b.owner_user_id = ? ORDER BY c.started_at DESC`, [req.params.id, req.params.id]);
-    res.json({ success: true, conversations: rows });
+    res.json({ success: true, conversations: withOwnerNames(rows) });
 }));
 
 router.get('/conversations/:id', route(async (req, res) => {
-    const conv = await callDb.get(
-        `SELECT c.*, b.filename AS batch_file FROM conversations c
+    const found = await callDb.get(
+        `SELECT c.*, b.filename AS batch_file, ${CAMPAIGN_COLS} FROM conversations c
          LEFT JOIN contacts ct ON ct.id = c.contact_id
-         LEFT JOIN batches b ON b.id = ct.batch_id WHERE c.id = ?`, [req.params.id]);
-    if (!conv) return fail(res, 404, 'Conversation not found.');
+         LEFT JOIN batches b ON b.id = ct.batch_id
+         LEFT JOIN campaigns camp ON camp.id = ${CAMPAIGN_OF_CONV} WHERE c.id = ?`, [req.params.id]);
+    if (!found) return fail(res, 404, 'Conversation not found.');
+    const conv = withOwnerNames([found])[0];
     const transcript = await callDb.all(
         'SELECT speaker, text, timestamp FROM transcript_messages WHERE conversation_id = ? ORDER BY id ASC', [req.params.id]);
     const recordingRow = await RecordingService.findConversation(req.params.id);
@@ -99,11 +108,12 @@ router.get('/users/:id/calls', route(async (req, res) => {
     const rows = await callDb.all(
         `SELECT ct.id, ct.service, ct.name, ct.phone, ct.call_status, ct.started_at, ct.ended_at, ct.duration_seconds,
                 ct.detected_language, ct.call_outcome, ct.classification, ct.summary, ct.error_details,
-                ct.attempt_count, b.filename AS batch_file
+                ct.attempt_count, b.filename AS batch_file, ${CAMPAIGN_COLS}
          FROM contacts ct JOIN batches b ON b.id = ct.batch_id
+         LEFT JOIN campaigns camp ON camp.id = ${CAMPAIGN_OF_CONTACT}
          WHERE b.owner_user_id = ? AND ct.call_status IN (${marks})
          ORDER BY COALESCE(ct.started_at, ct.updated_at) DESC`, [req.params.id, ...CALL_DONE]);
-    res.json({ success: true, calls: rows });
+    res.json({ success: true, calls: withOwnerNames(rows) });
 }));
 
 router.get('/users/:id/scheduled', route(async (req, res) => {
@@ -142,7 +152,11 @@ router.post('/users/:id/scheduled/cancel-all', route(async (req, res) => {
 const ROW_LIMIT = 1000;
 function withOwnerNames(rows) {
     const names = new Map(readUsers().map(u => [u.id, u.name]));
-    return rows.map(r => ({ ...r, owner_name: names.get(r.owner_user_id) || null }));
+    return rows.map(r => ({
+        ...r,
+        owner_name: names.get(r.owner_user_id) || null,
+        campaign_owner_name: names.get(r.campaign_owner_user_id) || null
+    }));
 }
 
 router.get('/all/conversations', route(async (req, res) => {
@@ -150,10 +164,12 @@ router.get('/all/conversations', route(async (req, res) => {
         `SELECT c.id, c.service, c.contact_name, c.phone, c.status, c.started_at, c.duration_seconds,
                 c.language, c.summary, c.classification, c.sentiment,
                 COALESCE(c.owner_user_id, b.owner_user_id) AS owner_user_id,
-                CASE WHEN c.owner_user_id IS NULL AND b.owner_user_id IS NOT NULL THEN b.filename ELSE NULL END AS owner_via_sheet
+                CASE WHEN c.owner_user_id IS NULL AND b.owner_user_id IS NOT NULL THEN b.filename ELSE NULL END AS owner_via_sheet,
+                ${CAMPAIGN_COLS}
          FROM conversations c
          LEFT JOIN contacts ct ON ct.id = c.contact_id
          LEFT JOIN batches b ON b.id = ct.batch_id
+         LEFT JOIN campaigns camp ON camp.id = ${CAMPAIGN_OF_CONV}
          ORDER BY c.started_at DESC LIMIT ${ROW_LIMIT}`);
     res.json({ success: true, rows: withOwnerNames(rows) });
 }));
@@ -163,8 +179,9 @@ router.get('/all/calls', route(async (req, res) => {
     const rows = await callDb.all(
         `SELECT ct.id, ct.service, ct.name, ct.phone, ct.call_status, ct.started_at, ct.duration_seconds,
                 ct.call_outcome, ct.classification, ct.summary, ct.error_details,
-                b.owner_user_id AS owner_user_id, b.filename AS batch_file
+                b.owner_user_id AS owner_user_id, b.filename AS batch_file, ${CAMPAIGN_COLS}
          FROM contacts ct LEFT JOIN batches b ON b.id = ct.batch_id
+         LEFT JOIN campaigns camp ON camp.id = ${CAMPAIGN_OF_CONTACT}
          WHERE ct.call_status IN (${marks})
          ORDER BY COALESCE(ct.started_at, ct.updated_at) DESC LIMIT ${ROW_LIMIT}`, CALL_DONE);
     res.json({ success: true, rows: withOwnerNames(rows) });
@@ -178,6 +195,20 @@ router.get('/all/scheduled', route(async (req, res) => {
          WHERE q.status IN ('QUEUED', 'IN_PROGRESS')
          ORDER BY q.priority DESC, q.created_at ASC LIMIT ${ROW_LIMIT}`);
     res.json({ success: true, rows: withOwnerNames(rows) });
+}));
+
+// Every campaign with the admin who created it and how much has happened in it.
+router.get('/campaigns', route(async (req, res) => {
+    const campaigns = await callDb.all(
+        `SELECT camp.id, camp.name, camp.service, camp.status, camp.created_at, camp.owner_user_id,
+                (SELECT COUNT(*) FROM contacts ct LEFT JOIN batches b ON b.id = ct.batch_id
+                  WHERE ${CAMPAIGN_OF_CONTACT} = camp.id) AS contact_count,
+                (SELECT COUNT(*) FROM conversations c LEFT JOIN contacts ct ON ct.id = c.contact_id
+                  LEFT JOIN batches b ON b.id = ct.batch_id
+                  WHERE ${CAMPAIGN_OF_CONV} = camp.id) AS conversation_count
+         FROM campaigns camp ORDER BY camp.created_at DESC`);
+    const names = new Map(readUsers().map(u => [u.id, u.name]));
+    res.json({ success: true, campaigns: campaigns.map(c => ({ ...c, owner_name: names.get(c.owner_user_id) || null })) });
 }));
 
 router.get('/batches', route(async (req, res) => {

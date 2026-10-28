@@ -450,6 +450,11 @@
         ? `<div class="table-wrap"><table><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`
         : `<div class="table-wrap"><div class="empty">${esc(empty)}</div></div>`;
 
+    // The campaign a call belongs to, and the admin who added that campaign.
+    const campaignCell = (r) => r.campaign_name
+        ? `${esc(r.campaign_name)}${r.campaign_owner_name ? `<div class="sub">added by ${esc(r.campaign_owner_name)}</div>` : ''}`
+        : '<span class="owner-none">No campaign</span>';
+
     const wsUserCell = () => {
         const u = state.users.find(x => x.id === ws.userId);
         return u ? `<td>${esc(u.name)}<div class="sub">${esc(u.email)}</div></td>` : '<td></td>';
@@ -484,11 +489,11 @@
     }
 
     function renderWsConversations(list) {
-        $('#wsBody').innerHTML = tbl(['Started', 'Contact', 'Service', 'Status', 'Duration', 'Outcome', 'Admin', ''],
+        $('#wsBody').innerHTML = tbl(['Started', 'Contact', 'Service', 'Status', 'Duration', 'Outcome', 'Campaign', 'Admin', ''],
             list.map(c => `<tr class="click" data-conv="${esc(c.id)}" tabindex="0">
                 <td>${esc(fmtDate(c.started_at))}</td><td>${esc(c.contact_name)}<div class="sub">${esc(c.phone)}</div></td>
                 <td>${cap(c.service)}</td><td>${statusPill(c.status)}</td><td>${fmtDur(c.duration_seconds)}</td>
-                <td>${cap(c.classification)}</td>${wsUserCell()}<td class="actions"><button class="btn sm danger" data-conv-del="${esc(c.id)}">Delete</button></td></tr>`),
+                <td>${cap(c.classification)}</td><td>${campaignCell(c)}</td>${wsUserCell()}<td class="actions"><button class="btn sm danger" data-conv-del="${esc(c.id)}">Delete</button></td></tr>`),
             'No conversations for this admin yet. Assign conversations or contact sheets under the "Assign data" tab.');
     }
 
@@ -501,10 +506,10 @@
     }
 
     function renderWsCalls(list) {
-        $('#wsBody').innerHTML = tbl(['When', 'Contact', 'Service', 'Status', 'Duration', 'Outcome', 'Admin', 'Notes'],
+        $('#wsBody').innerHTML = tbl(['When', 'Contact', 'Service', 'Status', 'Duration', 'Outcome', 'Campaign', 'Admin', 'Notes'],
             list.map(c => `<tr><td>${esc(fmtDate(c.started_at))}</td><td>${esc(c.name)}<div class="sub">${esc(c.phone)}</div></td>
                 <td>${cap(c.service)}</td><td>${statusPill(c.call_status)}</td><td>${fmtDur(c.duration_seconds)}</td>
-                <td>${cap(c.classification || c.call_outcome)}</td>${wsUserCell()}<td>${esc(c.error_details || c.summary || '')}</td></tr>`),
+                <td>${cap(c.classification || c.call_outcome)}</td><td>${campaignCell(c)}</td>${wsUserCell()}<td>${esc(c.error_details || c.summary || '')}</td></tr>`),
             'No calls have been made for this admin yet.');
     }
 
@@ -574,6 +579,7 @@
         conversations: [['', 'All statuses'], ['completed', 'Completed'], ['in-progress', 'In progress'], ['failed', 'Failed']],
         calls: [['', 'All statuses'], ['completed', 'Completed'], ['failed', 'Failed'], ['unanswered', 'Unanswered'], ['calling', 'Calling'], ['skipped', 'Skipped'], ['cancelled', 'Cancelled']],
         scheduled: [['', 'All statuses'], ['queued', 'Queued'], ['in_progress', 'In progress']],
+        campaigns: [['', 'All statuses']],
         sheets: [['', 'All statuses'], ['ready', 'Ready'], ['in_progress', 'In progress'], ['completed', 'Completed'], ['cancelled', 'Cancelled']]
     };
 
@@ -594,7 +600,7 @@
         const c = d.conversation;
         const row = (k, v) => v ? `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>` : '';
         return `<div><button class="btn sm" id="${backId}">&larr; ${esc(backLabel)}</button></div>
-            <dl class="kv">${row('Contact', c.contact_name)}${row('Phone', c.phone)}${row('Service', String(c.service || '').replace(/_/g, ' '))}${row('Status', c.status)}${row('Started', fmtDate(c.started_at))}${row('Duration', fmtDur(c.duration_seconds))}${row('Language', c.language)}${row('Sentiment', c.sentiment)}${row('Outcome', c.classification)}${row('Summary', c.summary)}${row('Contact sheet', c.batch_file)}</dl>
+            <dl class="kv">${row('Contact', c.contact_name)}${row('Phone', c.phone)}${row('Service', String(c.service || '').replace(/_/g, ' '))}${row('Status', c.status)}${row('Started', fmtDate(c.started_at))}${row('Duration', fmtDur(c.duration_seconds))}${row('Language', c.language)}${row('Sentiment', c.sentiment)}${row('Outcome', c.classification)}${row('Summary', c.summary)}${row('Campaign', c.campaign_name)}${row('Campaign added by', c.campaign_owner_name)}${row('Contact sheet', c.batch_file)}</dl>
             ${recordingHtml(d.recording)}
             <div><h4>Transcript</h4>${d.transcript.length ? `<div class="chat">${d.transcript.map(m => {
                 const agent = !/^(user|customer|candidate|caller|human)/i.test(m.speaker || '');
@@ -622,9 +628,9 @@
         const body = $('#csBody'), tab = cs.tab;
         body.innerHTML = '<div class="muted">Loading…</div>';
         try {
-            const d = tab === 'sheets' ? await api('/batches') : await api('/all/' + tab);
+            const d = tab === 'sheets' ? await api('/batches') : tab === 'campaigns' ? await api('/campaigns') : await api('/all/' + tab);
             if (tab !== cs.tab) return;
-            cs.rows = tab === 'sheets' ? d.batches : d.rows;
+            cs.rows = tab === 'sheets' ? d.batches : tab === 'campaigns' ? d.campaigns : d.rows;
             fillCsFilters();
             renderCs();
         } catch (e) { body.innerHTML = `<div class="alert">${esc(e.message)}</div>`; }
@@ -649,25 +655,31 @@
         const rows = cs.rows.filter(r =>
             (!own || (own === '__none' ? !r.owner_user_id : r.owner_user_id === own)) &&
             (!st || statusOf(r) === st.replace('-', '_')) &&
-            (!q || [r.contact_name, r.name, r.phone, r.filename, r.batch_file, r.service, r.owner_name].some(v => (v || '').toLowerCase().includes(q))));
+            (!q || [r.contact_name, r.name, r.phone, r.filename, r.batch_file, r.service, r.owner_name, r.campaign_name, r.campaign_owner_name].some(v => (v || '').toLowerCase().includes(q))));
         const count = `<div class="muted small" style="margin-bottom:8px">${rows.length} of ${cs.rows.length} shown</div>`;
         const none = 'Nothing here yet.';
         let html;
         if (cs.tab === 'conversations') {
-            html = tbl(['Started', 'Contact', 'Service', 'Status', 'Duration', 'Admin', ''], rows.map(c => `<tr class="click" data-cconv="${esc(c.id)}" tabindex="0">
+            html = tbl(['Started', 'Contact', 'Service', 'Status', 'Duration', 'Campaign', 'Admin', ''], rows.map(c => `<tr class="click" data-cconv="${esc(c.id)}" tabindex="0">
                 <td>${esc(fmtDate(c.started_at))}</td><td>${esc(c.contact_name)}<div class="sub">${esc(c.phone)}</div></td><td>${cap(c.service)}</td><td>${statusPill(c.status)}</td><td>${fmtDur(c.duration_seconds)}</td>
+                <td>${campaignCell(c)}</td>
                 <td>${ownerPick('data-own-conv', c.id, c.owner_user_id)}${c.owner_via_sheet ? `<div class="sub">via ${esc(c.owner_via_sheet)}</div>` : ''}</td>
                 <td class="actions"><button class="btn sm danger" data-cconv-del="${esc(c.id)}">Delete</button></td></tr>`), none);
         } else if (cs.tab === 'calls') {
-            html = tbl(['When', 'Contact', 'Service', 'Status', 'Duration', 'Outcome', 'Admin', 'Notes'], rows.map(c => `<tr>
+            html = tbl(['When', 'Contact', 'Service', 'Status', 'Duration', 'Outcome', 'Campaign', 'Admin', 'Notes'], rows.map(c => `<tr>
                 <td>${esc(fmtDate(c.started_at))}</td><td>${esc(c.name)}<div class="sub">${esc(c.phone)}</div></td><td>${cap(c.service)}</td><td>${statusPill(c.call_status)}</td><td>${fmtDur(c.duration_seconds)}</td>
-                <td>${cap(c.classification || c.call_outcome)}</td><td>${ownerLabel(c)}<div class="sub">${esc(c.batch_file || '')}</div></td><td>${esc(c.error_details || c.summary || '')}</td></tr>`), none);
+                <td>${cap(c.classification || c.call_outcome)}</td><td>${campaignCell(c)}</td><td>${ownerLabel(c)}<div class="sub">${esc(c.batch_file || '')}</div></td><td>${esc(c.error_details || c.summary || '')}</td></tr>`), none);
         } else if (cs.tab === 'scheduled') {
             html = `<div class="ws-note" style="margin-bottom:10px">There is no date/time scheduling yet. This lists calls waiting in the queue to be dialled.</div>` +
                 tbl(['Queued', 'Contact', 'Service', 'Status', 'Contact sheet', 'Admin', ''], rows.map(q2 => `<tr>
                 <td>${esc(fmtDate(q2.created_at))}</td><td>${esc(q2.name)}<div class="sub">${esc(q2.phone)}</div></td><td>${cap(q2.service)}</td><td>${statusPill(q2.status)}</td>
                 <td>${esc(q2.batch_file || '')}</td><td>${ownerLabel(q2)}</td>
                 <td class="actions">${q2.status === 'QUEUED' ? `<button class="btn sm" data-cq-cancel="${esc(q2.id)}">Cancel</button>` : ''}</td></tr>`), 'Nothing is waiting in the queue.');
+        } else if (cs.tab === 'campaigns') {
+            html = `<div class="ws-note" style="margin-bottom:10px">Each campaign belongs to the admin who created it. Only that admin sees it, with its conversations and call history.</div>` +
+                tbl(['Campaign', 'Service', 'Status', 'Contacts', 'Conversations', 'Created', 'Created by'], rows.map(c => `<tr>
+                <td>${esc(c.name)}</td><td>${cap(c.service)}</td><td>${statusPill(c.status)}</td><td>${esc(c.contact_count)}</td><td>${esc(c.conversation_count)}</td>
+                <td>${esc(fmtDate(c.created_at))}</td><td>${ownerLabel(c)}</td></tr>`), 'No campaigns yet.');
         } else {
             html = `<div class="ws-note" style="margin-bottom:10px">Pick an admin on a contact sheet to link it, and all its calls, to them. New uploads are linked to the uploader automatically.</div>` +
                 tbl(['File', 'Service', 'Status', 'Valid / total', 'Conversations', 'Uploaded', 'Admin'], rows.map(b => `<tr>

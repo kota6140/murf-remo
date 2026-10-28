@@ -195,7 +195,7 @@ await test('Status: available, unavailable, expired (by date or by deletion)', (
 });
 
 // ── Access ──────────────────────────────────────────────────────────────────
-await test('An admin only finds their own and unassigned calls; the owner finds every call', async () => {
+await test('An admin only finds their own calls (not unassigned ones); the owner finds every call', async () => {
     reset();
     addBatch('b-admin1', 'admin1');
     addBatch('b-admin2', 'admin2');
@@ -210,10 +210,10 @@ await test('An admin only finds their own and unassigned calls; the owner finds 
     addConversation({ id: 'unassigned', contact_id: 'ctf', batch_id: 'b-free', owner_user_id: null });
     addConversation({ id: 'direct', contact_id: 'direct', batch_id: 'direct_batch', owner_user_id: null });
 
-    for (const id of ['mine', 'via-sheet', 'unassigned', 'direct']) {
+    for (const id of ['mine', 'via-sheet']) {
         assert.ok(await RecordingService.findConversation(id, { adminId: 'admin1' }), `admin1 must reach ${id}`);
     }
-    for (const id of ['theirs', 'other-sheet']) {
+    for (const id of ['theirs', 'other-sheet', 'unassigned', 'direct']) {
         assert.strictEqual(await RecordingService.findConversation(id, { adminId: 'admin1' }), null, `admin1 must NOT reach ${id}`);
     }
     for (const id of ['mine', 'theirs', 'via-sheet', 'other-sheet', 'unassigned', 'direct']) {

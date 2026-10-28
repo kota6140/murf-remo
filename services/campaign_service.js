@@ -190,7 +190,7 @@ export class CampaignService {
      */
     static async getCampaign(id, ownerUserId = null) {
         await ensureCampaignSchema();
-        const ownerWhere = ownerUserId ? ' AND (owner_user_id = ? OR owner_user_id IS NULL)' : '';
+        const ownerWhere = ownerUserId ? ' AND owner_user_id = ?' : '';
         const params = ownerUserId ? [id, ownerUserId] : [id];
 
         const campaign = await db.get(`SELECT * FROM campaigns WHERE id = ?${ownerWhere}`, params);
@@ -250,7 +250,7 @@ export class CampaignService {
         const params = [];
 
         if (ownerUserId) {
-            conditions.push('(owner_user_id = ? OR owner_user_id IS NULL)');
+            conditions.push('owner_user_id = ?');
             params.push(ownerUserId);
         }
         if (service) {
@@ -402,6 +402,21 @@ export class CampaignService {
      */
     static async attachPdf(campaignId, fileBuffer, originalName, ownerUserId = null) {
         return this.attachDocument(campaignId, fileBuffer, originalName, ownerUserId);
+    }
+
+    /**
+     * Finds the attached instructions document on disk so it can be opened. Only the campaign's owner
+     * gets it, and only files inside the upload folder are ever returned.
+     * @returns {Promise<{filePath: string, filename: string} | null>}
+     */
+    static async getDocumentFile(campaignId, ownerUserId = null) {
+        await ensureCampaignSchema();
+        const campaign = await this.getCampaign(campaignId, ownerUserId);
+        if (!campaign || !campaign.pdf_path) return null;
+
+        const filePath = path.resolve(campaign.pdf_path);
+        if (!filePath.startsWith(UPLOAD_DIR + path.sep) || !fs.existsSync(filePath)) return null;
+        return { filePath, filename: campaign.pdf_filename || path.basename(filePath) };
     }
 
     /**

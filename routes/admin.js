@@ -192,11 +192,11 @@ router.post('/:service/start', serviceFor, wrap(async (req, res) => {
     fileId = typeof fileId === 'string' ? fileId.trim() : '';
     let batch = null;
     if (fileId) {
-        batch = await db.get('SELECT id FROM batches WHERE id = ? AND (owner_user_id = ? OR owner_user_id IS NULL)', [fileId, req.user.id]);
+        batch = await db.get('SELECT id FROM batches WHERE id = ? AND owner_user_id = ?', [fileId, req.user.id]);
         if (!batch) return fail(res, 404, 'That contact sheet was not found in your account.');
     } else {
         batch = await db.get(
-            "SELECT id FROM batches WHERE service = ? AND (owner_user_id = ? OR owner_user_id IS NULL) AND status IN ('READY', 'IN_PROGRESS') ORDER BY created_at DESC LIMIT 1",
+            "SELECT id FROM batches WHERE service = ? AND owner_user_id = ? AND status IN ('READY', 'IN_PROGRESS') ORDER BY created_at DESC LIMIT 1",
             [req.serviceName, req.user.id]);
         if (!batch) return fail(res, 400, 'Upload a contact sheet first.');
     }
@@ -288,7 +288,7 @@ router.delete('/calls/:id', wrap(async (req, res) => {
     const m = /^call_([A-Za-z0-9_-]{1,8})$/.exec(req.params.id);
     if (!m) return fail(res, 404, 'Call record not found.');
     const rows = await db.all(
-        'SELECT ct.id FROM contacts ct LEFT JOIN batches b ON b.id = ct.batch_id WHERE ct.id LIKE ? AND (b.owner_user_id = ? OR ct.owner_user_id = ? OR b.owner_user_id IS NULL)',
+        'SELECT ct.id FROM contacts ct LEFT JOIN batches b ON b.id = ct.batch_id WHERE ct.id LIKE ? AND (b.owner_user_id = ? OR ct.owner_user_id = ?)',
         [`${m[1]}%`, req.user.id, req.user.id]);
     if (rows.length !== 1) return fail(res, 404, 'Call record not found.');
     await db.run("UPDATE contacts SET call_status = 'DELETED', updated_at = ? WHERE id = ?", [utcNow(), rows[0].id]);
@@ -547,6 +547,23 @@ const uploadDocHandler = wrap(async (req, res) => {
 });
 router.post('/campaigns/:id/upload-pdf', uploadDoc.single('file'), uploadDocHandler);
 router.post('/campaigns/:id/upload-doc', uploadDoc.single('file'), uploadDocHandler);
+
+// View the attached document (opens in the browser for PDF; Word files are handed to the browser as a download)
+const DOC_TYPES = {
+    '.pdf': 'application/pdf',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.doc': 'application/msword'
+};
+router.get('/campaigns/:id/document', wrap(async (req, res) => {
+    const doc = await CampaignService.getDocumentFile(req.params.id, req.user.id);
+    if (!doc) return fail(res, 404, 'No document is attached to this campaign.');
+    const ext = path.extname(doc.filename).toLowerCase();
+    const asciiName = doc.filename.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_');
+    res.setHeader('Content-Type', DOC_TYPES[ext] || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(doc.filename)}`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.sendFile(doc.filePath);
+}));
 
 // Remove Attached Document from Campaign
 router.delete('/campaigns/:id/document', wrap(async (req, res) => {

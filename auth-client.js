@@ -55,6 +55,7 @@ const AuthClient = {
     if (!res.ok || !data.success) {
       const err = new Error(data.message || fallbackMessage);
       err.expired = !!data.expired;
+      err.notRegistered = !!data.notRegistered;
       err.retryAfterSec = data.retryAfterSec;
       throw err;
     }
@@ -446,6 +447,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 5. Signin Form Handler
   const signinForm = document.getElementById('signin-form');
   if (signinForm) {
+    if (new URLSearchParams(window.location.search).get('notice') === 'register') {
+      AuthClient.showAlert('auth-alert-container', 'This email is not registered. Please register first using "Create Account" below.', 'info');
+    }
     signinForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       AuthClient.clearAlert('auth-alert-container');
@@ -534,6 +538,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         resetOtpInput.focus();
         AuthClient.startResendTimer(resetResendBtn, 45);
       } catch (err) {
+        if (err.notRegistered) {
+          // Not registered: send them to the sign-in page with a "register first" notice
+          window.location.href = '/signin?notice=register';
+          return;
+        }
         AuthClient.showAlert('auth-alert-container', err.message);
       } finally {
         submitBtn.disabled = false;

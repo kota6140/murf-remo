@@ -1809,6 +1809,7 @@
             <span id="edit-camp-doc-name" style="font-size:0.8rem; color:#475569; font-family:monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">No document attached</span>
             <div style="display:flex; gap:6px; flex:none;">
               <input type="file" id="edit-camp-file-input" accept=".pdf,.docx,.doc" style="display:none;">
+              <button type="button" class="btn-card-secondary" id="btn-edit-camp-view-doc" style="padding:4px 10px; font-size:0.75rem; display:none;">View</button>
               <button type="button" class="btn-card-secondary" id="btn-edit-camp-replace-doc" style="padding:4px 10px; font-size:0.75rem;">Upload / Replace</button>
               <button type="button" class="btn-card-secondary" id="btn-edit-camp-remove-doc" style="padding:4px 10px; font-size:0.75rem; color:#DC2626; display:none;">Remove</button>
             </div>
@@ -4730,6 +4731,7 @@
           const docName = document.getElementById('edit-camp-doc-name');
           const replaceBtn = document.getElementById('btn-edit-camp-replace-doc');
           const removeBtn = document.getElementById('btn-edit-camp-remove-doc');
+          const viewBtn = document.getElementById('btn-edit-camp-view-doc');
           const fileInput = document.getElementById('edit-camp-file-input');
           const statusMsg = document.getElementById('edit-camp-doc-status-msg');
 
@@ -4746,6 +4748,7 @@
             }
             if (docName) docName.textContent = c.pdf_filename;
             if (removeBtn) removeBtn.style.display = 'inline-block';
+            if (viewBtn) viewBtn.style.display = 'inline-block';
           } else {
             if (docBadge) {
               docBadge.textContent = 'NO DOC';
@@ -4753,6 +4756,11 @@
             }
             if (docName) docName.textContent = 'No document attached';
             if (removeBtn) removeBtn.style.display = 'none';
+            if (viewBtn) viewBtn.style.display = 'none';
+          }
+
+          if (viewBtn) {
+            viewBtn.onclick = () => window.open(`/api/admin/campaigns/${encodeURIComponent(campaignId)}/document`, '_blank', 'noopener');
           }
 
           if (replaceBtn && fileInput) {
@@ -4770,6 +4778,7 @@
                     docBadge.className = 'badge-pill badge-status-completed';
                   }
                   if (removeBtn) removeBtn.style.display = 'inline-block';
+                  if (viewBtn) viewBtn.style.display = 'inline-block';
                   if (statusMsg) {
                     statusMsg.textContent = `✓ Document ${file.name} attached & parsed successfully.`;
                     statusMsg.style.display = 'block';
@@ -4797,6 +4806,7 @@
                   docBadge.className = 'badge-pill';
                 }
                 removeBtn.style.display = 'none';
+                if (viewBtn) viewBtn.style.display = 'none';
                 if (statusMsg) {
                   statusMsg.textContent = 'Document removed.';
                   statusMsg.style.display = 'block';

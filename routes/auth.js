@@ -245,12 +245,11 @@ router.post('/forgot-password', async (req, res) => {
     const { email } = req.body || {};
     const emailNorm = (email || '').trim().toLowerCase();
 
-    // Always respond the same to prevent user enumeration
-    const genericMsg = `If an account exists for ${emailNorm}, a 6-digit reset code has been sent.`;
+    const genericMsg = `A 6-digit reset code has been sent to ${emailNorm}.`;
 
     const user = findUserByEmail(emailNorm);
     if (!user) {
-        return res.status(200).json({ success: true, message: genericMsg, email: emailNorm });
+        return res.status(404).json({ success: false, message: 'No account found for this email. Please register first.', notRegistered: true });
     }
 
     const prev = resetOtps.get(emailNorm);

@@ -103,16 +103,14 @@ export default class RecordingService {
 
     /**
      * Loads one conversation with its recording fields. With adminId, only that admin's calls are returned:
-     * the call is theirs directly or through their contact sheet, or it is unassigned (no owner on the call
-     * and none on its contact sheet, as in the owner panel's "unassigned" list). Without adminId (owner), any call.
+     * the call is theirs directly or through their contact sheet. Without adminId (owner), any call.
      */
     static async findConversation(convId, { adminId = null } = {}) {
         if (isBlank(convId)) return null;
         await this.ensureSchema();
         const id = String(convId).trim();
         const scope = adminId
-            ? `AND (c.owner_user_id = ? OR b.owner_user_id = ?
-                    OR ((c.owner_user_id IS NULL OR c.owner_user_id = '') AND (b.owner_user_id IS NULL OR b.owner_user_id = '')))`
+            ? 'AND (c.owner_user_id = ? OR b.owner_user_id = ?)'
             : '';
         const row = await db.get(`
             SELECT c.*, ct.provider_call_id AS contact_call_id, ct.recording_url AS contact_recording_url,
