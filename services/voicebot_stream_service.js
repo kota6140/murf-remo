@@ -349,9 +349,10 @@ export class CallSession {
         this.hangUpTimer = null;
 
         // VAD parameters (20ms frames = 160 mulaw bytes at 8kHz)
-        this.ENERGY_THRESHOLD = 450;        // Minimum RMS to count as speech
-        this.MIN_INTERRUPT_FRAMES = 35;     // ~700ms of sustained speech while AI speaks triggers barge-in
-        this.MIN_AUDIO_BYTES = 1600;        // 200ms of audio minimum to avoid discarding short answers
+        this.ENERGY_THRESHOLD = 450;             // Minimum RMS to count as speech when AI is listening
+        this.BARGE_IN_ENERGY_THRESHOLD = 850;   // Higher threshold while AI speaks to prevent speaker echo / background noise from cutting AI off
+        this.MIN_INTERRUPT_FRAMES = 60;          // ~1200ms of sustained speech while AI speaks triggers barge-in
+        this.MIN_AUDIO_BYTES = 1600;             // 200ms of audio minimum to avoid discarding short answers
 
         // FIX-1 & FIX-6: isProcessingTurn is ONLY cleared after playAiAudio completes.
         // turnId prevents the same utterance from being processed twice.
@@ -1053,13 +1054,20 @@ export class CallSession {
                 ? MurfService.getCachedAudio(greeting, { voiceId, model: modelId, locale })
                 : ElevenLabsService.getCachedAudio(greeting, { voiceId, modelId });
 
-            if (cachedAudio) {
-                console.log(`[CallSession] Instant cache hit for opening greeting! Dispatching audio in < 5ms via ${ttsProvider}.`);
+            const minExpectedGreetingBytes = Math.min(
+                greeting.split(/\s+/).filter(Boolean).length * 1400,
+                greeting.length * 150
+            );
+
+            if (cachedAudio && cachedAudio.length >= minExpectedGreetingBytes) {
+                console.log(`[CallSession] Instant cache hit for opening greeting (${cachedAudio.length} bytes)! Dispatching audio in < 5ms via ${ttsProvider}.`);
                 this.latencyTracker.markGreetingDelivered();
                 this.greetingDelivered = true;
                 this.greetingInProgress = false;
                 await this.dispatchAudioBuffer(cachedAudio, greeting, this.beginResponse(0));
                 return;
+            } else if (cachedAudio) {
+                console.warn(`[CallSession] Cached opening greeting was incomplete (${cachedAudio.length} bytes < ${minExpectedGreetingBytes} min expected). Synthesizing freshly.`);
             }
 
             // 2. Synthesize audio via active TTS provider
@@ -1595,12 +1603,15 @@ export class CallSession {
 
         // SCENARIO 1: AI IS CURRENTLY SPEAKING (Barge-In Handling)
         if (this.isAiSpeaking || this.conversationState === ConversationStates.SPEAKING) {
-            if (hasSpeech) {
+            const hasBargeInSpeech = energy >= (this.BARGE_IN_ENERGY_THRESHOLD || 850);
+            if (hasBargeInSpeech) {
                 this.overlapMulawChunks.push(mulawChunk);
                 this.overlapSpeechFrames++;
 
-                // If candidate speaks sustained speech (>= 700ms), trigger barge-in!
-                if (this.overlapSpeechFrames >= this.MIN_INTERRUPT_FRAMES) {
+                // If candidate speaks sustained speech (>= 1200ms), trigger barge-in!
+                // During opening greeting (turn 0), require at least 80 frames (~1600ms) to ensure line connect clicks do not cut greeting
+                const minBargeInFrames = (this.greetingInProgress || this.currentTurnId === 0) ? 80 : this.MIN_INTERRUPT_FRAMES;
+                if (this.overlapSpeechFrames >= minBargeInFrames) {
                     console.log(`[CallSession] Caller sustained speech detected (${this.overlapSpeechFrames * 20}ms). Stopping AI speech (Barge-in).`);
                     this.logDiagnostic('candidate_speech_started', { reason: 'barge_in', frames: this.overlapSpeechFrames });
 
@@ -2901,7 +2912,15 @@ export function handleVoicebotWebsocket(ws, request) {
         console.error('[VoicebotStream] WebSocket error:', err.message);
     });
 
+    // Keep-alive heartbeat: ping the WebSocket every 10s to prevent ngrok / proxy from timing out the connection
+    const pingInterval = setInterval(() => {
+        if (ws.readyState === ws.OPEN) {
+            try { ws.ping(); } catch (_) {}
+        }
+    }, 10000);
+
     ws.on('close', async (code, reason) => {
+        clearInterval(pingInterval);
         console.log(`[VoicebotStream] Connection closed (${code}) for CallId: ${session.callId}`);
         await session.endCall();
     });

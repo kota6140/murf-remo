@@ -228,7 +228,7 @@ export class LLMService {
     static async generateStream({
         systemPrompt = '',
         messages = [],
-        maxTokens = 110,
+        maxTokens = 250,
         temperature = 0.2,
         timeoutMs = 5000,
         jsonMode = true,

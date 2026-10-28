@@ -657,13 +657,14 @@ OUTPUT STRICT JSON ONLY:
         const userPrompt = `Conversation History:\n${historyLines.join('\n')}\n\nGenerate Remo's next spoken response as pure JSON.`;
 
         // Execute via LLMService (Claude Haiku primary with streaming & Gemini Flash fallback)
-        // Optimized 110 maxTokens for < 1s conversational generation without truncation
+        // 260 maxTokens allows 1-2 complete spoken sentences + the full JSON envelope without truncation
+        const maxTokens = service === 'appointment' ? 260 : 250;
         try {
             const llmRes = options.onSpokenSentence
                 ? await LLMService.generateStream({
                     systemPrompt,
                     messages: [{ role: 'user', content: userPrompt }],
-                    maxTokens: service === 'appointment' ? 220 : 110,
+                    maxTokens,
                     jsonMode: true,
                     timeoutMs: 6500,
                     onSpokenSentence: options.onSpokenSentence,
@@ -672,7 +673,7 @@ OUTPUT STRICT JSON ONLY:
                 : await LLMService.generate({
                     systemPrompt,
                     messages: [{ role: 'user', content: userPrompt }],
-                    maxTokens: service === 'appointment' ? 220 : 110,
+                    maxTokens,
                     jsonMode: true,
                     timeoutMs: 6500
                 });

@@ -189,7 +189,7 @@ export default class PlivoService {
         const headersAttr = cleanHeaders ? ` extraHeaders="${cleanHeaders}"` : '';
         return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-mulaw;rate=8000"${headersAttr}>${cleanUrl}</Stream>
+    <Stream bidirectional="true" keepCallAlive="true" streamTimeout="3600" contentType="audio/x-mulaw;rate=8000"${headersAttr}>${cleanUrl}</Stream>
 </Response>`.trim();
     }
 

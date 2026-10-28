@@ -59,6 +59,16 @@ export function convertPcm24kToMulaw8k(pcm24kBuffer) {
     return mulawBuffer;
 }
 
+export function getMinExpectedAudioBytes(text) {
+    if (!text) return 0;
+    const str = String(text).trim();
+    if (!str) return 0;
+    const words = str.split(/\s+/).filter(Boolean).length;
+    // Fast speech is at most ~4-5 words/sec. At 8000 bytes/sec, ~1400-2000 bytes per word.
+    // Minimum 2400 bytes (300ms) for brief utterances.
+    return Math.max(words * 1400, Math.min(str.length * 150, 2400));
+}
+
 function getCacheKey(text, voiceId, modelId, locale) {
     return `${voiceId || 'Pooja'}_${modelId || 'falcon-2.1'}_${locale || 'en-IN'}_${String(text || '').trim().toLowerCase()}`;
 }
@@ -124,7 +134,7 @@ export default class MurfService {
     }
 
     /**
-     * RAM cache retrieval
+     * RAM cache retrieval with truncation guard
      */
     static getCachedAudio(text, options = {}) {
         if (!text) return null;
@@ -132,14 +142,28 @@ export default class MurfService {
         const modelId = options.model || options.modelId || this.getModelId();
         const locale = options.locale || this.getLocale();
         const key = getCacheKey(text, voiceId, modelId, locale);
-        return murfAudioCache.get(key) || null;
+        const cached = murfAudioCache.get(key) || null;
+        if (cached) {
+            const minExpected = getMinExpectedAudioBytes(text);
+            if (cached.length < minExpected) {
+                console.warn(`[MurfService] Cached audio for "${String(text).slice(0, 30)}..." is truncated (${cached.length} bytes < ${minExpected} min expected). Purging from cache.`);
+                murfAudioCache.delete(key);
+                return null;
+            }
+        }
+        return cached;
     }
 
     /**
-     * Pre-cache audio into RAM
+     * Pre-cache audio into RAM with truncation guard
      */
     static precacheAudio(text, audioBuffer, options = {}) {
         if (!text || !audioBuffer || audioBuffer.length === 0) return;
+        const minExpected = getMinExpectedAudioBytes(text);
+        if (audioBuffer.length < minExpected) {
+            console.warn(`[MurfService] Refusing to cache incomplete audio buffer for "${String(text).slice(0, 30)}..." (${audioBuffer.length} bytes < ${minExpected} min expected).`);
+            return;
+        }
         const voiceId = this.getVoiceId(options);
         const modelId = options.model || options.modelId || this.getModelId();
         const locale = options.locale || this.getLocale();
@@ -149,6 +173,13 @@ export default class MurfService {
             murfAudioCache.delete(oldestKey);
         }
         murfAudioCache.set(key, audioBuffer);
+    }
+
+    /**
+     * Clear all cached audio buffers
+     */
+    static clearCache() {
+        murfAudioCache.clear();
     }
 
     /**
@@ -325,11 +356,21 @@ export default class MurfService {
                     }
                 }
 
-                // Debounce idle timer: when audio pauses for 500ms, stream has finished
+                let totalCollectedBytes = 0;
+                for (let i = 0; i < collectedMulawChunks.length; i++) {
+                    totalCollectedBytes += collectedMulawChunks[i].length;
+                }
+                const minExpected = getMinExpectedAudioBytes(trimmed);
+                // If we haven't reached the minimum expected audio length yet, Murf is still synthesizing
+                // subsequent clauses/sentences; give it up to 1600ms between chunks so speech isn't cut off.
+                // Once minimum audio has arrived, 700ms of idle confirms the stream has completed.
+                const idleDelay = totalCollectedBytes < minExpected ? 1600 : 700;
+
+                // Debounce idle timer: when audio pauses for idleDelay ms, stream has finished
                 if (idleTimer) clearTimeout(idleTimer);
                 idleTimer = setTimeout(() => {
                     finish(collectedMulawChunks.length > 0 ? Buffer.concat(collectedMulawChunks) : null);
-                }, 500);
+                }, idleDelay);
             });
 
             ws.on('error', (err) => {

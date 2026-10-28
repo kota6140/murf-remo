@@ -872,7 +872,7 @@ export async function handlePlivoAnswer(req, res) {
     }
 
     // Pre-warm opening greeting TTS into in-memory RAM cache so WebSocket playback begins in < 5ms
-    if (ElevenLabsService.isConfigured()) {
+    if (MurfService.isConfigured() || ElevenLabsService.isConfigured()) {
         (async () => {
             try {
                 const rawName = String(name || '').trim();
