@@ -384,6 +384,17 @@
     $('#agentSearch').addEventListener('input', renderAgents);
     $('#agentFilter').addEventListener('change', renderAgents);
 
+    // Live count under the instructions field: words, and characters used out of the limit (the textarea's maxlength).
+    function updateInstructionsCount() {
+        const box = $('#agentForm').elements.instructions, out = $('#instructionsCount');
+        const chars = box.value.length, max = box.maxLength > 0 ? box.maxLength : 6000;
+        const words = (box.value.trim().match(/\S+/g) || []).length;
+        out.textContent = `${words.toLocaleString('en-US')} word${words === 1 ? '' : 's'} · ${chars.toLocaleString('en-US')} / ${max.toLocaleString('en-US')} characters`
+            + (chars >= max ? ' · limit reached' : chars >= max * 0.9 ? ' · almost full' : '');
+        out.style.color = chars >= max ? '#DC2626' : chars >= max * 0.9 ? '#B45309' : '';
+    }
+    $('#agentForm').elements.instructions.addEventListener('input', updateInstructionsCount);
+
     function openAgentForm(id) {
         const form = $('#agentForm'), a = id ? state.agents.find(x => x.id === id) : null;
         state.editingAgentId = id || null; form.reset(); $('#agentFormError').hidden = true;
@@ -396,6 +407,7 @@
             form.elements.voiceId.value = a.voiceId || ''; form.elements.status.value = a.status || 'active';
             form.elements.greeting.value = a.greeting || ''; form.elements.instructions.value = a.instructions || '';
         }
+        updateInstructionsCount();
         openEl($('#agentModal')); form.elements.name.focus();
     }
     $('#addAgentBtn').addEventListener('click', () => openAgentForm(null));

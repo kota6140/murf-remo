@@ -86,13 +86,25 @@ function present(row) {
     return { ...row, status: row.status || 'active' };
 }
 
-function cleanFields(body, { requireAll }) {
+/** How much text an agent's greeting and instructions can hold (the owner panel shows the same numbers). */
+export const AGENT_LIMITS = { greeting: 1000, instructions: 6000 };
+
+/** Rejects text over the limit instead of cutting it off, so part of an owner's instructions is never lost silently. */
+function limitedText(value, subject, max) {
+    const text = value.trim();
+    if (text.length > max) {
+        throw new AgentError(`${subject} too long: ${text.length.toLocaleString('en-US')} characters. The limit is ${max.toLocaleString('en-US')} characters (about ${Math.floor(max / 6).toLocaleString('en-US')} words).`);
+    }
+    return text;
+}
+
+export function cleanFields(body, { requireAll }) {
     const f = {};
     if (typeof body.name === 'string') f.name = body.name.trim();
     if (typeof body.phoneNumber === 'string') f.phone_number = normalizeNumber(body.phoneNumber);
     if (typeof body.service === 'string') f.service = body.service.trim().toLowerCase();
-    if (typeof body.greeting === 'string') f.greeting = body.greeting.trim().slice(0, 1000);
-    if (typeof body.instructions === 'string') f.instructions = body.instructions.trim().slice(0, 6000);
+    if (typeof body.greeting === 'string') f.greeting = limitedText(body.greeting, 'The greeting is', AGENT_LIMITS.greeting);
+    if (typeof body.instructions === 'string') f.instructions = limitedText(body.instructions, 'The instructions are', AGENT_LIMITS.instructions);
     if (typeof body.voiceId === 'string') f.voice_id = body.voiceId.trim().slice(0, 64);
     if (typeof body.status === 'string') f.status = body.status === 'disabled' ? 'disabled' : 'active';
 

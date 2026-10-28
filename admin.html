@@ -228,6 +228,8 @@
         <label>Instructions (optional)
             <textarea name="instructions" rows="5" maxlength="6000" placeholder="How this agent should speak and behave, what to ask, what to avoid…"></textarea>
         </label>
+        <div class="muted small" style="margin:4px 0 10px">Up to 6,000 characters (about 1,000 words). Hindi and Telugu use more characters per word, so fewer words fit. The agent reads these instructions on every reply, so shorter and clearer works best.</div>
+        <div class="muted small" id="instructionsCount" aria-live="polite">0 words · 0 / 6,000 characters</div>
         <div class="modal-actions">
             <button type="button" class="btn ghost" data-close>Cancel</button>
             <button type="submit" class="btn primary" id="agentSaveBtn">Save</button>
