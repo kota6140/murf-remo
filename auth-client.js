@@ -266,34 +266,39 @@ document.addEventListener('DOMContentLoaded', async () => {
   const mainNavActions = document.getElementById('main-nav-actions');
   if (mainNavActions) {
     const user = await AuthClient.getCurrentUser();
+    // Only the sign-in buttons change. Everything else in the header (Book a Demo, the sound button, the phone
+    // menu button) stays exactly where it is; replacing the whole area used to wipe them out.
+    const swapNavButton = (id, html) => {
+      const holder = document.createElement('div');
+      holder.innerHTML = html.trim();
+      const fresh = holder.firstElementChild;
+      const old = document.getElementById(id);
+      if (old) old.replaceWith(fresh);
+      else mainNavActions.insertBefore(fresh, mainNavActions.querySelector('.nav-menu-toggle'));
+      return fresh;
+    };
     if (user) {
       const destination = user.profileCompleted ? '/dashboard' : '/onboarding';
-      mainNavActions.innerHTML = `
+      swapNavButton('nav-signin-btn', `
         <a href="${destination}" class="btn btn-outline btn-sm" id="nav-dashboard-btn">
           <span>Dashboard</span>
-        </a>
+        </a>`);
+      const logoutBtn = swapNavButton('nav-signup-btn', `
         <button class="btn btn-secondary btn-sm" id="nav-logout-btn">
           <span>Logout</span>
-        </button>
-      `;
-
-      const logoutBtn = document.getElementById('nav-logout-btn');
-      if (logoutBtn) {
-        logoutBtn.addEventListener('click', (e) => {
-          e.preventDefault();
-          AuthClient.logout();
-        });
-      }
+        </button>`);
+      logoutBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        AuthClient.logout();
+      });
     } else {
-      // Unauthenticated state: Ensure links go to dedicated routes
-      mainNavActions.innerHTML = `
-        <a href="/signin" class="btn btn-outline btn-sm" id="nav-signin-btn">
-          <span>Login</span>
-        </a>
-        <a href="/signup" class="btn btn-primary btn-sm btn-glow" id="nav-signup-btn">
-          <span>Create Account</span>
-        </a>
-      `;
+      // Signed out: the Login and Create Account buttons are already in the page markup. Add any that are missing.
+      if (!document.getElementById('nav-signin-btn')) {
+        swapNavButton('nav-signin-btn', '<a href="/signin" class="btn btn-outline btn-sm" id="nav-signin-btn"><span>Login</span></a>');
+      }
+      if (!document.getElementById('nav-signup-btn')) {
+        swapNavButton('nav-signup-btn', '<a href="/signup" class="btn btn-primary btn-sm btn-glow" id="nav-signup-btn"><span>Create Account</span></a>');
+      }
     }
   }
 

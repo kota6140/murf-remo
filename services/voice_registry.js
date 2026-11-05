@@ -5,7 +5,7 @@ import MurfService from './murf_service.js';
  * services/voice_registry.js
  *
  * Central server-side registry and allowlist validator for AI Voices and Primary Languages.
- * Maps high-level voice identifiers (pooja, abhinav, samar, abirami) to their exact
+ * Maps high-level voice identifiers (pooja, abhinav, samar, anisha) to their exact
  * server-side provider configuration, models, supported locales, and environment variables.
  *
  * Security & Integrity:
@@ -101,16 +101,60 @@ export const VOICE_DEFINITIONS = {
         getVoiceId: () => (process.env.MURF_SAMAR_VOICE_ID || 'en-IN-samar').trim(),
         supportedLocales: ['en-IN', 'te-IN', 'hi-IN', 'ta-IN', 'kn-IN', 'mr-IN']
     },
-    abirami: {
-        id: 'abirami',
-        name: 'Abirami',
+    anisha: {
+        id: 'anisha',
+        name: 'Anisha',
         gender: 'Female Voice',
         description: 'Female Voice',
         provider: 'murf',
         model: 'falcon-2.1',
         defaultStyle: 'Conversation',
-        getVoiceId: () => (process.env.MURF_ABHINAMI_VOICE_ID || process.env.MURF_ABIRAMI_VOICE_ID || 'ta-IN-abirami').trim(),
-        supportedLocales: ['ta-IN', 'te-IN', 'hi-IN']
+        getVoiceId: () => (process.env.MURF_ANISHA_VOICE_ID || 'en-IN-anisha').trim(),
+        supportedLocales: ['en-IN', 'hi-IN', 'te-IN']
+    },
+    natalie: {
+        id: 'natalie',
+        name: 'Natalie',
+        gender: 'Female Voice',
+        description: 'Female Voice (US accent)',
+        provider: 'murf',
+        model: 'falcon-2.1',
+        defaultStyle: 'Conversation',
+        getVoiceId: () => (process.env.MURF_NATALIE_VOICE_ID || 'en-US-natalie').trim(),
+        supportedLocales: ['en-IN']
+    },
+    alia: {
+        id: 'alia',
+        name: 'Alia',
+        gender: 'Female Voice',
+        description: 'Female Voice',
+        provider: 'murf',
+        model: 'falcon-2.1',
+        defaultStyle: 'Conversation',
+        getVoiceId: () => (process.env.MURF_ALIA_VOICE_ID || 'en-IN-alia').trim(),
+        supportedLocales: ['en-IN', 'hi-IN', 'te-IN']
+    },
+    michelle: {
+        id: 'michelle',
+        name: 'Michelle',
+        gender: 'Female Voice',
+        description: 'Female Voice (US accent)',
+        provider: 'murf',
+        model: 'falcon-2.1',
+        defaultStyle: 'Conversation',
+        getVoiceId: () => (process.env.MURF_MICHELLE_VOICE_ID || 'en-US-michelle').trim(),
+        supportedLocales: ['en-IN']
+    },
+    prathamesh: {
+        id: 'prathamesh',
+        name: 'Prathamesh',
+        gender: 'Male Voice',
+        description: 'Male Voice',
+        provider: 'murf',
+        model: 'falcon-2.1',
+        defaultStyle: 'Conversation',
+        getVoiceId: () => (process.env.MURF_PRATHAMESH_VOICE_ID || 'mr-IN-prathamesh').trim(),
+        supportedLocales: ['en-IN', 'hi-IN', 'te-IN']
     }
 };
 
@@ -134,7 +178,13 @@ export class VoiceRegistry {
         if (str.includes('pooja')) return 'pooja';
         if (str.includes('abhinav')) return 'abhinav';
         if (str.includes('samar')) return 'samar';
-        if (str.includes('abirami')) return 'abirami';
+        if (str.includes('anisha')) return 'anisha';
+        if (str.includes('natalie')) return 'natalie';
+        if (str.includes('alia')) return 'alia';
+        if (str.includes('prathamesh')) return 'prathamesh';
+        if (str.includes('michelle')) return 'michelle';
+        // Abirami was replaced by Anisha: campaigns saved with it keep working.
+        if (str.includes('abirami')) return 'anisha';
         return str;
     }
 
@@ -181,7 +231,7 @@ export class VoiceRegistry {
         const canonical = this.normalizeVoiceKey(voiceKey);
         const def = VOICE_DEFINITIONS[canonical];
         if (!def) {
-            throw new Error(`Invalid voice identifier "${voiceKey}". Permitted voices are: pooja, abhinav, samar, abirami.`);
+            throw new Error(`Invalid voice identifier "${voiceKey}". Permitted voices are: pooja, abhinav, samar, anisha, natalie, alia, michelle, prathamesh.`);
         }
 
         const normLocale = this.normalizeLocale(locale);
@@ -232,7 +282,7 @@ export class VoiceRegistry {
         if (!this.isAllowlistedVoice(canonical)) {
             return {
                 valid: false,
-                error: `Invalid voice identifier "${voiceKey}". Permitted voices: pooja, abhinav, samar, abirami.`
+                error: `Invalid voice identifier "${voiceKey}". Permitted voices: pooja, abhinav, samar, anisha, natalie, alia, michelle, prathamesh.`
             };
         }
 

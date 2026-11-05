@@ -14,9 +14,38 @@ if (!fs.existsSync(UPLOAD_DIR)) {
     fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
 
+// The live call counters of a campaign, counted from its contacts (used by getCampaign and attachLiveStats)
+const CONTACT_STATS_COLUMNS = `
+    COUNT(*) as total,
+    SUM(CASE WHEN validation_status = 'VALID' THEN 1 ELSE 0 END) as valid,
+    SUM(CASE WHEN validation_status = 'INVALID' THEN 1 ELSE 0 END) as invalid,
+    SUM(CASE WHEN call_status = 'PENDING' AND validation_status = 'VALID' THEN 1 ELSE 0 END) as pending,
+    SUM(CASE WHEN call_status IN ('CALLING', 'in-progress') THEN 1 ELSE 0 END) as in_progress,
+    SUM(CASE WHEN call_status = 'COMPLETED' THEN 1 ELSE 0 END) as completed,
+    SUM(CASE WHEN call_status IN ('FAILED', 'UNANSWERED') THEN 1 ELSE 0 END) as failed,
+    SUM(CASE WHEN classification LIKE '%Selected%' OR classification LIKE '%Shortlisted%' THEN 1 ELSE 0 END) as selected_cnt,
+    SUM(CASE WHEN classification LIKE '%Rejected%' THEN 1 ELSE 0 END) as rejected_cnt,
+    SUM(CASE WHEN classification LIKE '%Hold%' THEN 1 ELSE 0 END) as on_hold_cnt`;
+const CONTACT_STATS_KEYS = ['total', 'valid', 'invalid', 'pending', 'in_progress', 'completed', 'failed', 'selected_cnt', 'rejected_cnt', 'on_hold_cnt'];
+
+// Copies the counted numbers onto the campaign; a campaign with no contacts keeps its stored numbers.
+function applyLiveStats(campaign, stats) {
+    if (!stats || !(Number(stats.total) > 0)) return;
+    campaign.total_contacts = Number(stats.total) || 0;
+    campaign.valid_contacts = Number(stats.valid) || 0;
+    campaign.invalid_contacts = Number(stats.invalid) || 0;
+    campaign.pending_calls = Number(stats.pending) || 0;
+    campaign.inprogress_calls = Number(stats.in_progress) || 0;
+    campaign.completed_calls = Number(stats.completed) || 0;
+    campaign.failed_calls = Number(stats.failed) || 0;
+    campaign.selected_count = Number(stats.selected_cnt) || 0;
+    campaign.rejected_count = Number(stats.rejected_cnt) || 0;
+    campaign.on_hold_count = Number(stats.on_hold_cnt) || 0;
+}
+
 /**
  * services/campaign_service.js
- * 
+ *
  * Persistent Multi-Campaign Management Engine.
  * Supports isolated Recruitment (PDF JD + Excel), Outbound Sales, and Support campaigns
  * with per-campaign question planning, call queuing, and live telemetry tracking.
@@ -210,35 +239,52 @@ export class CampaignService {
 
         // Recalculate live stats from contacts table
         const stats = await db.get(`
-            SELECT
-                COUNT(*) as total,
-                SUM(CASE WHEN validation_status = 'VALID' THEN 1 ELSE 0 END) as valid,
-                SUM(CASE WHEN validation_status = 'INVALID' THEN 1 ELSE 0 END) as invalid,
-                SUM(CASE WHEN call_status = 'PENDING' AND validation_status = 'VALID' THEN 1 ELSE 0 END) as pending,
-                SUM(CASE WHEN call_status IN ('CALLING', 'in-progress') THEN 1 ELSE 0 END) as in_progress,
-                SUM(CASE WHEN call_status = 'COMPLETED' THEN 1 ELSE 0 END) as completed,
-                SUM(CASE WHEN call_status IN ('FAILED', 'UNANSWERED') THEN 1 ELSE 0 END) as failed,
-                SUM(CASE WHEN classification LIKE '%Selected%' OR classification LIKE '%Shortlisted%' THEN 1 ELSE 0 END) as selected_cnt,
-                SUM(CASE WHEN classification LIKE '%Rejected%' THEN 1 ELSE 0 END) as rejected_cnt,
-                SUM(CASE WHEN classification LIKE '%Hold%' THEN 1 ELSE 0 END) as on_hold_cnt
+            SELECT ${CONTACT_STATS_COLUMNS}
             FROM contacts
             WHERE campaign_id = ? OR (batch_id = ? AND batch_id IS NOT NULL AND batch_id != '')
         `, [id, campaign.batch_id || '']);
-
-        if (stats && Number(stats.total) > 0) {
-            campaign.total_contacts = Number(stats.total) || 0;
-            campaign.valid_contacts = Number(stats.valid) || 0;
-            campaign.invalid_contacts = Number(stats.invalid) || 0;
-            campaign.pending_calls = Number(stats.pending) || 0;
-            campaign.inprogress_calls = Number(stats.in_progress) || 0;
-            campaign.completed_calls = Number(stats.completed) || 0;
-            campaign.failed_calls = Number(stats.failed) || 0;
-            campaign.selected_count = Number(stats.selected_cnt) || 0;
-            campaign.rejected_count = Number(stats.rejected_cnt) || 0;
-            campaign.on_hold_count = Number(stats.on_hold_cnt) || 0;
-        }
+        applyLiveStats(campaign, stats);
 
         return campaign;
+    }
+
+    /**
+     * Fills the live call counters (contacts, completed, in-progress, failed, selected, ...) of many campaigns at
+     * once, from the contacts table, the same way getCampaign does for one. The campaigns table only holds stored
+     * counters that nothing keeps up to date (in-progress and failed never changed), so the campaign cards read
+     * the contacts instead. One query for all campaigns; a contact counts for a campaign through its campaign_id
+     * or through its batch_id, exactly once.
+     */
+    static async attachLiveStats(campaigns) {
+        if (!campaigns.length) return campaigns;
+        const ids = campaigns.map((c) => c.id);
+        const batchIds = [...new Set(campaigns.map((c) => c.batch_id).filter(Boolean))];
+        const marks = (list) => list.map(() => '?').join(', ');
+        const where = [`campaign_id IN (${marks(ids)})`];
+        const params = [...ids];
+        if (batchIds.length) {
+            where.push(`batch_id IN (${marks(batchIds)})`);
+            params.push(...batchIds);
+        }
+        const groups = await db.all(`
+            SELECT campaign_id, batch_id, ${CONTACT_STATS_COLUMNS}
+            FROM contacts
+            WHERE ${where.join(' OR ')}
+            GROUP BY campaign_id, batch_id
+        `, params);
+
+        for (const c of campaigns) {
+            const sum = {};
+            let any = false;
+            for (const g of groups) {
+                const mine = g.campaign_id === c.id || (c.batch_id && g.batch_id === c.batch_id);
+                if (!mine) continue;
+                any = true;
+                for (const key of CONTACT_STATS_KEYS) sum[key] = (Number(sum[key]) || 0) + (Number(g[key]) || 0);
+            }
+            if (any) applyLiveStats(c, sum);
+        }
+        return campaigns;
     }
 
     /**
@@ -265,7 +311,7 @@ export class CampaignService {
         const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
         const rows = await db.all(`SELECT * FROM campaigns ${whereClause} ORDER BY created_at DESC`, params);
 
-        return rows.map(r => {
+        const campaigns = rows.map(r => {
             let extracted = null;
             let plan = [];
             let config = {};
@@ -279,6 +325,7 @@ export class CampaignService {
                 config
             };
         });
+        return this.attachLiveStats(campaigns);
     }
 
     /**
@@ -506,7 +553,7 @@ export class CampaignService {
      * the uploaded document's facts and question plan, so the calls on that sheet use the document.
      * If the sheet already belongs to a campaign, that campaign's document is replaced.
      */
-    static async attachQuickLaunchDocument({ batchId, service, filename, extractedData, questionPlan, ownerUserId = null }) {
+    static async attachQuickLaunchDocument({ batchId, service, filename, extractedData, questionPlan, ownerUserId = null, agent = null }) {
         await ensureCampaignSchema();
         const batch = await db.get('SELECT * FROM batches WHERE id = ?', [batchId]);
         if (!batch) throw new Error('That contact sheet was not found. Upload it again.');
@@ -517,15 +564,15 @@ export class CampaignService {
 
         if (batch.campaign_id) {
             await db.run(
-                'UPDATE campaigns SET pdf_filename = ?, extracted_data = ?, question_plan = ?, updated_at = ? WHERE id = ?',
-                [docName, JSON.stringify(extractedData), JSON.stringify(plan), now, batch.campaign_id]);
+                'UPDATE campaigns SET pdf_filename = ?, extracted_data = ?, question_plan = ?, agent_id = ?, updated_at = ? WHERE id = ?',
+                [docName, JSON.stringify(extractedData), JSON.stringify(plan), agent ? agent.id : null, now, batch.campaign_id]);
             return { campaignId: batch.campaign_id };
         }
 
         const campaign = await this.createCampaign({
-            name: `Quick launch - ${batch.filename}`,
+            name: this.autoCampaignName(batch, agent),
             service,
-            description: 'Started from the Campaigns page with an uploaded document.',
+            description: this.autoCampaignDescription(agent, true),
             extracted_data: extractedData,
             question_plan: plan,
             ownerUserId
@@ -536,9 +583,53 @@ export class CampaignService {
                 total_contacts = ?, valid_contacts = ?, invalid_contacts = ?, pending_calls = ?, updated_at = ?
             WHERE id = ?
         `, [docName, batch.filename, batchId, batch.total_rows || 0, batch.valid_rows || 0, batch.invalid_rows || 0, batch.valid_rows || 0, now, campaign.id]);
+        await db.run('UPDATE campaigns SET agent_id = ? WHERE id = ?', [agent ? agent.id : null, campaign.id]);
         await db.run('UPDATE batches SET campaign_id = ?, updated_at = ? WHERE id = ?', [campaign.id, now, batchId]);
         await db.run('UPDATE contacts SET campaign_id = ?, updated_at = ? WHERE batch_id = ?', [campaign.id, now, batchId]);
         return { campaignId: campaign.id };
+    }
+
+    /** "Candidates - 03 Nov 2026 - Hiring Agent": sheet name (no extension), date and the calling agent. */
+    static autoCampaignName(batch, agent) {
+        const sheet = String(batch.filename || 'Contact sheet').replace(/\.(xlsx|xls|csv)$/i, '').trim() || 'Contact sheet';
+        const date = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+        return `${sheet} - ${date} - ${agent ? agent.name : 'Shared number'}`.slice(0, 255);
+    }
+
+    static autoCampaignDescription(agent, withDocument) {
+        const who = agent ? `Calling agent: ${agent.name}.` : 'Calling agent: shared number.';
+        return `Started from the Campaigns page${withDocument ? ' with an uploaded document' : ''}. ${who}`;
+    }
+
+    /**
+     * Campaigns page, Start Calling without a document: records the run as a campaign so it appears under
+     * "Saved Voice Campaigns & Job Screening" with its numbers. The campaign is tied to the sheet only by batch_id
+     * (campaign stats and its Conversations popup both match on batch_id), NOT written onto the contacts or the sheet,
+     * so the live calls keep behaving exactly as they did before (no campaign voice, language or question plan).
+     * Starting the same sheet again reuses its campaign.
+     */
+    static async recordSheetCampaign({ batchId, service, ownerUserId = null, agent = null }) {
+        await ensureCampaignSchema();
+        const batch = await db.get('SELECT * FROM batches WHERE id = ?', [batchId]);
+        if (!batch) throw new Error('That contact sheet was not found. Upload it again.');
+        if (batch.campaign_id) return { campaignId: batch.campaign_id, created: false };
+        const existing = await db.get('SELECT id FROM campaigns WHERE batch_id = ?', [batchId]);
+        if (existing) return { campaignId: existing.id, created: false };
+
+        const now = utcNow();
+        const campaign = await this.createCampaign({
+            name: this.autoCampaignName(batch, agent),
+            service,
+            description: this.autoCampaignDescription(agent, false),
+            ownerUserId
+        });
+        await db.run(`
+            UPDATE campaigns SET
+                excel_filename = ?, batch_id = ?, agent_id = ?, status = 'READY',
+                total_contacts = ?, valid_contacts = ?, invalid_contacts = ?, pending_calls = ?, updated_at = ?
+            WHERE id = ?
+        `, [batch.filename, batchId, agent ? agent.id : null, batch.total_rows || 0, batch.valid_rows || 0, batch.invalid_rows || 0, batch.valid_rows || 0, now, campaign.id]);
+        return { campaignId: campaign.id, created: true };
     }
 
     /**
@@ -561,9 +652,7 @@ export class CampaignService {
             throw new Error('Please upload an Excel contact sheet before starting the campaign.');
         }
 
-        if (campaign.service === 'recruitment' && !campaign.pdf_filename && (!campaign.extracted_data || Object.keys(campaign.extracted_data).length === 0)) {
-            throw new Error('Please upload a Job Description document (PDF or Word) before starting a recruitment screening campaign.');
-        }
+        // No document is required: the calling agent's instructions and the contact sheet drive the call.
 
         const now = utcNow();
 

@@ -13,6 +13,7 @@
 import { Readable } from 'stream';
 import db, { utcNow, ensureOwnerColumns, ensureRecordingSchema } from './db.js';
 import PlivoService from './plivo_service.js';
+import { ZipWriter } from './zip_writer.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const UPSTREAM_TIMEOUT_MS = 15000;
@@ -235,6 +236,105 @@ export default class RecordingService {
         } finally {
             clearTimeout(timer);
         }
+    }
+
+    // ── Several recordings in one zip ───────────────────────────────────────────
+    /** Zip entry name: name_date_phone.ext. Names keep their own letters (Hindi, Telugu); the date is YYYY-MM-DD. */
+    static zipFileName(row, contentType = '') {
+        const clean = (text) => String(text || '').normalize('NFC').replace(/[^\p{L}\p{M}\p{N}]+/gu, '_').replace(/^_+|_+$/g, '');
+        const ext = /wav/i.test(contentType) ? 'wav' : /ogg/i.test(contentType) ? 'ogg' : 'mp3';
+        const started = Date.parse(row.started_at);
+        const day = Number.isNaN(started) ? 'no-date' : new Date(started).toISOString().slice(0, 10);
+        const phone = String(row.phone || '').replace(/\D+/g, '') || 'no-number';
+        return `${clean(row.contact_name) || 'call'}_${day}_${phone}.${ext}`;
+    }
+
+    /** Gets one recording's bytes from Plivo (same checks and redirect handling as serve()). Never throws. */
+    static async fetchAudio(row, { timeoutMs = 60000, maxBytes = 100 * 1024 * 1024 } = {}) {
+        const resolved = await this.resolve(row);
+        const status = this.statusOf(resolved);
+        if (status === 'expired') return { ok: false, reason: `recording expired (${this.RETENTION_DAYS}-day limit)` };
+        if (status !== 'available') return { ok: false, reason: 'no recording' };
+        if (!this.isAllowedUrl(resolved.recording_url) || !PlivoService.isConfigured()) return { ok: false, reason: 'recording unavailable' };
+
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            const cfg = PlivoService.getConfig();
+            const auth = 'Basic ' + Buffer.from(`${cfg.authId}:${cfg.authToken}`).toString('base64');
+            let audioRes = await fetch(resolved.recording_url, { headers: { Authorization: auth }, redirect: 'manual', signal: controller.signal });
+            if (REDIRECT_STATUSES.includes(audioRes.status)) {
+                const location = audioRes.headers.get('location');
+                await audioRes.body?.cancel().catch(() => {});
+                if (!location || !/^https:\/\//i.test(location)) return { ok: false, reason: 'recording unavailable' };
+                audioRes = await fetch(location, { signal: controller.signal }); // credentials go to Plivo only
+            }
+            if (!audioRes.ok) {
+                await audioRes.body?.cancel().catch(() => {});
+                return { ok: false, reason: audioRes.status === 404 ? 'no recording' : 'recording unavailable' };
+            }
+            if (Number(audioRes.headers.get('content-length')) > maxBytes) {
+                await audioRes.body?.cancel().catch(() => {});
+                return { ok: false, reason: 'recording too large' };
+            }
+            const buffer = Buffer.from(await audioRes.arrayBuffer());
+            if (buffer.length > maxBytes) return { ok: false, reason: 'recording too large' };
+            return { ok: true, buffer, contentType: audioRes.headers.get('content-type') || 'audio/mpeg' };
+        } catch (err) {
+            console.warn(`[Recordings] Zip: could not fetch the recording of conversation ${resolved.id}: ${err.message}`);
+            return { ok: false, reason: controller.signal.aborted ? 'timed out' : 'download failed' };
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    /** Which of these conversation rows have audio that can be downloaded right now. */
+    static splitDownloadable(rows) {
+        const label = (row) => `${row.contact_name || 'Unknown'} (${row.phone || 'no number'})`;
+        const available = [];
+        const notIncluded = [];
+        for (const row of rows) {
+            const status = this.statusOf(row);
+            if (status === 'available') available.push(row);
+            else notIncluded.push(`${label(row)}: ${status === 'expired' ? `recording expired (${this.RETENTION_DAYS}-day limit)` : 'no recording'}`);
+        }
+        return { available, notIncluded };
+    }
+
+    /**
+     * Writes a zip of the recordings of `rows` through write(). Memory stays small: a few recordings are
+     * fetched at a time and each is written out before the next group. A recording that cannot be fetched is
+     * left out and listed, with the ones passed in `notIncluded`, in NOT_INCLUDED.txt inside the zip.
+     * Stops quietly when shouldStop() turns true (the browser went away).
+     */
+    static async streamZip(rows, write, { notIncluded = [], concurrency = 4, shouldStop = () => false } = {}) {
+        const zip = new ZipWriter(write);
+        const missing = [...notIncluded];
+        const names = new Set();
+        let included = 0;
+        for (let i = 0; i < rows.length; i += concurrency) {
+            if (shouldStop()) return { included, notIncluded: missing.length, stopped: true };
+            const group = rows.slice(i, i + concurrency);
+            const results = await Promise.all(group.map(row => this.fetchAudio(row)));
+            for (const [k, result] of results.entries()) {
+                const row = group[k];
+                if (!result.ok) {
+                    missing.push(`${row.contact_name || 'Unknown'} (${row.phone || 'no number'}): ${result.reason}`);
+                    continue;
+                }
+                const base = this.zipFileName(row, result.contentType);
+                let name = base;
+                for (let n = 2; names.has(name.toLowerCase()); n++) name = base.replace(/(\.\w+)$/, `_${n}$1`);
+                names.add(name.toLowerCase());
+                await zip.addFile(name, result.buffer, new Date(Date.parse(row.started_at)));
+                included++;
+            }
+        }
+        if (missing.length) {
+            await zip.addFile('NOT_INCLUDED.txt', Buffer.from(`These selected calls have no recording in this zip:\r\n\r\n${missing.join('\r\n')}\r\n`, 'utf8'));
+        }
+        await zip.finish();
+        return { included, notIncluded: missing.length, stopped: false };
     }
 
     // ── Saving the link ─────────────────────────────────────────────────────────

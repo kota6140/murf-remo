@@ -1,23 +1,18 @@
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { defineCollection } from './services/doc_collections.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const DATA_DIR = path.resolve(__dirname, 'data');
 export const UPLOADS_DIR = path.join(DATA_DIR, 'user_uploads');
-const FILE = path.join(DATA_DIR, 'proposals.json');
+
+// Proposals live in the database (table app_proposals), not in data/proposals.json.
+const proposals = defineCollection('proposals', 'app_proposals');
 
 export function readProposals() {
-    try {
-        if (!fs.existsSync(FILE)) return [];
-        return JSON.parse(fs.readFileSync(FILE, 'utf-8'));
-    } catch (e) {
-        console.error('[PROPOSALS_STORE] read failed:', e.message);
-        return [];
-    }
+    return proposals.read();
 }
 
 export function writeProposals(list) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(FILE, JSON.stringify(list, null, 2), 'utf-8');
+    proposals.write(list);
 }

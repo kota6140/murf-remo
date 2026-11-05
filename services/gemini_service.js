@@ -435,6 +435,9 @@ export default class GeminiService {
             const interestStep = hasAgentScript
                 ? 'follow the agent instructions for what to say and ask next'
                 : '"Great, thanks! I just wanted to ask — are you currently looking for any IT or digital marketing services?"';
+            const permissionStep = hasAgentScript
+                ? 'introduce yourself as the agent instructions say and ask once whether it is a good time'
+                : `"Hi [Name], this is Remo calling${GreetingScript.fromCompany(jdCriteria.company_name, 'en')}. Is now a good time to talk?"`;
             const whoAreYouStep = hasAgentScript
                 ? 'answer in one short sentence from the agent instructions, then ask the next question from them'
                 : '"We help businesses with software development and digital marketing. Is there anything in those areas you\'re exploring?"';
@@ -457,8 +460,9 @@ ${objections ? `- Objection Handling from Document: ${objections}` : ''}
 ${SalesState.buildPromptBlock(collectedData, options.salesTracker)}
 
 CONVERSATION FLOW & STAGE PROGRESSION:
-1. GREETING: Remo introduced himself and verified contact's name ("Hello, am I speaking with Priya?") or gave natural opening ("Hi, this is Remo calling from ${compName}. Is now a good time to talk?").
-   - If contact confirms ("Yes", "Speaking"): Transition to PERMISSION_CHECK: "Hi [Name], this is Remo calling from ${compName}. Is now a good time to talk?"
+1. GREETING: the opening line was either a name check ("Hello, am I speaking with Priya?") or an opening that already asked whether it is a good time. Look at your own first line in the conversation.
+   - If your first line ALREADY asked whether it is a good time / convenient time, a "Yes" answers that question. Do NOT ask it again and do NOT introduce yourself again: go straight to INTEREST_DISCOVERY: ${interestStep}
+   - If your first line was only the name check and contact confirms ("Yes", "Speaking"): Transition to PERMISSION_CHECK: ${permissionStep}
    - If contact says no/wrong person: Apologize politely and end call (should_end_call: true, next_stage: "CLOSING").
 2. PERMISSION_CHECK:
    - If contact agrees ("yes", "sure", "go ahead"): Transition to INTEREST_DISCOVERY: ${interestStep}

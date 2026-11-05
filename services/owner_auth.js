@@ -4,7 +4,7 @@
  * Credentials live ONLY in .env (ADMIN_EMAIL / ADMIN_PASSWORD). The .env file is
  * re-read on every check, so editing it takes effect immediately with no restart,
  * and any session issued under the old credentials is invalidated automatically.
- * This is fully separate from the normal customer accounts in users.json.
+ * This is fully separate from the normal customer accounts in the app_users table.
  */
 import fs from 'fs';
 import path from 'path';

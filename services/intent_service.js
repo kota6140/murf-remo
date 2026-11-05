@@ -1413,6 +1413,11 @@ export default class IntentService {
         return { matched: false };
     }
 
+    /** True when an opening line already asks "is now a good time?", so a "yes" must not ask it again. */
+    static asksIfGoodTime(text) {
+        return /good time|convenient time|time to (?:talk|speak)|talk for a minute|quick conversation|क्या अभी बात|सही समय|మాట్లాడటానికి .*సమయ/i.test(String(text || ''));
+    }
+
     static inferStageFromQuestion(question) {
         if (!question) return 'AVAILABILITY';
         const q = question.toLowerCase();

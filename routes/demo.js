@@ -23,6 +23,9 @@ export const USE_CASES = {
     omnichannel: 'Enterprise Voice Operations'
 };
 
+// What the owner panel shows as the "use case" of a request made with the header Book a Demo button
+export const BOOK_DEMO_LABEL = 'Book a Demo (website button)';
+
 // ---- Abuse protection: this endpoint sends mail to whatever address is typed in ----
 const WINDOW_MS = 60 * 60 * 1000;
 const MAX_PER_IP = 6;
@@ -61,16 +64,22 @@ export function validateDemoRequest(body = {}) {
     // notes may span several lines, so only trim control characters, not newlines
     const notes = String(body.notes ?? '').replace(/[\u0000-\u0009\u000B-\u001F\u007F]+/g, ' ').trim().slice(0, 600);
 
+    // The header "Book a Demo" button sends only name, email and phone ("book-demo"); the full form needs more.
+    const quick = clean(body.source, 20) === 'book-demo';
+
     if (name.length < 2) return { error: 'Please enter your full name.' };
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return { error: 'Please enter a valid work email address.' };
-    if (company.length < 2) return { error: 'Please enter your company name.' };
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return { error: 'Please enter a valid email address.' };
+    if (!quick && company.length < 2) return { error: 'Please enter your company name.' };
     const digits = phone.replace(/\D/g, '');
     if (!/^[0-9+()\-\s]+$/.test(phone) || digits.length < 8 || digits.length > 15) {
         return { error: 'Please enter a valid phone number (8 to 15 digits).' };
     }
+    if (quick) {
+        return { value: { name, email, company: '', phone, useCaseKey: 'book-demo', useCase: BOOK_DEMO_LABEL, notes: '', source: 'book-demo' } };
+    }
     if (!Object.prototype.hasOwnProperty.call(USE_CASES, useCaseKey)) return { error: 'Please choose a primary use case.' };
 
-    return { value: { name, email, company, phone, useCaseKey, useCase: USE_CASES[useCaseKey], notes } };
+    return { value: { name, email, company, phone, useCaseKey, useCase: USE_CASES[useCaseKey], notes, source: 'demo-form' } };
 }
 
 // ---- Email ----
@@ -79,13 +88,16 @@ export function buildConfirmationEmail(f, when = new Date()) {
         timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true
     }) + ' IST';
 
+    const quick = f.source === 'book-demo';
     const rows = [
         ['Full name', f.name],
-        ['Work email', f.email],
-        ['Company', f.company],
-        ['Phone number', f.phone],
-        ['Primary use case', f.useCase]
+        [quick ? 'Email' : 'Work email', f.email],
+        ['Phone number', f.phone]
     ];
+    if (!quick) {
+        rows.splice(2, 0, ['Company', f.company]);
+        rows.push(['Primary use case', f.useCase]);
+    }
     if (f.notes) rows.push(['Notes', f.notes]);
     rows.push(['Submitted', submittedAt]);
 
@@ -161,7 +173,7 @@ router.post('/request', async (req, res) => {
     try {
         saved = addDemoRequest({
             id: crypto.randomUUID(),
-            source: 'demo-form',
+            source: fields.source,
             name: fields.name,
             email: fields.email,
             company: fields.company,
@@ -197,7 +209,7 @@ router.post('/request', async (req, res) => {
         });
     }
 
-    console.log(`[Demo] Request received from ${fields.company} (${fields.useCaseKey}); confirmation sent.`);
+    console.log(`[Demo] Request received from ${fields.company || 'a visitor'} (${fields.useCaseKey}); confirmation sent.`);
     return res.status(200).json({ success: true, email: fields.email, message: 'Confirmation email sent.' });
 });
 

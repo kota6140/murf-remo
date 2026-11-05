@@ -27,6 +27,7 @@ import { readDemoRequests, writeDemoRequests } from '../demo_store.js';
 import ownerCalls from './owner_calls.js';
 import ownerAgents from './owner_agents.js';
 import AgentService from '../services/agent_service.js';
+import MinutesService from '../services/minutes_service.js';
 
 const router = express.Router();
 const STATUSES = ['pending', 'in_review', 'approved', 'rejected'];
@@ -72,10 +73,11 @@ router.use(ownerCalls);
 router.use(ownerAgents);
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
-function userRow(u, proposals) {
+function userRow(u, proposals, minutes = null) {
     const mine = proposals.filter(p => p.userId === u.id);
     return {
         ...publicUser(u),
+        minutes,
         submissionCount: mine.length,
         lastSubmissionAt: mine.reduce((m, p) => (p.submittedAt > m ? p.submittedAt : m), '') || null
     };
@@ -123,12 +125,16 @@ router.get('/stats', (req, res) => {
 });
 
 // ── Users ───────────────────────────────────────────────────────────────────
-router.get('/users', (req, res) => {
-    const proposals = readProposals();
-    const rows = readUsers()
-        .map(u => userRow(u, proposals))
-        .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-    res.json({ success: true, users: rows });
+router.get('/users', async (req, res) => {
+    try {
+        const proposals = readProposals();
+        const users = readUsers();
+        const minutes = await MinutesService.statusForUsers(users);
+        const rows = users
+            .map(u => userRow(u, proposals, minutes[u.id]))
+            .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+        res.json({ success: true, users: rows });
+    } catch (e) { handle(res, e); }
 });
 
 router.post('/users', async (req, res) => {
@@ -137,6 +143,12 @@ router.post('/users', async (req, res) => {
         const { fields, error } = cleanUserFields(body, { requireAll: true });
         if (error) return fail(res, 400, error);
         if (!validPassword(body.password)) return fail(res, 400, 'Password must be at least 6 characters.');
+        // A new account starts with the minutes typed in "Add minutes" (blank = 0, so no calls until you add some).
+        if (body.addMinutes !== undefined && body.addMinutes !== '') {
+            const add = Number(body.addMinutes);
+            if (!Number.isFinite(add) || add <= 0) return fail(res, 400, 'Minutes to add must be a number above 0.');
+            fields.minutesAllotted = Math.round(add * 100) / 100;
+        }
         const user = adminCreateUser(fields, await bcrypt.hash(body.password, 12));
         res.status(201).json({ success: true, user: userRow(user, readProposals()) });
     } catch (e) { handle(res, e); }
@@ -151,6 +163,18 @@ router.put('/users/:id', async (req, res) => {
         if (body.password) {
             if (!validPassword(body.password)) return fail(res, 400, 'Password must be at least 6 characters.');
             hash = await bcrypt.hash(body.password, 12);
+        }
+        // Minutes are topped up: "add 1" gives one more minute on top of what is left (or one fresh minute
+        // when the admin had already used everything). They are never unlimited.
+        if (body.addMinutes !== undefined && body.addMinutes !== '' && body.addMinutes !== null) {
+            const add = Number(body.addMinutes);
+            if (!Number.isFinite(add) || add <= 0 || add > 10000000) return fail(res, 400, 'Minutes to add must be a number above 0.');
+            // The count starts again from this moment: calls made before it are ignored, and only the minutes
+            // the admin still has left (none if they were finished or unlimited) are carried over.
+            const cur = await MinutesService.statusFor(req.params.id);
+            const left = Math.max(0, cur.allottedMinutes - cur.usedSeconds / 60);
+            fields.minutesAllotted = Math.round((left + add) * 100) / 100;
+            fields.minutesBaseSeconds = cur.totalSeconds;
         }
         const user = adminUpdateUser(req.params.id, fields, hash);
         // An account that is no longer an admin cannot keep agents or their phone numbers.

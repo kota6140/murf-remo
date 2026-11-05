@@ -8838,6 +8838,10 @@ a {
 
 .ht-caption.is-show { opacity: 1; }
 
+/* Longer lines (some languages run long) get a wider, slightly smaller caption so it stays clear of the scene */
+.ht-caption.is-long { width: min(92%, 560px); }
+.ht-caption.is-long .ht-caption-text { font-size: 0.84rem; line-height: 1.45; }
+
 .ht-caption-who {
   display: block;
   margin-bottom: 4px;
@@ -8855,6 +8859,46 @@ a {
 }
 
 .ht-scene-cut .ht-chip { bottom: 96px; }
+
+/* ---- Language tabs above the scenes ---- */
+.ht-lang-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin: 30px auto 0;
+  max-width: 720px;
+}
+
+.ht-lang-tab {
+  padding: 9px 18px;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: #CBD5E1;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.25s ease, border-color 0.25s ease, color 0.25s ease, transform 0.25s ease;
+}
+
+.ht-lang-tab:hover { background: rgba(255, 255, 255, 0.12); color: #FFFFFF; }
+.ht-lang-tab:focus-visible { outline: 2px solid #FC2415; outline-offset: 2px; }
+
+.ht-lang-tab.is-active {
+  color: #FFFFFF;
+  background: #FC2415;
+  border-color: #FC2415;
+  box-shadow: 0 8px 22px -10px rgba(252, 36, 21, 0.8);
+}
+
+.ht-lang-tab.is-loading { opacity: 0.7; cursor: progress; }
+
+@media (max-width: 640px) {
+  .ht-lang-tabs { gap: 8px; margin-top: 22px; }
+  .ht-lang-tab { padding: 8px 14px; font-size: 0.8rem; }
+}
 
 /* ---- Real Callers: light panel with a looping, auto-scrolling row of cards ---- */
 #human-touch .human-stories-wrap {
@@ -9342,6 +9386,72 @@ a {
 
 #industries .ind-pill-btn .ind-pill-svg { margin-right: 0 !important; transition: color 0.3s ease; }
 #industries .ind-pill-btn.active .ind-pill-svg { color: #FC2415; }
+
+/* Language tabs under the section heading */
+#industries .ind-lang-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin: 28px auto 0;
+  max-width: 720px;
+}
+
+#industries .ind-lang-tab {
+  padding: 8px 18px;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: #475569;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.25s ease, border-color 0.25s ease, color 0.25s ease, box-shadow 0.25s ease;
+}
+
+#industries .ind-lang-tab:hover { border-color: #CBD5E1; color: #0F172A; }
+#industries .ind-lang-tab:focus-visible { outline: 2px solid #FC2415; outline-offset: 2px; }
+
+#industries .ind-lang-tab.is-active {
+  color: #FFFFFF;
+  background: #FC2415;
+  border-color: #FC2415;
+  box-shadow: 0 8px 20px -10px rgba(252, 36, 21, 0.75);
+}
+
+/* Card header: voice on/off, next to the latency pill */
+#industries .ind-header-right { display: inline-flex; align-items: center; gap: 10px; position: relative; }
+
+#industries .ind-voice-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #0F172A;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+}
+
+#industries .ind-voice-btn:hover { border-color: #CBD5E1; background: #F8FAFC; }
+#industries .ind-voice-btn:focus-visible { outline: 2px solid #FC2415; outline-offset: 2px; }
+#industries .ind-voice-btn .ico-off { display: none; }
+#industries .ind-voice-btn[data-state="off"] .ico-on { display: none; }
+#industries .ind-voice-btn[data-state="off"] .ico-off { display: block; }
+#industries .ind-voice-btn[data-state="off"] { color: #94A3B8; }
+#industries .ind-voice-btn[data-state="blocked"] { color: #FC2415; border-color: rgba(252, 36, 21, 0.5); background: rgba(252, 36, 21, 0.06); }
+
+@media (max-width: 640px) {
+  #industries .ind-lang-tabs { gap: 8px; margin-top: 22px; }
+  #industries .ind-lang-tab { padding: 7px 14px; font-size: 0.8rem; }
+  #industries .ind-header-right { flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+}
 
 .ind-progress {
   position: absolute;
@@ -10120,3 +10230,101 @@ a {
 .site-footer-light .footer-social { display: flex; gap: 10px; margin-top: 14px; }
 .site-footer-light .footer-social a { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; color: #031740; background: rgba(3, 23, 64, 0.06); border: 1px solid rgba(3, 23, 64, 0.18); transition: color 0.2s, background 0.2s, border-color 0.2s, transform 0.2s; }
 .site-footer-light .footer-social a:hover { color: #fff; background: #FC2415; border-color: #FC2415; transform: translateY(-2px); }
+
+/* Skip link: hidden until a keyboard user presses Tab */
+.skip-link {
+  position: absolute;
+  top: -60px;
+  left: 12px;
+  z-index: 10000;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: #031740;
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+}
+.skip-link:focus { top: 12px; }
+#main-content:focus { outline: none; }
+
+/* ==========================================================================
+   Header "Book a Demo" button: frosted-glass look with a light sweep that glides across it
+   ========================================================================== */
+.btn-book-demo {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  background: #FC2415; /* the bright red of the "remo" in the logo */
+  -webkit-backdrop-filter: blur(10px) saturate(160%);
+  backdrop-filter: blur(10px) saturate(160%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    inset 0 -10px 16px rgba(120, 0, 0, 0.12),
+    0 6px 20px rgba(252, 36, 21, 0.38);
+  animation: bd-glow 2.8s ease-in-out infinite;
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.25s ease;
+}
+.btn-book-demo > * { position: relative; z-index: 1; }
+/* glass gloss on the top half */
+.btn-book-demo::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 48% 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.38), rgba(255, 255, 255, 0));
+  pointer-events: none;
+  z-index: 2;
+}
+/* the shine that sweeps across, then rests for a moment */
+.btn-book-demo::after {
+  content: "";
+  position: absolute;
+  top: -25%;
+  bottom: -25%;
+  left: -75%;
+  width: 45%;
+  background: linear-gradient(105deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.85) 50%, rgba(255, 255, 255, 0) 100%);
+  transform: skewX(-22deg);
+  pointer-events: none;
+  z-index: 3;
+  animation: bd-shine 3.4s ease-in-out infinite;
+}
+.btn-book-demo:hover {
+  transform: translateY(-2px) scale(1.04);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    inset 0 -10px 16px rgba(120, 0, 0, 0.12),
+    0 12px 30px rgba(252, 36, 21, 0.55);
+}
+.btn-book-demo:hover::after { animation-duration: 1.2s; }
+.btn-book-demo:active { transform: translateY(0) scale(0.97); }
+.btn-book-demo:focus-visible { outline: 3px solid rgba(252, 36, 21, 0.4); outline-offset: 3px; }
+
+@keyframes bd-shine {
+  0%   { left: -75%; }
+  55%, 100% { left: 135%; }
+}
+@keyframes bd-glow {
+  0%, 100% { box-shadow: inset 0 1px 0 rgba(255,255,255,.6), inset 0 -10px 16px rgba(120,0,0,.12), 0 6px 20px rgba(252,36,21,.34); }
+  50%      { box-shadow: inset 0 1px 0 rgba(255,255,255,.6), inset 0 -10px 16px rgba(120,0,0,.12), 0 8px 28px rgba(252,36,21,.58); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn-book-demo, .btn-book-demo::after { animation: none; }
+  .btn-book-demo::after { display: none; }
+}
+/* very small phones: the header is crowded, the menu panel carries the button instead */
+@media (max-width: 480px) {
+  .nav-actions .btn-book-demo { display: none; }
+}
+.mobile-nav-cta .btn-book-demo { justify-content: center; }
+
+/* The Book a Demo form shows only name, email and phone */
+#demo-modal.demo-quick .demo-full-only { display: none; }
+#demo-modal.demo-quick .form-row:nth-of-type(2) { grid-template-columns: 1fr; }

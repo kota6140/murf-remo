@@ -915,9 +915,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const heroVoicePlayIcon = document.getElementById('hero-voice-play-icon');
   let isVoicePlaying = false;
   let voiceSampleTimer = null;
+  // The hero sample is a female Murf voice recorded once into /assets/voices/hero.wav
+  let heroVoiceAudio = null;
 
   const stopHeroVoiceSample = () => {
     if (voiceSampleTimer) clearTimeout(voiceSampleTimer);
+    if (heroVoiceAudio) {
+      heroVoiceAudio.onended = null;
+      heroVoiceAudio.onerror = null;
+      heroVoiceAudio.pause();
+      heroVoiceAudio = null;
+    }
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
@@ -944,28 +952,43 @@ document.addEventListener('DOMContentLoaded', () => {
         heroVoicePlayIcon.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
       }
 
-      if ('speechSynthesis' in window) {
+      // Browser voice, used only if the recorded clip cannot play (female voice preferred)
+      const speakWithBrowserVoice = () => {
+        if (!('speechSynthesis' in window)) {
+          voiceSampleTimer = setTimeout(stopHeroVoiceSample, 5000);
+          return;
+        }
         window.speechSynthesis.cancel();
         const text = "Hello! I am Remo, your AI employee. I speak with natural cadence, listen without interrupting, and handle your calls with real human warmth.";
         const utter = new SpeechSynthesisUtterance(text);
         utter.rate = 0.96;
         utter.pitch = 1.04;
-        
-        const voices = window.speechSynthesis.getVoices();
-        const naturalVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Samantha') || v.name.includes('Google') || v.name.includes('Daniel') || v.name.includes('Karen')));
-        if (naturalVoice) utter.voice = naturalVoice;
-
+        const voices = window.speechSynthesis.getVoices().filter(v => v.lang.startsWith('en'));
+        const female = voices.find(v => /Samantha|Zira|Aria|Jenny|Karen|Moira|Tessa|Veena|Heera|Female/i.test(v.name)) || voices.find(v => /Google|Natural/i.test(v.name));
+        if (female) utter.voice = female;
         utter.onend = () => stopHeroVoiceSample();
         utter.onerror = () => stopHeroVoiceSample();
         window.speechSynthesis.speak(utter);
+        voiceSampleTimer = setTimeout(stopHeroVoiceSample, 12000);
+      };
 
-        voiceSampleTimer = setTimeout(() => {
-          stopHeroVoiceSample();
-        }, 6500);
-      } else {
-        voiceSampleTimer = setTimeout(() => {
-          stopHeroVoiceSample();
-        }, 5000);
+      try {
+        heroVoiceAudio = new Audio('/assets/voices/hero.wav');
+        heroVoiceAudio.onended = () => stopHeroVoiceSample();
+        heroVoiceAudio.onerror = () => { stopHeroVoiceSample(); };
+        const started = heroVoiceAudio.play();
+        if (started && started.catch) {
+          started.catch(() => {
+            // Blocked or missing file: fall back to the browser voice
+            heroVoiceAudio = null;
+            if (isVoicePlaying) speakWithBrowserVoice();
+          });
+        }
+        // Safety stop in case the clip never ends
+        voiceSampleTimer = setTimeout(stopHeroVoiceSample, 15000);
+      } catch (_) {
+        heroVoiceAudio = null;
+        speakWithBrowserVoice();
       }
     });
   }
@@ -1262,6 +1285,70 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
+  // The sample line in each language (English is in industryData). Voice clips: /assets/voices/industries/<code>/<industry>.wav
+  const IND_TEXTS = {
+    te: {
+      healthcare: 'నమస్కారం శ్రీమతి గుప్తా గారూ, నేను అపోలో క్లినిక్ నుండి రెమోను మాట్లాడుతున్నాను. రేపు సాయంత్రం 4 గంటలకు డాక్టర్ మెహతాతో మీ అపాయింట్‌మెంట్‌ను నిర్ధారించడానికి కాల్ చేశాను. మీ ల్యాబ్ పరీక్షకు సూచించిన ఉపవాసం పూర్తి చేశారా?',
+      recruitment: 'నమస్కారం పూజ గారూ, నేను టాలెంట్ టీమ్ నుండి రెమోను. సీనియర్ డెవలపర్ పోస్టుకు మీ దరఖాస్తు చూశాను. మీకు రియాక్ట్‌లో ఎన్ని సంవత్సరాల అనుభవం ఉందో, ప్రస్తుత నోటీసు పీరియడ్ ఎంతో చెప్పగలరా?',
+      sales: 'నమస్కారం విక్రమ్ గారూ, నేను టేక్‌రెమో నుండి రెమోను. ఆటోమేటెడ్ కాలింగ్ ధరల గురించి మీరు ఇప్పుడే అడిగినట్లు గమనించాను. మీ నెలవారీ లీడ్ల సంఖ్య గురించి మాట్లాడటానికి ఇది మంచి సమయమేనా?',
+      education: 'నమస్కారం రోహిత్ గారూ, నేను గ్రీన్‌ఫీల్డ్ యూనివర్సిటీ నుండి రెమోను. డేటా సైన్స్ మాస్టర్స్ ప్రోగ్రామ్‌కు మీ దరఖాస్తు గురించి ఫాలో అప్ చేస్తున్నాను. అడ్వైజర్‌తో కన్సల్టేషన్ షెడ్యూల్ చేయమంటారా?',
+      realestate: 'నమస్కారం ప్రియ గారూ, మీరు పంపిన 3-బీహెచ్‌కే విచారణ గురించి ప్రెస్టీజ్ హైట్స్ నుండి రెమోను మాట్లాడుతున్నాను. ఈ శనివారం లేదా ఆదివారం ఆస్తిని చూడటానికి రావాలనుకుంటున్నారా?',
+      support: 'సపోర్ట్‌కు కాల్ చేసినందుకు ధన్యవాదాలు. నేను రెమోను. మీ ఆర్డర్ నంబర్ 8492 బ్లూడార్ట్ ద్వారా డెలివరీకి బయలుదేరింది, ఈరోజు మధ్యాహ్నం 2:30 లోపు చేరుతుంది. లైవ్ ట్రాకింగ్ లింక్‌ను కూడా మీకు టెక్స్ట్ చేశాను.',
+      finance: 'నమస్కారం సురేష్ గారూ, నేను ఫిన్‌సర్వ్ నుండి రెమోను. మీ బిజినెస్ ఖాతా కోసం కేవైసీ ధృవీకరణ పత్రాల అప్‌లోడ్ గురించి ఫాలో అప్ చేస్తున్నాను. మిగిలిన దశల్లో మీకు మార్గనిర్దేశం చేయవచ్చా?',
+      automotive: 'నమస్కారం అనన్య గారూ, నేను హ్యుందాయ్ మోటార్స్ నుండి రెమోను. మీరు కొత్త క్రెటా టెస్ట్ డ్రైవ్ కోసం అభ్యర్థించారు. రేపు ఉదయం 11 గంటలకు ఇందిరానగర్ షోరూమ్‌లో టెస్ట్ వాహనం అందుబాటులో ఉంది.'
+    },
+    hi: {
+      healthcare: 'नमस्ते श्रीमती गुप्ता, मैं अपोलो क्लिनिक से रेमो बोल रहा हूँ। कल शाम 4 बजे डॉक्टर मेहता के साथ आपकी अपॉइंटमेंट की पुष्टि के लिए फ़ोन किया है। क्या आपने अपने लैब टेस्ट के लिए बताया गया उपवास पूरा कर लिया है?',
+      recruitment: 'नमस्ते पूजा, मैं टैलेंट टीम से रेमो बोल रहा हूँ। मैंने सीनियर डेवलपर के लिए आपका आवेदन देखा है। क्या आप बता सकती हैं कि आपके पास रिएक्ट का कितने साल का अनुभव है और आपकी मौजूदा नोटिस अवधि क्या है?',
+      sales: 'नमस्ते विक्रम, मैं टेकरेमो से रेमो बोल रहा हूँ। मैंने देखा कि आपने अभी ऑटोमेटेड कॉलिंग की कीमतों के बारे में पूछा है। क्या आपकी मासिक लीड संख्या पर बात करने के लिए यह सही समय है?',
+      education: 'नमस्ते रोहित, मैं ग्रीनफ़ील्ड यूनिवर्सिटी से रेमो बोल रहा हूँ। डेटा साइंस मास्टर प्रोग्राम के लिए आपके आवेदन के बारे में बात करना चाहता हूँ। क्या आप किसी एडवाइज़र के साथ परामर्श तय करना चाहेंगे?',
+      realestate: 'नमस्ते प्रिया, मैं प्रेस्टीज हाइट्स से रेमो बोल रहा हूँ, आपकी भेजी हुई 3-बीएचके पूछताछ के बारे में। क्या आप इस शनिवार या रविवार को प्रॉपर्टी देखने आना चाहेंगी?',
+      support: 'सपोर्ट को कॉल करने के लिए धन्यवाद। मैं रेमो बोल रहा हूँ। आपका ऑर्डर नंबर 8492 ब्लूडार्ट के साथ डिलीवरी के लिए निकल चुका है और आज दोपहर 2:30 बजे तक पहुँच जाएगा। मैंने आपको लाइव ट्रैकिंग लिंक भी भेज दिया है।',
+      finance: 'नमस्ते सुरेश, मैं फ़िनसर्व से रेमो बोल रहा हूँ। आपके बिज़नेस खाते के लिए केवाईसी सत्यापन दस्तावेज़ अपलोड के बारे में फ़ॉलो-अप कर रहा हूँ। क्या मैं बाकी चरणों में आपकी मदद कर सकता हूँ?',
+      automotive: 'नमस्ते अनन्या, मैं ह्युंडई मोटर्स से रेमो बोल रहा हूँ। आपने नई क्रेटा के टेस्ट ड्राइव का अनुरोध किया था। कल सुबह 11 बजे इंदिरानगर शोरूम में टेस्ट गाड़ी उपलब्ध है।'
+    },
+    kn: {
+      healthcare: 'ನಮಸ್ಕಾರ ಶ್ರೀಮತಿ ಗುಪ್ತಾ ಅವರೇ, ನಾನು ಅಪೊಲೊ ಕ್ಲಿನಿಕ್‌ನಿಂದ ರೆಮೋ ಮಾತನಾಡುತ್ತಿದ್ದೇನೆ. ನಾಳೆ ಸಂಜೆ 4 ಗಂಟೆಗೆ ಡಾಕ್ಟರ್ ಮೆಹ್ತಾ ಅವರೊಂದಿಗಿನ ನಿಮ್ಮ ಅಪಾಯಿಂಟ್‌ಮೆಂಟ್ ದೃಢಪಡಿಸಲು ಕರೆ ಮಾಡಿದ್ದೇನೆ. ನಿಮ್ಮ ಲ್ಯಾಬ್ ಪರೀಕ್ಷೆಗೆ ಸೂಚಿಸಿದ ಉಪವಾಸವನ್ನು ಪೂರ್ಣಗೊಳಿಸಿದ್ದೀರಾ?',
+      recruitment: 'ನಮಸ್ಕಾರ ಪೂಜಾ ಅವರೇ, ನಾನು ಟ್ಯಾಲೆಂಟ್ ತಂಡದಿಂದ ರೆಮೋ. ಸೀನಿಯರ್ ಡೆವಲಪರ್ ಹುದ್ದೆಗೆ ನಿಮ್ಮ ಅರ್ಜಿಯನ್ನು ನೋಡಿದೆ. ನಿಮಗೆ ರಿಯಾಕ್ಟ್‌ನಲ್ಲಿ ಎಷ್ಟು ವರ್ಷಗಳ ಅನುಭವವಿದೆ ಮತ್ತು ಈಗಿನ ನೋಟಿಸ್ ಅವಧಿ ಎಷ್ಟು ಎಂದು ತಿಳಿಸುತ್ತೀರಾ?',
+      sales: 'ನಮಸ್ಕಾರ ವಿಕ್ರಮ್ ಅವರೇ, ನಾನು ಟೇಕ್‌ರೆಮೋದಿಂದ ರೆಮೋ. ನೀವು ಈಗಷ್ಟೇ ಸ್ವಯಂಚಾಲಿತ ಕರೆಗಳ ಬೆಲೆಯ ಬಗ್ಗೆ ವಿಚಾರಿಸಿದ್ದನ್ನು ಗಮನಿಸಿದೆ. ನಿಮ್ಮ ಮಾಸಿಕ ಲೀಡ್‌ಗಳ ಸಂಖ್ಯೆಯ ಬಗ್ಗೆ ಮಾತನಾಡಲು ಇದು ಸೂಕ್ತ ಸಮಯವೇ?',
+      education: 'ನಮಸ್ಕಾರ ರೋಹಿತ್ ಅವರೇ, ನಾನು ಗ್ರೀನ್‌ಫೀಲ್ಡ್ ವಿಶ್ವವಿದ್ಯಾಲಯದಿಂದ ರೆಮೋ. ಡೇಟಾ ಸೈನ್ಸ್ ಮಾಸ್ಟರ್ ಕಾರ್ಯಕ್ರಮಕ್ಕೆ ನಿಮ್ಮ ಅರ್ಜಿಯ ಬಗ್ಗೆ ಫಾಲೋ ಅಪ್ ಮಾಡುತ್ತಿದ್ದೇನೆ. ಸಲಹೆಗಾರರೊಂದಿಗೆ ಸಮಾಲೋಚನೆ ನಿಗದಿಪಡಿಸಲೇ?',
+      realestate: 'ನಮಸ್ಕಾರ ಪ್ರಿಯಾ ಅವರೇ, ನೀವು ಸಲ್ಲಿಸಿದ 3-ಬಿಎಚ್‌ಕೆ ವಿಚಾರಣೆಯ ಬಗ್ಗೆ ಪ್ರೆಸ್ಟೀಜ್ ಹೈಟ್ಸ್‌ನಿಂದ ರೆಮೋ ಕರೆ ಮಾಡುತ್ತಿದ್ದೇನೆ. ಈ ಶನಿವಾರ ಅಥವಾ ಭಾನುವಾರ ಆಸ್ತಿಯನ್ನು ನೋಡಲು ಬರಲು ಬಯಸುತ್ತೀರಾ?',
+      support: 'ಸಪೋರ್ಟ್‌ಗೆ ಕರೆ ಮಾಡಿದ್ದಕ್ಕೆ ಧನ್ಯವಾದಗಳು. ನಾನು ರೆಮೋ. ನಿಮ್ಮ ಆರ್ಡರ್ ಸಂಖ್ಯೆ 8492 ಬ್ಲೂಡಾರ್ಟ್ ಮೂಲಕ ವಿತರಣೆಗೆ ಹೊರಟಿದೆ ಮತ್ತು ಇಂದು ಮಧ್ಯಾಹ್ನ 2:30ರೊಳಗೆ ತಲುಪುತ್ತದೆ. ಲೈವ್ ಟ್ರ್ಯಾಕಿಂಗ್ ಲಿಂಕ್ ಅನ್ನೂ ನಿಮಗೆ ಕಳುಹಿಸಿದ್ದೇನೆ.',
+      finance: 'ನಮಸ್ಕಾರ ಸುರೇಶ್ ಅವರೇ, ನಾನು ಫಿನ್‌ಸರ್ವ್‌ನಿಂದ ರೆಮೋ. ನಿಮ್ಮ ವ್ಯವಹಾರ ಖಾತೆಗಾಗಿ ಕೆವೈಸಿ ಪರಿಶೀಲನೆ ದಾಖಲೆಗಳ ಅಪ್‌ಲೋಡ್ ಬಗ್ಗೆ ಫಾಲೋ ಅಪ್ ಮಾಡುತ್ತಿದ್ದೇನೆ. ಉಳಿದ ಹಂತಗಳಲ್ಲಿ ನಾನು ನಿಮಗೆ ಮಾರ್ಗದರ್ಶನ ನೀಡಲೇ?',
+      automotive: 'ನಮಸ್ಕಾರ ಅನನ್ಯಾ ಅವರೇ, ನಾನು ಹ್ಯುಂಡೈ ಮೋಟಾರ್ಸ್‌ನಿಂದ ರೆಮೋ ಕರೆ ಮಾಡುತ್ತಿದ್ದೇನೆ. ನೀವು ಹೊಸ ಕ್ರೆಟಾದ ಟೆಸ್ಟ್ ಡ್ರೈವ್‌ಗೆ ವಿನಂತಿಸಿದ್ದಿರಿ. ನಾಳೆ ಬೆಳಿಗ್ಗೆ 11 ಗಂಟೆಗೆ ಇಂದಿರಾನಗರ ಶೋರೂಮ್‌ನಲ್ಲಿ ಟೆಸ್ಟ್ ವಾಹನ ಲಭ್ಯವಿದೆ.'
+    },
+    ml: {
+      healthcare: 'നമസ്കാരം ശ്രീമതി ഗുപ്ത, ഞാൻ അപ്പോളോ ക്ലിനിക്കിൽ നിന്ന് റെമോ ആണ് വിളിക്കുന്നത്. നാളെ വൈകിട്ട് 4 മണിക്ക് ഡോക്ടർ മേത്തയുമായുള്ള നിങ്ങളുടെ അപ്പോയിന്റ്മെന്റ് ഉറപ്പാക്കാനാണ് വിളിച്ചത്. ലാബ് പരിശോധനയ്ക്ക് നിർദേശിച്ച ഉപവാസം പൂർത്തിയാക്കിയോ?',
+      recruitment: 'നമസ്കാരം പൂജ, ഞാൻ ടാലന്റ് ടീമിൽ നിന്ന് റെമോ ആണ്. സീനിയർ ഡെവലപ്പർ തസ്തികയിലേക്കുള്ള നിങ്ങളുടെ അപേക്ഷ ഞാൻ കണ്ടു. റിയാക്ടിൽ നിങ്ങൾക്ക് എത്ര വർഷത്തെ പരിചയമുണ്ടെന്നും ഇപ്പോഴത്തെ നോട്ടീസ് കാലയളവ് എത്രയാണെന്നും പറയാമോ?',
+      sales: 'നമസ്കാരം വിക്രം, ഞാൻ ടേക്ക്റെമോയിൽ നിന്ന് റെമോ ആണ്. ഓട്ടോമേറ്റഡ് കോളിംഗിന്റെ വില ഇപ്പോൾ ചോദിച്ചതായി ശ്രദ്ധിച്ചു. നിങ്ങളുടെ പ്രതിമാസ ലീഡ് എണ്ണത്തെക്കുറിച്ച് സംസാരിക്കാൻ ഇത് അനുയോജ്യമായ സമയമാണോ?',
+      education: 'നമസ്കാരം രോഹിത്, ഞാൻ ഗ്രീൻഫീൽഡ് യൂണിവേഴ്സിറ്റിയിൽ നിന്ന് റെമോ ആണ്. ഡാറ്റാ സയൻസ് മാസ്റ്റർ പ്രോഗ്രാമിനുള്ള നിങ്ങളുടെ അപേക്ഷയെക്കുറിച്ച് ഫോളോ അപ്പ് ചെയ്യുകയാണ്. ഒരു അഡ്വൈസറുമായി കൺസൾട്ടേഷൻ ഷെഡ്യൂൾ ചെയ്യട്ടെ?',
+      realestate: 'നമസ്കാരം പ്രിയ, നിങ്ങൾ സമർപ്പിച്ച 3-ബിഎച്ച്കെ അന്വേഷണത്തെക്കുറിച്ച് പ്രസ്റ്റീജ് ഹൈറ്റ്സിൽ നിന്ന് റെമോ ആണ് വിളിക്കുന്നത്. ഈ ശനിയാഴ്ചയോ ഞായറാഴ്ചയോ പ്രോപ്പർട്ടി കാണാൻ വരാൻ താൽപര്യമുണ്ടോ?',
+      support: 'സപ്പോർട്ടിലേക്ക് വിളിച്ചതിന് നന്ദി. ഞാൻ റെമോ. നിങ്ങളുടെ ഓർഡർ നമ്പർ 8492 ബ്ലൂഡാർട്ട് വഴി ഡെലിവറിക്കായി പുറപ്പെട്ടു, ഇന്ന് ഉച്ചയ്ക്ക് 2:30-നകം എത്തും. ലൈവ് ട്രാക്കിംഗ് ലിങ്കും ഞാൻ നിങ്ങൾക്ക് അയച്ചിട്ടുണ്ട്.',
+      finance: 'നമസ്കാരം സുരേഷ്, ഞാൻ ഫിൻസെർവിൽ നിന്ന് റെമോ ആണ്. നിങ്ങളുടെ ബിസിനസ് അക്കൗണ്ടിനായുള്ള കെവൈസി പരിശോധനാ രേഖകളുടെ അപ്‌ലോഡിനെക്കുറിച്ച് ഫോളോ അപ്പ് ചെയ്യുകയാണ്. ബാക്കി ഘട്ടങ്ങളിൽ ഞാൻ വഴികാട്ടട്ടെ?',
+      automotive: 'നമസ്കാരം അനന്യ, ഞാൻ ഹ്യുണ്ടായ് മോട്ടോഴ്സിൽ നിന്ന് റെമോ ആണ് വിളിക്കുന്നത്. പുതിയ ക്രെറ്റയുടെ ടെസ്റ്റ് ഡ്രൈവ് നിങ്ങൾ ആവശ്യപ്പെട്ടിരുന്നു. നാളെ രാവിലെ 11 മണിക്ക് ഇന്ദിരാനഗർ ഷോറൂമിൽ ടെസ്റ്റ് വാഹനം ലഭ്യമാണ്.'
+    },
+    de: {
+      healthcare: 'Guten Tag Frau Gupta, hier ist Remo von der Apollo Clinic. Ich rufe an, um Ihren Termin bei Doktor Mehta morgen um 16:00 Uhr zu bestätigen. Haben Sie die empfohlene Nüchternzeit für Ihre Laboruntersuchung eingehalten?',
+      recruitment: 'Hallo Pooja, hier ist Remo vom Talent-Team. Ich habe Ihre Bewerbung als Senior Developer gesehen. Wie viele Jahre Erfahrung haben Sie mit React, und wie lang ist Ihre aktuelle Kündigungsfrist?',
+      sales: 'Hallo Vikram, hier ist Remo von TakeRemo. Mir ist aufgefallen, dass Sie gerade Preise für automatisierte Anrufe angefragt haben. Passt es gerade, über Ihr monatliches Lead-Volumen zu sprechen?',
+      education: 'Hallo Rohit, hier ist Remo von der Greenfield University. Ich melde mich wegen Ihrer Bewerbung für das Master-Programm Data Science. Möchten Sie einen Beratungstermin mit einem Studienberater vereinbaren?',
+      realestate: 'Hallo Priya, hier ist Remo von Prestige Heights, wegen Ihrer Anfrage zur 3-BHK-Wohnung. Möchten Sie die Immobilie diesen Samstag oder Sonntag besichtigen?',
+      support: 'Vielen Dank für Ihren Anruf beim Support. Hier ist Remo. Ihre Bestellung Nummer 8492 ist bei Bluedart in Zustellung und kommt heute bis 14:30 Uhr an. Den Live-Tracking-Link habe ich Ihnen auch per SMS geschickt.',
+      finance: 'Hallo Suresh, hier ist Remo von FinServe. Ich melde mich wegen des Uploads Ihrer KYC-Verifizierungsdokumente für Ihr Geschäftskonto. Darf ich Sie durch die restlichen Schritte führen?',
+      automotive: 'Hallo Ananya, hier ist Remo von Hyundai Motors. Sie haben eine Probefahrt mit dem neuen Creta angefragt. Morgen um 11:00 Uhr steht im Showroom in Indiranagar ein Testfahrzeug bereit.'
+    },
+    es: {
+      healthcare: 'Hola, señora Gupta, soy Remo de Apollo Clinic. Le llamo para confirmar su cita con el doctor Mehta mañana a las 4:00 p. m. ¿Ha completado el ayuno recomendado para su análisis de laboratorio?',
+      recruitment: 'Hola, Pooja, soy Remo del equipo de talento. Vi su solicitud para el puesto de desarrollador sénior. ¿Podría decirme cuántos años de experiencia tiene con React y cuál es su periodo de preaviso actual?',
+      sales: 'Hola, Vikram, soy Remo de TakeRemo. Vi que acaba de solicitar precios de llamadas automatizadas. ¿Es buen momento para hablar de su volumen mensual de clientes potenciales?',
+      education: 'Hola, Rohit, soy Remo de Greenfield University. Le llamo por su solicitud al máster en Ciencia de Datos. ¿Le gustaría programar una consulta con un asesor?',
+      realestate: 'Hola, Priya, soy Remo de Prestige Heights, por la consulta sobre el apartamento 3-BHK que envió. ¿Quiere visitar la propiedad este sábado o domingo?',
+      support: 'Gracias por llamar a soporte. Soy Remo. Su pedido número 8492 va en reparto con Bluedart y llegará hoy antes de las 2:30 p. m. También le envié por mensaje el enlace de seguimiento en vivo.',
+      finance: 'Hola, Suresh, soy Remo de FinServe. Le llamo por la carga de los documentos de verificación KYC de su cuenta empresarial. ¿Puedo guiarle en los pasos restantes?',
+      automotive: 'Hola, Ananya, soy Remo de Hyundai Motors. Usted solicitó una prueba de manejo del nuevo Creta. Mañana a las 11:00 a. m. tenemos un vehículo de prueba disponible en el showroom de Indiranagar.'
+    }
+  };
+
   const industryTabs = document.querySelectorAll('.ind-pill-btn, .ind-tab');
   const indDisplayTitle = document.getElementById('ind-display-title');
   const indDisplayText = document.getElementById('ind-display-text');
@@ -1286,13 +1373,95 @@ document.addEventListener('DOMContentLoaded', () => {
     return bar;
   });
 
+  // ---- Language + voice for the sample line ----
+  // With the voice on, the line is read aloud in the chosen language (English included) and the rotation waits for
+  // the clip to finish. The page opens silent: sound starts when the visitor turns the voice on or picks a language.
+  let indLang = 'en';
+  let indVoiceOn = false;
+  let indVoiceBlocked = false; // browsers block sound until the visitor has interacted with the page
+  let indPlayToken = 0;
+  let indSelectToken = 0;
+  let indActiveAudio = null;
+  const indAudioCache = {};
+  const indVoiceBtn = document.getElementById('ind-voice');
+  const indLangTabs = Array.from(document.querySelectorAll('.ind-lang-tab'));
+
+  const indKey = (index) => indTabList[index].getAttribute('data-industry');
+  const indAudioFor = (lang, key) => {
+    const id = `${lang}/${key}`;
+    if (!indAudioCache[id]) {
+      const audio = new Audio();
+      audio.preload = 'metadata';
+      audio.src = `/assets/voices/industries/${id}.wav`;
+      indAudioCache[id] = audio;
+    }
+    return indAudioCache[id];
+  };
+  const indTextFor = (index) => {
+    const key = indKey(index);
+    if (indLang !== 'en' && IND_TEXTS[indLang] && IND_TEXTS[indLang][key]) return IND_TEXTS[indLang][key];
+    return industryData[key].text;
+  };
+  // A clip's length is known once its metadata has loaded; never wait long on a slow connection
+  const indClipReady = (audio) => new Promise((resolve) => {
+    if (audio.readyState >= 1) { resolve(); return; }
+    const done = () => {
+      audio.removeEventListener('loadedmetadata', done);
+      audio.removeEventListener('error', done);
+      resolve();
+    };
+    audio.addEventListener('loadedmetadata', done);
+    audio.addEventListener('error', done);
+    setTimeout(done, 2500);
+  });
+  const indSetVoiceState = (state) => {
+    if (!indVoiceBtn) return;
+    indVoiceBtn.dataset.state = state;
+    indVoiceBtn.setAttribute('aria-pressed', String(state === 'on'));
+    indVoiceBtn.setAttribute('aria-label',
+      state === 'on' ? 'Voice on. Click to mute' : state === 'off' ? 'Voice off. Click to hear this sample call' : 'Click to hear Remo');
+    indVoiceBtn.querySelector('.ind-voice-text').textContent =
+      state === 'on' ? 'Voice on' : state === 'off' ? 'Voice off' : 'Tap to hear Remo';
+  };
+  const stopIndVoice = () => {
+    indPlayToken += 1;
+    if (indActiveAudio) {
+      indActiveAudio.pause();
+      indActiveAudio.currentTime = 0;
+      indActiveAudio = null;
+    }
+  };
+  const playIndVoice = async (index) => {
+    stopIndVoice();
+    const audio = indAudioFor(indLang, indKey(index));
+    if (!audio || !indVoiceOn || !indVisible || document.hidden) return;
+    const token = indPlayToken;
+    try {
+      audio.currentTime = 0;
+      indActiveAudio = audio;
+      await audio.play();
+    } catch (err) {
+      if (token === indPlayToken && err && err.name === 'NotAllowedError') {
+        indVoiceBlocked = true;
+        indSetVoiceState('blocked');
+      }
+    }
+  };
+  // How long the current industry stays open: the usual time, or the clip's length plus a short breath
+  const indDurationFor = (index) => {
+    const audio = indVoiceOn ? indAudioFor(indLang, indKey(index)) : null;
+    const seconds = audio && audio.duration;
+    return seconds && isFinite(seconds) ? Math.max(IND_DURATION, seconds * 1000 + 1600) : IND_DURATION;
+  };
+
   const renderIndustry = (index) => {
     const data = industryData[indTabList[index].getAttribute('data-industry')];
     if (!data) return;
     if (indDisplayTitle) indDisplayTitle.textContent = data.title;
     if (indDisplayText) {
       // each word fades up in turn (see .ind-word in CSS)
-      const words = data.text.split(' ').map((w, i) => `<span class="ind-word" style="--w:${i}">${w}</span>`).join(' ');
+      const words = indTextFor(index).split(' ').map((w, i) => `<span class="ind-word" style="--w:${i}">${w}</span>`).join(' ');
+      indDisplayText.setAttribute('lang', indLang);
       indDisplayText.innerHTML = `“${words}”`;
     }
     if (indDisplayChips) {
@@ -1314,13 +1483,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (indReduce) return;
     indAnim = indBars[indCurrent].animate(
       [{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }],
-      { duration: IND_DURATION, easing: 'linear', fill: 'forwards' }
+      { duration: indDurationFor(indCurrent), easing: 'linear', fill: 'forwards' }
     );
     indAnim.onfinish = () => selectIndustry((indCurrent + 1) % indTabList.length);
     if (!indVisible || indHover) indAnim.pause();
   };
 
   const selectIndustry = (index) => {
+    if (indAnim) { indAnim.cancel(); indAnim = null; }
     indCurrent = index;
     indTabList.forEach((tab, i) => {
       tab.classList.toggle('active', i === index);
@@ -1332,13 +1502,73 @@ document.addEventListener('DOMContentLoaded', () => {
       indSelector.scrollTo({ left: activeTab.offsetLeft - (indSelector.clientWidth - activeTab.offsetWidth) / 2, behavior: 'smooth' });
     }
     renderIndustry(index);
-    startIndProgress();
+    const token = ++indSelectToken;
+    const audio = indVoiceOn ? indAudioFor(indLang, indKey(index)) : null;
+    if (audio) {
+      // the timer starts once the clip's length is known, so the industry stays open as long as the voice
+      indClipReady(audio).then(() => {
+        if (token !== indSelectToken) return;
+        playIndVoice(index);
+        startIndProgress();
+      });
+    } else {
+      stopIndVoice();
+      startIndProgress();
+    }
   };
 
   indTabList.forEach((tab, i) => {
     tab.addEventListener('click', () => {
-      if (i !== indCurrent) selectIndustry(i); else startIndProgress();
+      // with the voice on, clicking the open industry reads it again
+      if (i !== indCurrent || indVoiceOn) selectIndustry(i); else startIndProgress();
     });
+  });
+
+  // Language tabs: the line changes language and is read aloud (English is text only)
+  const indSetLanguage = (lang) => {
+    if (lang !== 'en' && !IND_TEXTS[lang]) return;
+    if (lang === indLang && indVoiceOn) return; // already showing it, with the voice on
+    indLang = lang;
+    indLangTabs.forEach((tab) => {
+      const on = tab.dataset.lang === lang;
+      tab.classList.toggle('is-active', on);
+      tab.setAttribute('aria-selected', String(on));
+      tab.tabIndex = on ? 0 : -1;
+    });
+    // Choosing a language is a request to hear it, so sound comes on even if it was muted
+    indVoiceOn = true;
+    indVoiceBlocked = false;
+    indSetVoiceState('on');
+    selectIndustry(indCurrent);
+  };
+  indLangTabs.forEach((tab, i) => {
+    tab.addEventListener('click', () => indSetLanguage(tab.dataset.lang));
+    tab.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      e.preventDefault();
+      const next = indLangTabs[(i + (e.key === 'ArrowRight' ? 1 : indLangTabs.length - 1)) % indLangTabs.length];
+      next.focus();
+      indSetLanguage(next.dataset.lang);
+    });
+  });
+
+  if (indVoiceBtn) {
+    indVoiceBtn.addEventListener('click', () => {
+      if (indVoiceBlocked) {
+        indVoiceBlocked = false;
+        indVoiceOn = true;
+      } else {
+        indVoiceOn = !indVoiceOn;
+      }
+      indSetVoiceState(indVoiceOn ? 'on' : 'off');
+      selectIndustry(indCurrent); // restarts the line and its timer with or without the voice
+    });
+  }
+
+  indSetVoiceState(indVoiceOn ? 'on' : 'off');
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopIndVoice(); else if (indVisible) playIndVoice(indCurrent);
   });
 
   if (indShowcase) {
@@ -1347,6 +1577,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if ('IntersectionObserver' in window) {
       new IntersectionObserver(([entry]) => {
         indVisible = entry.isIntersecting;
+        if (indVisible) playIndVoice(indCurrent); else stopIndVoice();
         if (!indAnim) return;
         if (indVisible && !indHover) indAnim.play(); else indAnim.pause();
       }, { threshold: 0.4 }).observe(indShowcase);
@@ -1405,21 +1636,82 @@ document.addEventListener('DOMContentLoaded', () => {
     const htReduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const HT_MIN_DURATION = 6500;
 
-    // Voice clips per scene (Sarvam TTS, generated once into /assets/voices); played only while the section is on screen
-    const voiceScenes = [
-      [{ src: '/assets/voices/breath.wav', who: 'Remo', text: 'Hi, this is Remo. Take your time… I\'m right here, and I\'m listening.' }],
-      [
-        { src: '/assets/voices/cut-caller.wav', who: 'Caller', text: 'Sorry to jump in. Can I ask something quickly?' },
-        { src: '/assets/voices/cut-remo.wav', who: 'Remo', text: 'Of course. Please, go ahead.' }
-      ],
-      [{ src: '/assets/voices/care.wav', who: 'Remo', text: 'I\'m really sorry about the trouble. Let me sort this out for you right away.' }],
-      [{ src: '/assets/voices/done.wav', who: 'Remo', text: 'All done. I\'ve sent your summary on WhatsApp, confirmed the calendar invite, and updated your notes.' }]
+    // Voice clips per scene, generated once into /assets/voices (English at the top level, the other languages in
+    // /assets/voices/<code>/); played only while the section is on screen. A language's clips are loaded the
+    // first time that language is chosen.
+    const HT_TEXTS = {
+      en: {
+        breath: 'Hi, this is Remo. Take your time… I\'m right here, and I\'m listening.',
+        'cut-caller': 'Sorry to jump in. Can I ask something quickly?',
+        'cut-remo': 'Of course. Please, go ahead.',
+        care: 'I\'m really sorry about the trouble. Let me sort this out for you right away.',
+        done: 'All done. I\'ve sent your summary on WhatsApp, confirmed the calendar invite, and updated your notes.'
+      },
+      te: {
+        breath: 'నమస్కారం, నేను రెమో. తొందరేమీ లేదు… నేను ఇక్కడే ఉన్నాను, శ్రద్ధగా వింటున్నాను.',
+        'cut-caller': 'క్షమించండి, మధ్యలో మాట్లాడుతున్నాను. ఒక్క విషయం త్వరగా అడగవచ్చా?',
+        'cut-remo': 'తప్పకుండా. దయచేసి చెప్పండి.',
+        care: 'ఇబ్బంది కలిగినందుకు నిజంగా క్షమించండి. నేను వెంటనే దీన్ని పరిష్కరిస్తాను.',
+        done: 'పని పూర్తయింది. మీ సారాంశాన్ని వాట్సాప్‌లో పంపాను, క్యాలెండర్ ఆహ్వానాన్ని నిర్ధారించాను, మీ నోట్స్‌ను అప్‌డేట్ చేశాను.'
+      },
+      hi: {
+        breath: 'नमस्ते, मैं रेमो बोल रही हूँ। आप आराम से बोलिए… मैं यहीं हूँ, और ध्यान से सुन रही हूँ।',
+        'cut-caller': 'माफ़ कीजिए, बीच में टोक रहा हूँ। क्या मैं जल्दी से एक बात पूछ सकता हूँ?',
+        'cut-remo': 'जी ज़रूर। कृपया पूछिए।',
+        care: 'परेशानी के लिए मुझे सच में खेद है। मैं इसे अभी ठीक करती हूँ।',
+        done: 'काम हो गया। मैंने आपका सारांश व्हाट्सऐप पर भेज दिया है, कैलेंडर इनवाइट पक्का कर दिया है, और आपके नोट्स अपडेट कर दिए हैं।'
+      },
+      kn: {
+        breath: 'ನಮಸ್ಕಾರ, ನಾನು ರೆಮೋ. ಆತುರವೇನಿಲ್ಲ… ನಾನು ಇಲ್ಲೇ ಇದ್ದೇನೆ, ಗಮನವಿಟ್ಟು ಕೇಳುತ್ತಿದ್ದೇನೆ.',
+        'cut-caller': 'ಕ್ಷಮಿಸಿ, ಮಧ್ಯದಲ್ಲಿ ಮಾತನಾಡುತ್ತಿದ್ದೇನೆ. ಒಂದು ವಿಷಯವನ್ನು ಬೇಗನೆ ಕೇಳಬಹುದೇ?',
+        'cut-remo': 'ಖಂಡಿತ. ದಯವಿಟ್ಟು ಕೇಳಿ.',
+        care: 'ತೊಂದರೆಗಾಗಿ ನಿಜವಾಗಿಯೂ ಕ್ಷಮಿಸಿ. ನಾನು ಇದನ್ನು ಈಗಲೇ ಸರಿಪಡಿಸುತ್ತೇನೆ.',
+        done: 'ಕೆಲಸ ಮುಗಿಯಿತು. ನಿಮ್ಮ ಸಾರಾಂಶವನ್ನು ವಾಟ್ಸಾಪ್‌ನಲ್ಲಿ ಕಳುಹಿಸಿದ್ದೇನೆ, ಕ್ಯಾಲೆಂಡರ್ ಆಹ್ವಾನವನ್ನು ದೃಢಪಡಿಸಿದ್ದೇನೆ, ಮತ್ತು ನಿಮ್ಮ ಟಿಪ್ಪಣಿಗಳನ್ನು ನವೀಕರಿಸಿದ್ದೇನೆ.'
+      },
+      ml: {
+        breath: 'നമസ്കാരം, ഞാൻ റെമോ ആണ്. ധൃതിയൊന്നും വേണ്ട… ഞാൻ ഇവിടെത്തന്നെയുണ്ട്, ശ്രദ്ധയോടെ കേൾക്കുന്നുണ്ട്.',
+        'cut-caller': 'ക്ഷമിക്കണം, ഇടയ്ക്ക് കയറി സംസാരിക്കുകയാണ്. ഒരു കാര്യം വേഗം ചോദിക്കാമോ?',
+        'cut-remo': 'തീർച്ചയായും. ദയവായി പറഞ്ഞോളൂ.',
+        care: 'ബുദ്ധിമുട്ടുണ്ടായതിൽ ശരിക്കും ക്ഷമിക്കണം. ഞാൻ ഇത് ഉടൻ തന്നെ ശരിയാക്കാം.',
+        done: 'എല്ലാം കഴിഞ്ഞു. നിങ്ങളുടെ സംഗ്രഹം വാട്ട്സ്ആപ്പിൽ അയച്ചിട്ടുണ്ട്, കലണ്ടർ ക്ഷണം സ്ഥിരീകരിച്ചിട്ടുണ്ട്, നിങ്ങളുടെ കുറിപ്പുകളും പുതുക്കിയിട്ടുണ്ട്.'
+      },
+      de: {
+        breath: 'Hallo, hier ist Remo. Nehmen Sie sich Zeit… ich bin da und höre Ihnen zu.',
+        'cut-caller': 'Entschuldigung, dass ich unterbreche. Darf ich kurz etwas fragen?',
+        'cut-remo': 'Natürlich. Bitte, fragen Sie.',
+        care: 'Es tut mir wirklich leid für die Umstände. Ich kläre das sofort für Sie.',
+        done: 'Alles erledigt. Ich habe Ihre Zusammenfassung per WhatsApp gesendet, die Kalendereinladung bestätigt und Ihre Notizen aktualisiert.'
+      },
+      es: {
+        breath: 'Hola, soy Remo. Tómese su tiempo… estoy aquí y le estoy escuchando.',
+        'cut-caller': 'Perdone que le interrumpa. ¿Puedo preguntarle algo rápidamente?',
+        'cut-remo': 'Por supuesto. Adelante, por favor.',
+        care: 'Lamento mucho el inconveniente. Voy a resolverlo ahora mismo.',
+        done: 'Todo listo. Le envié su resumen por WhatsApp, confirmé la invitación del calendario y actualicé sus notas.'
+      }
+    };
+    // Scenes in order; each lists its clips (the interruption scene has the caller, then Remo)
+    const HT_SCENE_CLIPS = [
+      [['breath', 'Remo']],
+      [['cut-caller', 'Caller'], ['cut-remo', 'Remo']],
+      [['care', 'Remo']],
+      [['done', 'Remo']]
     ];
-    voiceScenes.forEach((clips) => clips.forEach((clip) => {
-      clip.audio = new Audio();
-      clip.audio.preload = 'metadata';
-      clip.audio.src = clip.src;
-    }));
+    const htSceneCache = {};
+    const getVoiceScenes = (lang) => {
+      if (!htSceneCache[lang]) {
+        const dir = lang === 'en' ? '/assets/voices/' : `/assets/voices/${lang}/`;
+        htSceneCache[lang] = HT_SCENE_CLIPS.map((clips) => clips.map(([name, who]) => {
+          const audio = new Audio();
+          audio.preload = 'metadata';
+          audio.src = `${dir}${name}.wav`;
+          return { src: audio.src, who, text: HT_TEXTS[lang][name], audio };
+        }));
+      }
+      return htSceneCache[lang];
+    };
+    let htLang = 'en';
+    let voiceScenes = getVoiceScenes(htLang);
 
     // Each scene lasts as long as its voice (plus a breath), never less than the minimum
     const htDurationFor = (i) => {
@@ -1466,6 +1758,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!caption) return;
       captionWho.textContent = who;
       captionText.textContent = text;
+      caption.classList.toggle('is-long', text.length > 80);
       caption.classList.add('is-show');
     };
     const hideCaption = () => { if (caption) caption.classList.remove('is-show'); };
@@ -1587,6 +1880,55 @@ document.addEventListener('DOMContentLoaded', () => {
       }, { threshold: 0.35 }).observe(htGrid);
     }
 
+    // ---- Language tabs: switch the voice and the captions of all four scenes ----
+    const langTabs = Array.from(document.querySelectorAll('.ht-lang-tab'));
+    const htClipsReady = (clips) => Promise.all(clips.map(({ audio }) => new Promise((resolve) => {
+      if (audio.readyState >= 1) { resolve(); return; }
+      const done = () => {
+        audio.removeEventListener('loadedmetadata', done);
+        audio.removeEventListener('error', done);
+        resolve();
+      };
+      audio.addEventListener('loadedmetadata', done);
+      audio.addEventListener('error', done);
+      setTimeout(done, 2500); // never wait long on a slow connection
+    })));
+    let htLangToken = 0;
+    const htSetLanguage = async (lang) => {
+      if (!HT_TEXTS[lang] || lang === htLang) return;
+      const token = ++htLangToken;
+      htLang = lang;
+      stopVoice();
+      voiceScenes = getVoiceScenes(lang);
+      langTabs.forEach((tab) => {
+        const on = tab.dataset.lang === lang;
+        tab.classList.toggle('is-active', on);
+        tab.classList.toggle('is-loading', on);
+        tab.setAttribute('aria-selected', String(on));
+        tab.tabIndex = on ? 0 : -1;
+      });
+      if (captionText) captionText.setAttribute('lang', lang);
+      // Choosing a language is a request to hear it, so sound comes on even if it was muted
+      voiceOn = true;
+      voiceBlocked = false;
+      setVoiceState('on');
+      try { window.localStorage.setItem('ht-voice', 'on'); } catch (e) { /* storage unavailable */ }
+      await htClipsReady(voiceScenes[htCurrent]); // so the scene lasts as long as the voice does
+      if (token !== htLangToken) return;
+      langTabs.forEach((tab) => tab.classList.remove('is-loading'));
+      htSelect(htCurrent);
+    };
+    langTabs.forEach((tab, i) => {
+      tab.addEventListener('click', () => htSetLanguage(tab.dataset.lang));
+      tab.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+        e.preventDefault();
+        const next = langTabs[(i + (e.key === 'ArrowRight' ? 1 : langTabs.length - 1)) % langTabs.length];
+        next.focus();
+        htSetLanguage(next.dataset.lang);
+      });
+    });
+
     htSelect(0);
   }
 
@@ -1684,11 +2026,42 @@ document.addEventListener('DOMContentLoaded', () => {
   function handleOpenModalClick(e) {
     e.preventDefault();
     const useCase = this.getAttribute('data-usecase') || '';
-    openModal(useCase);
+    openModal(useCase, this.hasAttribute('data-quick'));
   }
 
-  const openModal = (useCase) => {
+  // "Book a Demo" in the header opens the same form with only name, email and phone (the other fields are hidden
+  // and not required); every other button opens the full form.
+  const demoTitleEl = document.getElementById('demo-modal-title');
+  const demoSubtitleEl = demoModal ? demoModal.querySelector('.modal-subtitle') : null;
+  const DEMO_FULL_TEXT = {
+    title: demoTitleEl ? demoTitleEl.textContent : '',
+    subtitle: demoSubtitleEl ? demoSubtitleEl.textContent : ''
+  };
+  const setDemoQuickMode = (quick) => {
+    if (!demoModal) return;
+    demoModal.classList.toggle('demo-quick', quick);
+    demoModal.querySelectorAll('.demo-full-only').forEach((group) => {
+      group.querySelectorAll('input, select, textarea').forEach((field) => {
+        if (quick) {
+          if (field.required) field.dataset.wasRequired = '1';
+          field.required = false;
+        } else if (field.dataset.wasRequired) {
+          field.required = true;
+        }
+      });
+    });
+    if (demoTitleEl) demoTitleEl.textContent = quick ? 'Book a demo with Remo' : DEMO_FULL_TEXT.title;
+    if (demoSubtitleEl) {
+      demoSubtitleEl.textContent = quick
+        ? "Share your name, email and phone number and we'll set up your live AI employee demo. A copy of your request will be sent to your email."
+        : DEMO_FULL_TEXT.subtitle;
+    }
+  };
+
+  const openModal = (useCase, quick = false) => {
     if (demoModal) {
+      setDemoQuickMode(quick);
+      if (quick) useCase = '';
       demoModal.classList.add('active');
       document.body.style.overflow = 'hidden';
       const firstField = document.getElementById('demo-name');
@@ -1761,6 +2134,7 @@ document.addEventListener('DOMContentLoaded', () => {
         notes: value('demo-notes'),
         website: value('demo-website') // spam trap, should stay empty
       };
+      if (demoModal && demoModal.classList.contains('demo-quick')) payload.source = 'book-demo';
 
       submitBtn.disabled = true;
       submitBtn.innerHTML = '<span class="btn-spinner" aria-hidden="true"></span><span>Sending your request…</span>';

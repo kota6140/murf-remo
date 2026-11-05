@@ -342,6 +342,10 @@ export async function initDb() {
             console.log(`[DB] MySQL successfully connected and schema verified on ${host}:${port}/${database}!`);
         } catch (err) {
             console.warn(`[DB] MySQL connection error: ${err.message}.`);
+            if (process.env.NODE_ENV === 'production') {
+                // Live must never quietly switch to a local file database: it would show different accounts and data.
+                throw new Error(`MySQL is not reachable (${err.message}). Not falling back to SQLite in production.`);
+            }
             console.warn('[DB] Falling back to SQLite for local development.');
             await initSqlite();
         }

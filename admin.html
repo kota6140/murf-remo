@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex, nofollow">
     <title>Takeremo Admin</title>
-    <link rel="icon" href="/favicon.ico">
+    <link rel="icon" type="image/jpeg" href="/assets/tab.jpeg">
+    <link rel="apple-touch-icon" href="/assets/tab.jpeg">
     <link rel="stylesheet" href="/admin.css">
 </head>
 <body>
@@ -66,17 +67,19 @@
                 </select>
             </div>
             <div class="table-wrap"><table id="subTable"></table></div>
+            <div id="subPager"></div>
         </section>
 
         <section id="tab-demos" class="tab" hidden>
             <header class="page-head"><h2>60-second demo requests</h2><button class="btn ghost" data-refresh>Refresh</button></header>
-            <p class="muted" style="margin:-8px 0 14px">Everyone who filled the demo form or typed their number in the "Get instant call" box. Click a row to see every detail.</p>
+            <p class="muted" style="margin:-8px 0 14px">Everyone who used the "Book a Demo" button, filled the demo form or typed their number in the "Get instant call" box. Click a row to see every detail.</p>
             <div class="toolbar">
                 <input type="search" id="demoSearch" placeholder="Search name, company, email, phone…">
                 <select id="demoSource" aria-label="Filter by where it came from">
                     <option value="">All sources</option>
                     <option value="instant-call">Instant call box (phone only)</option>
                     <option value="demo-form">Demo form (full details)</option>
+                    <option value="book-demo">Book a Demo button (name, email, phone)</option>
                 </select>
                 <select id="demoStatus">
                     <option value="">All statuses</option>
@@ -87,6 +90,7 @@
                 </select>
             </div>
             <div class="table-wrap"><table id="demoTable"></table></div>
+            <div id="demoPager"></div>
         </section>
 
         <section id="tab-users" class="tab" hidden>
@@ -104,6 +108,7 @@
                 </select>
             </div>
             <div class="table-wrap"><table id="userTable"></table></div>
+            <div id="userPager"></div>
         </section>
 
         <section id="tab-agents" class="tab" hidden>
@@ -125,6 +130,18 @@
                 </select>
             </div>
             <div class="table-wrap"><table id="agentTable"></table></div>
+            <div id="agentPager"></div>
+
+            <h3 style="margin:26px 0 4px">Approved phone numbers</h3>
+            <p class="muted" style="margin:0 0 10px">Admins can create their own agents, but only on these numbers (they cannot type any other number). Numbers your current agents use were added automatically. Removing a number does not stop agents already using it.</p>
+            <form id="numberForm" class="toolbar" novalidate>
+                <input name="phoneNumber" placeholder="+91 80 1234 5678" aria-label="Phone number" style="max-width:220px">
+                <input name="label" placeholder="Label (optional)" aria-label="Label" style="max-width:220px">
+                <button class="btn primary" type="submit">Approve number</button>
+            </form>
+            <div id="numberError" class="alert" hidden role="alert"></div>
+            <div class="table-wrap"><table id="numberTable"></table></div>
+            <div id="numberPager"></div>
         </section>
 
         <section id="tab-calls" class="tab" hidden>
@@ -181,7 +198,10 @@
             <label>Role
                 <select name="role"><option value="user">User</option><option value="admin">Admin (call dashboard)</option></select>
             </label>
-            <label id="pwLabel">Password *<input name="password" type="text" autocomplete="new-password" minlength="6"></label>
+            <label>Add calling minutes (admins)
+                <input name="addMinutes" type="number" min="0" step="1" placeholder="e.g. 60">
+                <span class="muted small" id="minutesNow">Minutes are added on top of what the admin has left. When they are used up the admin cannot start campaigns or calls and is told to contact you.</span>
+            </label>            <label id="pwLabel">Password *<input name="password" type="text" autocomplete="new-password" minlength="6"></label>
         </div>
         <fieldset id="userAgentsBox" class="agent-pick" hidden>
             <legend>Agents for this admin</legend>
@@ -213,14 +233,17 @@
                     <option value="receptionist">Receptionist</option>
                 </select>
             </label>
-            <label>Given to admin
-                <select name="assignedUserId" id="agentAdminSelect"></select>
-            </label>
-            <label>ElevenLabs voice ID (optional)<input name="voiceId" placeholder="Leave blank for the default voice"></label>
             <label>Status
                 <select name="status"><option value="active">On</option><option value="disabled">Switched off</option></select>
             </label>
         </div>
+        <div style="margin-top:12px">
+            <strong>Given to admins</strong>
+            <div class="muted small" style="margin:2px 0 6px">Tick every admin who can use this agent. Several agents can share one phone number, and one agent can be given to several admins.</div>
+            <div id="agentAdminsList" class="form-grid"></div>
+        </div>
+        <label class="check" style="margin-top:12px"><input type="checkbox" name="inboundDefault" id="agentInboundDefault">
+            <span>Answers incoming calls on this number <span class="muted small">(only one agent per number answers incoming calls; ticking this replaces the other agent on this number)</span></span></label>
         <label style="margin-top:12px">Greeting (optional)
             <textarea name="greeting" rows="2" maxlength="1000" placeholder="Hello {name}, this is {agent} from {company}. Do you have a minute?"></textarea>
         </label>

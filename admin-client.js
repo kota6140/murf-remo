@@ -132,6 +132,23 @@ const AdminClient = {
     return this.request('/api/admin/agents');
   },
 
+  // Phone numbers the owner approved for admins' own agents
+  async getAgentNumbers() {
+    return this.request('/api/admin/agents/numbers');
+  },
+
+  async createAgent(body) {
+    return this.request('/api/admin/agents', { method: 'POST', body: JSON.stringify(body) });
+  },
+
+  async updateAgent(id, body) {
+    return this.request(`/api/admin/agents/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) });
+  },
+
+  async deleteAgent(id) {
+    return this.request(`/api/admin/agents/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  },
+
   // Service-specific convenience methods
   async uploadRecruitment(fileOrData) {
     return this.uploadExcel('recruitment', fileOrData);
@@ -386,6 +403,34 @@ const AdminClient = {
 
   getConversationDownloadUrl(id) {
     return `/api/admin/conversations/${encodeURIComponent(id)}/audio?download=1`;
+  },
+
+  /**
+   * POST /api/admin/conversations/audio-zip
+   * The recordings of the given conversations in one .zip (files named name_date_phone.mp3).
+   * Resolves with { blob, filename }; rejects with the server's message if nothing can be downloaded.
+   */
+  async downloadAudioZip(ids) {
+    const headers = { 'Content-Type': 'application/json', 'Accept': 'application/zip, application/json' };
+    try {
+      const storedToken = localStorage.getItem('agent_hari_token') || localStorage.getItem('token') || sessionStorage.getItem('token');
+      if (storedToken) headers['Authorization'] = `Bearer ${storedToken}`;
+    } catch (e) {
+      // LocalStorage access may be restricted in some sandboxes
+    }
+    const response = await fetch('/api/admin/conversations/audio-zip', {
+      method: 'POST',
+      headers,
+      credentials: 'include',
+      body: JSON.stringify({ ids })
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.message || `Request failed with status ${response.status}`);
+    }
+    const blob = await response.blob();
+    const match = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') || '');
+    return { blob, filename: match ? match[1] : 'call-recordings.zip' };
   },
 
   async getConversationRecordingInfo(id) {

@@ -19,35 +19,23 @@ import { fileURLToPath } from 'url';
 import multer from 'multer';
 import { authenticateJwt } from '../middleware/auth.js';
 import { sendEmail, escapeHtml } from '../services/email_service.js';
+import { readProposals, writeProposals as saveProposals } from '../proposals_store.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT = path.resolve(__dirname, '..');
 const DATA_DIR = path.join(ROOT, 'data');
-const PROPOSALS_FILE = path.join(DATA_DIR, 'proposals.json');
 const USER_UPLOADS_DIR = path.join(DATA_DIR, 'user_uploads');
 
 // Ensure directories exist
 if (!fs.existsSync(USER_UPLOADS_DIR)) fs.mkdirSync(USER_UPLOADS_DIR, { recursive: true });
 
 // ============================================================================
-// Proposals file-based store
+// Proposals are kept in the database (see proposals_store.js)
 // ============================================================================
-function readProposals() {
-    try {
-        if (!fs.existsSync(PROPOSALS_FILE)) {
-            fs.writeFileSync(PROPOSALS_FILE, JSON.stringify([], null, 2), 'utf-8');
-        }
-        return JSON.parse(fs.readFileSync(PROPOSALS_FILE, 'utf-8'));
-    } catch (e) {
-        console.error('[UserRoutes] Error reading proposals:', e.message);
-        return [];
-    }
-}
-
 function writeProposals(proposals) {
     try {
-        fs.writeFileSync(PROPOSALS_FILE, JSON.stringify(proposals, null, 2), 'utf-8');
+        saveProposals(proposals);
         return true;
     } catch (e) {
         console.error('[UserRoutes] Error writing proposals:', e.message);

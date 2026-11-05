@@ -39,6 +39,9 @@ const safeDecode = (p) => { try { return decodeURIComponent(p); } catch { return
 const PRIVATE_PATH = /^\/(data|routes|services|middleware|docs|node_modules|\.git)(\/|$)|^\/[^/]+\.(mjs|cjs|json|md|db|wav)$|^\/(server|users_store|proposals_store|demo_store)\.js$/i;
 app.use((req, res, next) => (PRIVATE_PATH.test(safeDecode(req.path).replace(/\\/g, '/')) ? res.status(404).end() : next()));
 
+// Every browser tab shows the same logo as the home page, including pages that only ask for /favicon.ico.
+app.get('/favicon.ico', (req, res) => res.sendFile(path.join(__dirname, 'assets', 'tab.jpeg')));
+
 // Serve static files from root
 app.use(express.static(__dirname));
 
@@ -57,6 +60,7 @@ import demoRoutes from './routes/demo.js';
 import jwt from 'jsonwebtoken';
 import { getJwtSecret } from './middleware/auth.js';
 import { findUserById } from './users_store.js';
+import { initCollections, startRefresh } from './services/doc_collections.js';
 
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
@@ -82,8 +86,8 @@ app.get('/forgot-password', (req, res) => res.sendFile(path.join(__dirname, 'for
 app.get('/reset-password', (req, res) => res.redirect(302, '/forgot-password'));
 app.get('/onboarding', (req, res) => res.sendFile(path.join(__dirname, 'onboarding.html')));
 
-app.get('/dashboard', (req, res) => {
-    // Protected Admin Dashboard Route
+// Pages only a signed-in admin may open (the admin dashboard and the admin settings page)
+const sendAdminPage = (file) => (req, res) => {
     let token = req.cookies.agent_hari_token;
     if (!token) {
         const authHeader = req.headers.authorization || '';
@@ -113,8 +117,11 @@ app.get('/dashboard', (req, res) => {
         }
     }
 
-    res.sendFile(path.join(__dirname, 'dashboard.html'));
-});
+    res.sendFile(path.join(__dirname, file));
+};
+
+app.get('/dashboard', sendAdminPage('dashboard.html'));
+app.get('/settings', sendAdminPage('settings.html'));
 
 // User Dashboard Route (for non-admin users)
 app.get('/user-dashboard', (req, res) => {
@@ -217,11 +224,20 @@ server.on('upgrade', (request, socket, head) => {
     }
 });
 
-server.listen(PORT, () => {
-    console.log("===============================================");
-    console.log(`  Agent Hari Node.js Server running on http://localhost:${PORT}`);
-    console.log(`  Plivo & ElevenLabs Audio Stream Active on /voicebot`);
-    console.log("===============================================");
-    // Daily deletion of recordings older than 30 days, and recovery of missed recording links.
-    RecordingService.startMaintenance();
+// Accounts, proposals and demo requests live in the database. Load them before taking any request, and stop
+// with a clear message if the database cannot be reached (nobody could log in without the accounts).
+// (No top-level await: some hosting panels load the start file in a way that does not support it.)
+initCollections().then(() => {
+    startRefresh(30000); // accounts made on the other side (live / localhost share one database) appear within 30 s
+    server.listen(PORT, () => {
+        console.log("===============================================");
+        console.log(`  Agent Hari Node.js Server running on http://localhost:${PORT}`);
+        console.log(`  Plivo & ElevenLabs Audio Stream Active on /voicebot`);
+        console.log("===============================================");
+        // Daily deletion of recordings older than 30 days, and recovery of missed recording links.
+        RecordingService.startMaintenance();
+    });
+}).catch((e) => {
+    console.error(`[STARTUP] Could not load accounts from the database: ${e.message}`);
+    process.exit(1);
 });

@@ -39,7 +39,8 @@ function normalizeLang(lang) {
  * Empty when no company is known, so a script never names a company it was not given.
  */
 export function fromCompany(company, lang = 'en') {
-    const comp = String(company || '').trim();
+    // A name ending in "Inc." would end the sentence with "Inc.." once the script adds its own full stop.
+    const comp = String(company || '').trim().replace(/\.+$/, '');
     if (!comp) return '';
     switch (normalizeLang(lang)) {
         case 'te': return ` ${comp} నుండి`;

@@ -1973,6 +1973,8 @@ body.dashboard-body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
   margin-top: 16px;
   padding-top: 14px;
   border-top: 1px solid var(--dash-border-subtle);
@@ -1982,7 +1984,24 @@ body.dashboard-body {
 
 .pagination-btns {
   display: flex;
+  align-items: center;
   gap: 8px;
+}
+
+/* "Rows per page" choice beside the Previous / Next buttons */
+.rows-per-page {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--dash-text-muted);
+}
+
+.admin-select-sm {
+  padding: 5px 10px;
+  font-size: 0.78rem;
 }
 
 .btn-page {
@@ -4262,6 +4281,22 @@ body.dashboard-body {
   box-shadow: 0 4px 12px rgba(252, 36, 21, 0.25);
 }
 
+button.btn-convs-excel {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* "Download Audio": greyed out until at least one call is ticked */
+.btn-convs-audio:disabled,
+.btn-convs-audio:disabled:hover {
+  background: #F8FAFC;
+  color: #94A3B8;
+  border-color: #E2E8F0;
+  box-shadow: none;
+  transform: none;
+  cursor: not-allowed;
+}
+
 .btn-convs-close {
   width: 36px;
   height: 36px;
@@ -4843,8 +4878,53 @@ body.dashboard-body {
   gap: 6px;
 }
 
+.convs-footer-info {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.convs-footer-right {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.convs-pages {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.convs-page-gap {
+  color: #94A3B8;
+  padding: 0 2px;
+}
+
+.convs-select-info {
+  color: #475569;
+}
+
+.convs-link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: 8px;
+  color: #FC2415;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.convs-link-btn:hover {
+  text-decoration: underline;
+}
+
 .convs-page-btn {
-  width: 28px;
+  min-width: 28px;
+  padding: 0 6px;
   height: 28px;
   border-radius: 6px;
   border: 1px solid #E2E8F0;

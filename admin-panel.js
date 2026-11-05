@@ -92,8 +92,8 @@
 
     async function refreshAll() {
         try {
-            const [s, u, f, dm, ag] = await Promise.all([api('/stats'), api('/users'), api('/submissions'), api('/demo-requests'), api('/agents').catch(() => ({ agents: state.agents }))]);
-            state.stats = s.stats; state.users = u.users; state.subs = f.submissions; state.demos = dm.requests; state.agents = ag.agents;
+            const [s, u, f, dm, ag, nm] = await Promise.all([api('/stats'), api('/users'), api('/submissions'), api('/demo-requests'), api('/agents').catch(() => ({ agents: state.agents })), api('/numbers').catch(() => ({ numbers: state.numbers || [] }))]);
+            state.stats = s.stats; state.users = u.users; state.subs = f.submissions; state.demos = dm.requests; state.agents = ag.agents; state.numbers = nm.numbers;
             renderAll();
         } catch (e) { toast(e.message, true); }
     }
@@ -102,8 +102,56 @@
         $('#navSubCount').textContent = state.subs.length;
         $('#navUserCount').textContent = state.users.length;
         $('#navAgentCount').textContent = state.agents.length;
-        renderStats(); renderRecent(); renderSubs(); renderDemos(); renderUsers(); renderAgents();
+        renderStats(); renderRecent(); renderSubs(); renderDemos(); renderUsers(); renderAgents(); renderNumbers();
     }
+
+    // ── pagination: every list is cut into pages in the browser (10/25/50/100 per page) ──
+    const pg = {};          // key -> { page, size }
+    const pgRender = {};    // key -> function that redraws that list
+    const PAGE_SIZES = [10, 25, 50, 100];
+    const resetPage = (key) => { if (pg[key]) pg[key].page = 1; };
+
+    // Returns the rows of the current page plus the pager bar (empty when everything fits on one 10-row page).
+    function paginate(key, rows, redraw) {
+        const p = pg[key] || (pg[key] = { page: 1, size: 10 });
+        pgRender[key] = redraw;
+        const pages = Math.max(1, Math.ceil(rows.length / p.size));
+        if (p.page > pages) p.page = pages;
+        if (p.page < 1) p.page = 1;
+        const start = (p.page - 1) * p.size;
+        const shown = rows.slice(start, start + p.size);
+        if (rows.length <= PAGE_SIZES[0]) return { rows: shown, html: '' };
+        // Page buttons: first, last, and two either side of the current one.
+        const nums = [];
+        for (let i = 1; i <= pages; i++) if (i === 1 || i === pages || Math.abs(i - p.page) <= 2) nums.push(i);
+        let last = 0;
+        const buttons = nums.map(i => {
+            const gap = i - last > 1 ? '<span class="muted">…</span>' : '';
+            last = i;
+            return `${gap}<button class="btn sm${i === p.page ? ' current' : ''}" data-pg-key="${key}" data-pg-go="${i}">${i}</button>`;
+        }).join('');
+        const html = `<div class="pager">
+            <span class="muted">Showing ${start + 1}–${start + shown.length} of ${rows.length}</span>
+            <span class="pager-nav">
+                <label class="muted">Per page <select data-pg-key="${key}" data-pg-size>${PAGE_SIZES.map(n => `<option value="${n}" ${n === p.size ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+                <button class="btn sm" data-pg-key="${key}" data-pg-go="${p.page - 1}" ${p.page <= 1 ? 'disabled' : ''}>&larr; Prev</button>
+                ${buttons}
+                <button class="btn sm" data-pg-key="${key}" data-pg-go="${p.page + 1}" ${p.page >= pages ? 'disabled' : ''}>Next &rarr;</button>
+            </span></div>`;
+        return { rows: shown, html };
+    }
+    document.addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-pg-go]'); if (!b || b.disabled) return;
+        const p = pg[b.dataset.pgKey]; if (!p) return;
+        p.page = Number(b.dataset.pgGo) || 1;
+        pgRender[b.dataset.pgKey]();
+    });
+    document.addEventListener('change', (e) => {
+        const s = e.target.closest('select[data-pg-size]'); if (!s) return;
+        const p = pg[s.dataset.pgKey]; if (!p) return;
+        p.size = Number(s.value) || 10; p.page = 1;
+        pgRender[s.dataset.pgKey]();
+    });
 
     // ── overview ────────────────────────────────────────────────────────────
     function renderStats() {
@@ -136,10 +184,12 @@
         const rows = state.subs.filter(p =>
             (!st || p.status === st) &&
             (!q || [p.fullName, p.email, p.companyName, p.phone, p.agentType, p.industry].some(v => (v || '').toLowerCase().includes(q))));
-        $('#subTable').innerHTML = subTableHtml(rows, state.subs.length ? 'No submissions match your filters.' : 'No form submissions yet.');
+        const pgd = paginate('subs', rows, renderSubs);
+        $('#subTable').innerHTML = subTableHtml(pgd.rows, state.subs.length ? 'No submissions match your filters.' : 'No form submissions yet.');
+        $('#subPager').innerHTML = pgd.html;
     }
-    $('#subSearch').addEventListener('input', renderSubs);
-    $('#subStatus').addEventListener('change', renderSubs);
+    $('#subSearch').addEventListener('input', () => { resetPage('subs'); renderSubs(); });
+    $('#subStatus').addEventListener('change', () => { resetPage('subs'); renderSubs(); });
 
     function onSubOpen(e) {
         if (e.type === 'keydown' && e.key !== 'Enter') return;
@@ -185,8 +235,8 @@
 
     // ── 60-second demo requests ─────────────────────────────────────────────
     const DEMO_LABEL = { new: 'New', contacted: 'Contacted', demo_done: 'Demo done', not_interested: 'Not interested' };
-    const DEMO_SOURCE = { 'instant-call': 'Instant call box', 'demo-form': 'Demo form' };
-    const demoSource = (d) => d.source === 'instant-call' ? 'instant-call' : 'demo-form';
+    const DEMO_SOURCE = { 'instant-call': 'Instant call box', 'demo-form': 'Demo form', 'book-demo': 'Book a Demo button' };
+    const demoSource = (d) => (d.source === 'instant-call' || d.source === 'book-demo') ? d.source : 'demo-form';
     const DEMO_PILL = { new: 'pending', contacted: 'in_review', demo_done: 'approved', not_interested: 'rejected' };
 
     function renderDemos() {
@@ -196,19 +246,21 @@
             (!st || d.status === st) &&
             (!src || demoSource(d) === src) &&
             (!q || [d.name, d.email, d.company, d.phone, d.useCase, d.notes].some(v => (v || '').toLowerCase().includes(q))));
+        const pgd = paginate('demos', rows, renderDemos);
+        $('#demoPager').innerHTML = pgd.html;
         $('#demoTable').innerHTML = !rows.length
             ? `<tbody><tr><td class="empty">${state.demos.length ? 'No requests match your filters.' : 'No one has filled the demo form yet.'}</td></tr></tbody>`
             : `<thead><tr><th>Submitted</th><th>Name</th><th>Company</th><th>Phone</th><th>Use case</th><th>From</th><th>Status</th></tr></thead><tbody>` +
-            rows.map(d => `<tr class="click" data-demo="${esc(d.id)}" tabindex="0">
+            pgd.rows.map(d => `<tr class="click" data-demo="${esc(d.id)}" tabindex="0">
                 <td>${esc(fmtDate(d.submittedAt))}</td>
                 <td>${d.name ? `${esc(d.name)}<div class="sub">${esc(d.email)}</div>` : '<span class="muted">Phone number only</span>'}</td>
                 <td>${esc(d.company || '—')}</td><td>${esc(d.phone)}</td><td>${esc(d.useCase || '—')}</td>
                 <td>${esc(DEMO_SOURCE[demoSource(d)])}</td>
                 <td><span class="pill ${DEMO_PILL[d.status] || ''}">${esc(DEMO_LABEL[d.status] || d.status)}</span></td></tr>`).join('') + '</tbody>';
     }
-    $('#demoSearch').addEventListener('input', renderDemos);
-    $('#demoStatus').addEventListener('change', renderDemos);
-    $('#demoSource').addEventListener('change', renderDemos);
+    $('#demoSearch').addEventListener('input', () => { resetPage('demos'); renderDemos(); });
+    $('#demoStatus').addEventListener('change', () => { resetPage('demos'); renderDemos(); });
+    $('#demoSource').addEventListener('change', () => { resetPage('demos'); renderDemos(); });
 
     function onDemoOpen(e) {
         if (e.type === 'keydown' && e.key !== 'Enter') return;
@@ -228,7 +280,7 @@
                 <label style="margin-top:10px">Internal note <textarea id="ddNote" rows="3" maxlength="2000" placeholder="Visible to admins only">${esc(d.adminNote || '')}</textarea></label>
                 <div class="modal-actions"><button class="btn danger sm" id="ddDelete">Delete request</button><button class="btn primary sm" id="ddSave">Save</button></div>
             </div>
-            <div><h4>Details they filled in</h4><dl class="kv">${row('Full name', d.name)}${row('Work email', d.email)}${row('Phone', d.phone)}${row('Company', d.company)}${row('Primary use case', d.useCase)}${row('Notes', d.notes)}${row('Came from', DEMO_SOURCE[demoSource(d)])}${row('Submitted', fmtDate(d.submittedAt))}${demoSource(d) === 'demo-form' ? row('Confirmation email', d.confirmationSent ? 'Sent' : 'Not sent') : ''}</dl></div>`;
+            <div><h4>Details they filled in</h4><dl class="kv">${row('Full name', d.name)}${row('Work email', d.email)}${row('Phone', d.phone)}${row('Company', d.company)}${row('Primary use case', d.useCase)}${row('Notes', d.notes)}${row('Came from', DEMO_SOURCE[demoSource(d)])}${row('Submitted', fmtDate(d.submittedAt))}${demoSource(d) !== 'instant-call' ? row('Confirmation email', d.confirmationSent ? 'Sent' : 'Not sent') : ''}</dl></div>`;
         openEl($('#demoDrawer'));
     }
 
@@ -249,19 +301,30 @@
     });
 
     // ── users ───────────────────────────────────────────────────────────────
+    // Calling minutes of an admin: used / given, or "Unlimited". Other accounts do not make calls.
+    function minutesCell(u) {
+        const m = u.minutes;
+        if (u.role !== 'admin' || !m) return '<span class="muted">—</span>';
+        if (!m.allottedMinutes) return '<span class="pill bad">None assigned</span>';
+        return `<span class="pill ${m.exhausted ? 'bad' : 'ok'}">${m.exhausted ? 'Finished' : esc(m.remainingMinutes) + ' left'}</span><div class="sub">${esc(m.usedMinutes)} / ${esc(m.allottedMinutes)} min</div>`;
+    }
+
     function renderUsers() {
         const q = $('#userSearch').value.trim().toLowerCase(), f = $('#userFilter').value;
         const rows = state.users.filter(u =>
             (!q || [u.name, u.email, u.companyName, u.phone].some(v => (v || '').toLowerCase().includes(q))) &&
             (!f || (f === 'submitted' && u.submissionCount > 0) || (f === 'not_submitted' && !u.submissionCount) ||
                 (f === 'disabled' && u.disabled) || (f === 'admin' && u.role === 'admin')));
+        const pgd = paginate('users', rows, renderUsers);
+        $('#userPager').innerHTML = pgd.html;
         $('#userTable').innerHTML = !rows.length
             ? `<tbody><tr><td class="empty">${state.users.length ? 'No users match your filters.' : 'No users yet.'}</td></tr></tbody>`
-            : `<thead><tr><th>User</th><th>Company</th><th>Role</th><th>Form</th><th>Status</th><th>Joined</th><th></th></tr></thead><tbody>` +
-            rows.map(u => `<tr>
+            : `<thead><tr><th>User</th><th>Company</th><th>Role</th><th>Minutes</th><th>Form</th><th>Status</th><th>Joined</th><th></th></tr></thead><tbody>` +
+            pgd.rows.map(u => `<tr>
                 <td>${esc(u.name)}<div class="sub">${esc(u.email)}</div></td>
                 <td>${esc(u.companyName || '—')}<div class="sub">${esc(u.phone || '')}</div></td>
                 <td><span class="pill ${u.role === 'admin' ? 'in_review' : ''}">${u.role === 'admin' ? 'Admin' : 'User'}</span></td>
+                <td>${minutesCell(u)}</td>
                 <td>${u.submissionCount ? `<span class="pill ok">Filled (${u.submissionCount})</span>` : '<span class="pill">Not yet</span>'}</td>
                 <td>${u.disabled ? '<span class="pill bad">Suspended</span>' : '<span class="pill ok">Active</span>'}</td>
                 <td>${esc(fmtDate(u.createdAt))}</td>
@@ -273,8 +336,8 @@
                     <button class="btn sm danger" data-del="${esc(u.id)}">Delete</button>
                 </td></tr>`).join('') + '</tbody>';
     }
-    $('#userSearch').addEventListener('input', renderUsers);
-    $('#userFilter').addEventListener('change', renderUsers);
+    $('#userSearch').addEventListener('input', () => { resetPage('users'); renderUsers(); });
+    $('#userFilter').addEventListener('change', () => { resetPage('users'); renderUsers(); });
 
     $('#userTable').addEventListener('click', async (e) => {
         const b = e.target.closest('button'); if (!b) return;
@@ -315,7 +378,11 @@
         const pw = form.elements.password;
         pw.required = !u; pw.placeholder = u ? 'Leave blank to keep current password' : 'Min. 6 characters';
         $('#pwLabel').firstChild.textContent = u ? 'New password' : 'Password *';
-        if (u) for (const el of form.elements) if (el.name && el.name !== 'password') el.value = u[el.name] ?? '';
+        if (u) for (const el of form.elements) if (el.name && !['password', 'addMinutes'].includes(el.name)) el.value = u[el.name] ?? '';
+        // Calling minutes: show what the admin has now; the owner only types how many to ADD. Never unlimited.
+        const m = u && u.minutes;
+        $('#minutesNow').textContent = !m ? 'An admin has 0 minutes until you add some, and cannot start campaigns or calls without them.'
+            : `Now: ${m.remainingMinutes} min left (${m.usedMinutes} of ${m.allottedMinutes} used since you last gave minutes). Whatever you type is added on top.`;
         renderUserAgents(u);
         openEl($('#userModal')); form.elements.name.focus();
     }
@@ -325,12 +392,13 @@
         const box = $('#userAgentsBox'), isAdmin = $('#userForm').elements.role.value === 'admin';
         box.hidden = !isAdmin;
         if (!isAdmin) return;
-        const mine = new Set((u ? state.agents.filter(a => a.assignedUserId === u.id) : []).map(a => a.id));
+        const idsOf = (a) => a.assignedUserIds || (a.assignedUserId ? [a.assignedUserId] : []);
+        const mine = new Set((u ? state.agents.filter(a => idsOf(a).includes(u.id)) : []).map(a => a.id));
         $('#userAgentsList').innerHTML = state.agents.length
             ? state.agents.map(a => {
-                const other = a.assignedUserId && (!u || a.assignedUserId !== u.id);
+                const others = (a.admins || []).filter(x => !u || x.id !== u.id).map(x => x.name);
                 return `<label class="check"><input type="checkbox" name="agentIds" value="${esc(a.id)}" ${mine.has(a.id) ? 'checked' : ''}>
-                    <span>${esc(a.name)} <span class="muted small">${esc(fmtNumber(a.phoneNumber))} · ${esc(SERVICE_LABEL[a.service] || a.service)}${other ? ` · now with ${esc(a.assignedName || 'another admin')}` : ''}</span></span></label>`;
+                    <span>${esc(a.name)} <span class="muted small">${esc(fmtNumber(a.phoneNumber))} · ${esc(SERVICE_LABEL[a.service] || a.service)}${others.length ? ` · also with ${esc(others.join(', '))}` : ''}</span></span></label>`;
             }).join('')
             : '<div class="muted small">No agents yet. Add one on the Agents tab.</div>';
     }
@@ -365,24 +433,59 @@
     function renderAgents() {
         const q = $('#agentSearch').value.trim().toLowerCase(), f = $('#agentFilter').value;
         const rows = state.agents.filter(a =>
-            (!q || [a.name, a.phoneNumber, a.assignedName, a.assignedEmail, a.service].some(v => (v || '').toLowerCase().includes(q))) &&
-            (!f || (f === 'unassigned' && !a.assignedUserId) || (f === 'disabled' && a.status === 'disabled') || a.service === f));
+            (!q || [a.name, a.phoneNumber, a.assignedName, a.assignedEmail, a.createdByName, a.createdByEmail, a.service].some(v => (v || '').toLowerCase().includes(q))) &&
+            (!f || (f === 'unassigned' && !(a.assignedUserIds || []).length) || (f === 'disabled' && a.status === 'disabled') || a.service === f));
+        const pgd = paginate('agents', rows, renderAgents);
+        $('#agentPager').innerHTML = pgd.html;
         $('#agentTable').innerHTML = !rows.length
             ? `<tbody><tr><td class="empty">${state.agents.length ? 'No agents match your filters.' : 'No agents yet. Click "+ Add agent" to create the first one.'}</td></tr></tbody>`
-            : `<thead><tr><th>Agent</th><th>Phone number</th><th>Work type</th><th>Given to admin</th><th>Status</th><th></th></tr></thead><tbody>` +
-            rows.map(a => `<tr>
-                <td>${esc(a.name)}<div class="sub">${a.instructions ? 'Has its own instructions' : 'Standard behaviour'}${a.greeting ? ' · own greeting' : ''}${a.voiceId ? ' · own voice' : ''}</div></td>
-                <td>${esc(fmtNumber(a.phoneNumber))}</td>
+            : `<thead><tr><th>Agent</th><th>Phone number</th><th>Work type</th><th>Created by</th><th>Given to admin</th><th>Status</th><th></th></tr></thead><tbody>` +
+            pgd.rows.map(a => `<tr>
+                <td>${esc(a.name)}<div class="sub">${a.instructions ? 'Has its own instructions' : 'Standard behaviour'}${a.greeting ? ' · own greeting' : ''}</div></td>
+                <td>${esc(fmtNumber(a.phoneNumber))}${a.inboundDefault ? '<div class="sub">Answers incoming calls</div>' : ''}</td>
                 <td>${esc(SERVICE_LABEL[a.service] || a.service)}</td>
-                <td>${a.assignedUserId ? `${esc(a.assignedName || 'Admin')}<div class="sub">${esc(a.assignedEmail)}</div>` : '<span class="owner-none">Not given to anyone</span>'}</td>
+                <td>${a.createdByName ? `${esc(a.createdByName)}<div class="sub">${esc(a.createdByEmail)}</div>` : '<span class="muted">Owner</span>'}</td>
+                <td>${(a.admins || []).length ? a.admins.map(x => `${esc(x.name || 'Admin')}<div class="sub">${esc(x.email)}</div>`).join('') : '<span class="owner-none">Not given to anyone</span>'}</td>
                 <td>${a.status === 'disabled' ? '<span class="pill bad">Switched off</span>' : '<span class="pill ok">On</span>'}</td>
                 <td class="actions">
                     <button class="btn sm" data-agent-edit="${esc(a.id)}">Edit</button>
                     <button class="btn sm danger" data-agent-del="${esc(a.id)}">Delete</button>
                 </td></tr>`).join('') + '</tbody>';
     }
-    $('#agentSearch').addEventListener('input', renderAgents);
-    $('#agentFilter').addEventListener('change', renderAgents);
+    $('#agentSearch').addEventListener('input', () => { resetPage('agents'); renderAgents(); });
+    $('#agentFilter').addEventListener('change', () => { resetPage('agents'); renderAgents(); });
+
+    // ── approved phone numbers: the only numbers admins can build their own agents on ──
+    function renderNumbers() {
+        const rows = state.numbers || [];
+        const pgd = paginate('numbers', rows, renderNumbers);
+        $('#numberPager').innerHTML = pgd.html;
+        $('#numberTable').innerHTML = !rows.length
+            ? '<tbody><tr><td class="empty">No numbers approved yet. Admins cannot create their own agents until you approve one.</td></tr></tbody>'
+            : `<thead><tr><th>Phone number</th><th>Label</th><th>Agents using it</th><th></th></tr></thead><tbody>` +
+            pgd.rows.map(n => {
+                const used = state.agents.filter(a => String(a.phoneNumber).slice(-10) === String(n.phoneNumber).slice(-10)).length;
+                return `<tr><td>${esc(fmtNumber(n.phoneNumber))}</td><td>${esc(n.label) || '<span class="muted">—</span>'}</td><td>${used}</td>
+                    <td class="actions"><button class="btn sm danger" data-number-del="${esc(n.phoneNumber)}">Remove</button></td></tr>`;
+            }).join('') + '</tbody>';
+    }
+    $('#numberForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const err = $('#numberError'), body = Object.fromEntries(new FormData(e.target).entries());
+        err.hidden = true;
+        try { await api('/numbers', { method: 'POST', body }); e.target.reset(); await refreshAll(); toast('Number approved'); }
+        catch (ex) { err.textContent = ex.message; err.hidden = false; }
+    });
+    $('#numberTable').addEventListener('click', async (e) => {
+        const b = e.target.closest('button[data-number-del]'); if (!b) return;
+        const r = await confirmDialog({
+            title: `Remove ${fmtNumber(b.dataset.numberDel)}?`,
+            text: 'Admins will no longer be able to pick this number for new agents. Agents already using it keep working.'
+        });
+        if (!r.ok) return;
+        try { await api('/numbers/' + encodeURIComponent(b.dataset.numberDel), { method: 'DELETE' }); await refreshAll(); toast('Number removed'); }
+        catch (ex) { toast(ex.message, true); }
+    });
 
     // Live count under the instructions field: words, and characters used out of the limit (the textarea's maxlength).
     function updateInstructionsCount() {
@@ -399,12 +502,17 @@
         const form = $('#agentForm'), a = id ? state.agents.find(x => x.id === id) : null;
         state.editingAgentId = id || null; form.reset(); $('#agentFormError').hidden = true;
         $('#agentModalTitle').textContent = a ? 'Edit agent' : 'Add agent';
-        $('#agentAdminSelect').innerHTML = '<option value="">Not given to anyone yet</option>' +
-            state.users.filter(u => u.role === 'admin' && !u.disabled).map(u => `<option value="${esc(u.id)}">${esc(u.name)} (${esc(u.email)})</option>`).join('');
+        const given = new Set(a ? (a.assignedUserIds || []) : []);
+        const admins = state.users.filter(u => u.role === 'admin' && !u.disabled);
+        $('#agentAdminsList').innerHTML = admins.length
+            ? admins.map(u => `<label class="check"><input type="checkbox" name="assignedUserIds" value="${esc(u.id)}" ${given.has(u.id) ? 'checked' : ''}>
+                <span>${esc(u.name)} <span class="muted small">${esc(u.email)}</span></span></label>`).join('')
+            : '<div class="muted small">No admin accounts yet. Add one on the Users tab.</div>';
+        $('#agentInboundDefault').checked = Boolean(a && a.inboundDefault);
         if (a) {
             form.elements.name.value = a.name; form.elements.phoneNumber.value = fmtNumber(a.phoneNumber).replace('—', '');
-            form.elements.service.value = a.service; form.elements.assignedUserId.value = a.assignedUserId || '';
-            form.elements.voiceId.value = a.voiceId || ''; form.elements.status.value = a.status || 'active';
+            form.elements.service.value = a.service;
+            form.elements.status.value = a.status || 'active';
             form.elements.greeting.value = a.greeting || ''; form.elements.instructions.value = a.instructions || '';
         }
         updateInstructionsCount();
@@ -415,19 +523,17 @@
     $('#agentForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const err = $('#agentFormError'), btn = $('#agentSaveBtn');
-        const body = Object.fromEntries(new FormData(e.target).entries());
-        const assignTo = body.assignedUserId || null;
+        const fd = new FormData(e.target);
+        const body = Object.fromEntries(fd.entries());
+        // Several admins can share the agent; ticking "answers incoming calls" makes it the default on its number.
+        body.assignedUserIds = fd.getAll('assignedUserIds');
+        body.inboundDefault = $('#agentInboundDefault').checked;
         err.hidden = true; btn.disabled = true;
         try {
             if (state.editingAgentId) {
-                delete body.assignedUserId;
                 await api('/agents/' + encodeURIComponent(state.editingAgentId), { method: 'PUT', body });
-                const cur = state.agents.find(x => x.id === state.editingAgentId);
-                if ((cur && cur.assignedUserId || null) !== assignTo) {
-                    await api('/agents/' + encodeURIComponent(state.editingAgentId) + '/assign', { method: 'PUT', body: { userId: assignTo } });
-                }
             } else {
-                await api('/agents', { method: 'POST', body: { ...body, assignedUserId: assignTo } });
+                await api('/agents', { method: 'POST', body });
             }
             closeEl($('#agentModal')); await refreshAll(); toast(state.editingAgentId ? 'Agent updated' : 'Agent added');
         } catch (ex) { err.textContent = ex.message; err.hidden = false; }
@@ -458,9 +564,19 @@
             : ['queued', 'calling', 'in-progress', 'in_progress'].includes(k) ? 'in_review' : '';
         return `<span class="pill ${cls}">${cap(v)}</span>`;
     };
-    const tbl = (head, rows, empty) => rows.length
-        ? `<div class="table-wrap"><table><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`
-        : `<div class="table-wrap"><div class="empty">${esc(empty)}</div></div>`;
+    // With a pager key the rows are cut into pages and the pager bar is added under the table.
+    const tbl = (head, rows, empty, pagerKey, redraw) => {
+        if (!rows.length) return `<div class="table-wrap"><div class="empty">${esc(empty)}</div></div>`;
+        const pgd = pagerKey ? paginate(pagerKey, rows, redraw) : { rows, html: '' };
+        let shown = pgd.rows;
+        // The Calls & data lists get a serial number column (1, 2, 3 … continuing across pages).
+        if (pagerKey === 'cs') {
+            const first = (pg.cs.page - 1) * pg.cs.size;
+            shown = shown.map((r, i) => r.replace(/<tr([^>]*)>/, `<tr$1><td class="serial">${first + i + 1}</td>`));
+            head = ['#', ...head];
+        }
+        return `<div class="table-wrap"><table><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${shown.join('')}</tbody></table></div>${pgd.html}`;
+    };
 
     // The campaign a call belongs to, and the admin who added that campaign.
     const campaignCell = (r) => r.campaign_name
@@ -482,6 +598,7 @@
 
     function setWsTab(tab) {
         ws.tab = tab;
+        ['ws', 'wsMine', 'wsFree', 'wsConvs'].forEach(resetPage);
         $$('.ws-tab').forEach(b => b.classList.toggle('active', b.dataset.ws === tab));
         loadWs();
     }
@@ -501,12 +618,13 @@
     }
 
     function renderWsConversations(list) {
+        const redraw = () => renderWsConversations(list);
         $('#wsBody').innerHTML = tbl(['Started', 'Contact', 'Service', 'Status', 'Duration', 'Outcome', 'Campaign', 'Admin', ''],
             list.map(c => `<tr class="click" data-conv="${esc(c.id)}" tabindex="0">
                 <td>${esc(fmtDate(c.started_at))}</td><td>${esc(c.contact_name)}<div class="sub">${esc(c.phone)}</div></td>
                 <td>${cap(c.service)}</td><td>${statusPill(c.status)}</td><td>${fmtDur(c.duration_seconds)}</td>
                 <td>${cap(c.classification)}</td><td>${campaignCell(c)}</td>${wsUserCell()}<td class="actions"><button class="btn sm danger" data-conv-del="${esc(c.id)}">Delete</button></td></tr>`),
-            'No conversations for this admin yet. Assign conversations or contact sheets under the "Assign data" tab.');
+            'No conversations for this admin yet. Assign conversations or contact sheets under the "Assign data" tab.', 'ws', redraw);
     }
 
     async function openConversation(id) {
@@ -518,24 +636,27 @@
     }
 
     function renderWsCalls(list) {
+        const redraw = () => renderWsCalls(list);
         $('#wsBody').innerHTML = tbl(['When', 'Contact', 'Service', 'Status', 'Duration', 'Outcome', 'Campaign', 'Admin', 'Notes'],
             list.map(c => `<tr><td>${esc(fmtDate(c.started_at))}</td><td>${esc(c.name)}<div class="sub">${esc(c.phone)}</div></td>
                 <td>${cap(c.service)}</td><td>${statusPill(c.call_status)}</td><td>${fmtDur(c.duration_seconds)}</td>
                 <td>${cap(c.classification || c.call_outcome)}</td><td>${campaignCell(c)}</td>${wsUserCell()}<td>${esc(c.error_details || c.summary || '')}</td></tr>`),
-            'No calls have been made for this admin yet.');
+            'No calls have been made for this admin yet.', 'ws', redraw);
     }
 
     function renderWsScheduled(list) {
+        const redraw = () => renderWsScheduled(list);
         $('#wsBody').innerHTML = `<div class="ws-note">There is no date/time scheduling yet. This lists calls that are waiting in the queue to be dialled.</div>
             <div class="ws-bar"><span class="muted">${list.length} call(s) waiting</span>${list.some(x => x.status === 'QUEUED') ? '<button class="btn sm danger" id="wsCancelAll">Cancel all queued</button>' : ''}</div>` +
             tbl(['Queued', 'Contact', 'Service', 'Status', 'Contact sheet', 'Admin', ''],
                 list.map(q => `<tr><td>${esc(fmtDate(q.created_at))}</td><td>${esc(q.name)}<div class="sub">${esc(q.phone)}</div></td>
                     <td>${cap(q.service)}</td><td>${statusPill(q.status)}</td><td>${esc(q.batch_file)}</td>${wsUserCell()}
                     <td class="actions">${q.status === 'QUEUED' ? `<button class="btn sm" data-q-cancel="${esc(q.id)}">Cancel</button>` : ''}</td></tr>`),
-                'Nothing is waiting in the queue for this admin.');
+                'Nothing is waiting in the queue for this admin.', 'ws', redraw);
     }
 
     async function renderWsBatches(mine) {
+        const redraw = () => renderWsBatches(mine);
         const [batchRes, convRes] = await Promise.all([api('/batches'), api('/conversations-unassigned')]);
         const free = batchRes.batches.filter(b => !b.owner_user_id);
         const freeConvs = convRes.conversations.map(c => `<tr><td>${esc(fmtDate(c.started_at))}</td><td>${esc(c.contact_name)}<div class="sub">${esc(c.phone)}</div></td><td>${cap(c.service)}</td><td>${statusPill(c.status)}</td>
@@ -545,9 +666,9 @@
         const freeRows = free.map(b => `<tr><td>${esc(b.filename)}</td><td>${cap(b.service)}</td><td>${statusPill(b.status)}</td><td>${esc(b.conversation_count)} chat(s)</td><td>${esc(fmtDate(b.created_at))}</td>
             <td class="actions"><button class="btn sm primary" data-b-assign="${esc(b.id)}">Assign to this admin</button></td></tr>`);
         $('#wsBody').innerHTML = `<div class="ws-note">Call history and queued calls are linked to an admin through their contact sheets (uploaded Excel/CSV files). Conversations can be assigned directly or come with a contact sheet.</div>
-            <div><h4>Contact sheets of this admin</h4>${tbl(['File', 'Service', 'Status', 'Valid / total', 'Uploaded', 'Admin', ''], mineRows, 'None assigned yet.')}</div>
-            <div><h4>Unassigned contact sheets</h4>${tbl(['File', 'Service', 'Status', 'Conversations', 'Uploaded', ''], freeRows, 'Every contact sheet is already assigned.')}</div>
-            <div><h4>Unassigned conversations</h4>${tbl(['Started', 'Contact', 'Service', 'Status', ''], freeConvs, 'Every conversation is already assigned.')}</div>`;
+            <div><h4>Contact sheets of this admin</h4>${tbl(['File', 'Service', 'Status', 'Valid / total', 'Uploaded', 'Admin', ''], mineRows, 'None assigned yet.', 'wsMine', redraw)}</div>
+            <div><h4>Unassigned contact sheets</h4>${tbl(['File', 'Service', 'Status', 'Conversations', 'Uploaded', ''], freeRows, 'Every contact sheet is already assigned.', 'wsFree', redraw)}</div>
+            <div><h4>Unassigned conversations</h4>${tbl(['Started', 'Contact', 'Service', 'Status', ''], freeConvs, 'Every conversation is already assigned.', 'wsConvs', redraw)}</div>`;
     }
 
     $('#wsBody').addEventListener('click', async (e) => {
@@ -676,39 +797,39 @@
                 <td>${esc(fmtDate(c.started_at))}</td><td>${esc(c.contact_name)}<div class="sub">${esc(c.phone)}</div></td><td>${cap(c.service)}</td><td>${statusPill(c.status)}</td><td>${fmtDur(c.duration_seconds)}</td>
                 <td>${campaignCell(c)}</td>
                 <td>${ownerPick('data-own-conv', c.id, c.owner_user_id)}${c.owner_via_sheet ? `<div class="sub">via ${esc(c.owner_via_sheet)}</div>` : ''}</td>
-                <td class="actions"><button class="btn sm danger" data-cconv-del="${esc(c.id)}">Delete</button></td></tr>`), none);
+                <td class="actions"><button class="btn sm danger" data-cconv-del="${esc(c.id)}">Delete</button></td></tr>`), none, 'cs', renderCs);
         } else if (cs.tab === 'calls') {
             html = tbl(['When', 'Contact', 'Service', 'Status', 'Duration', 'Outcome', 'Campaign', 'Admin', 'Notes'], rows.map(c => `<tr>
                 <td>${esc(fmtDate(c.started_at))}</td><td>${esc(c.name)}<div class="sub">${esc(c.phone)}</div></td><td>${cap(c.service)}</td><td>${statusPill(c.call_status)}</td><td>${fmtDur(c.duration_seconds)}</td>
-                <td>${cap(c.classification || c.call_outcome)}</td><td>${campaignCell(c)}</td><td>${ownerLabel(c)}<div class="sub">${esc(c.batch_file || '')}</div></td><td>${esc(c.error_details || c.summary || '')}</td></tr>`), none);
+                <td>${cap(c.classification || c.call_outcome)}</td><td>${campaignCell(c)}</td><td>${ownerLabel(c)}<div class="sub">${esc(c.batch_file || '')}</div></td><td>${esc(c.error_details || c.summary || '')}</td></tr>`), none, 'cs', renderCs);
         } else if (cs.tab === 'scheduled') {
             html = `<div class="ws-note" style="margin-bottom:10px">There is no date/time scheduling yet. This lists calls waiting in the queue to be dialled.</div>` +
                 tbl(['Queued', 'Contact', 'Service', 'Status', 'Contact sheet', 'Admin', ''], rows.map(q2 => `<tr>
                 <td>${esc(fmtDate(q2.created_at))}</td><td>${esc(q2.name)}<div class="sub">${esc(q2.phone)}</div></td><td>${cap(q2.service)}</td><td>${statusPill(q2.status)}</td>
                 <td>${esc(q2.batch_file || '')}</td><td>${ownerLabel(q2)}</td>
-                <td class="actions">${q2.status === 'QUEUED' ? `<button class="btn sm" data-cq-cancel="${esc(q2.id)}">Cancel</button>` : ''}</td></tr>`), 'Nothing is waiting in the queue.');
+                <td class="actions">${q2.status === 'QUEUED' ? `<button class="btn sm" data-cq-cancel="${esc(q2.id)}">Cancel</button>` : ''}</td></tr>`), 'Nothing is waiting in the queue.', 'cs', renderCs);
         } else if (cs.tab === 'campaigns') {
             html = `<div class="ws-note" style="margin-bottom:10px">Each campaign belongs to the admin who created it. Only that admin sees it, with its conversations and call history.</div>` +
                 tbl(['Campaign', 'Service', 'Status', 'Contacts', 'Conversations', 'Created', 'Created by'], rows.map(c => `<tr>
                 <td>${esc(c.name)}</td><td>${cap(c.service)}</td><td>${statusPill(c.status)}</td><td>${esc(c.contact_count)}</td><td>${esc(c.conversation_count)}</td>
-                <td>${esc(fmtDate(c.created_at))}</td><td>${ownerLabel(c)}</td></tr>`), 'No campaigns yet.');
+                <td>${esc(fmtDate(c.created_at))}</td><td>${ownerLabel(c)}</td></tr>`), 'No campaigns yet.', 'cs', renderCs);
         } else {
             html = `<div class="ws-note" style="margin-bottom:10px">Pick an admin on a contact sheet to link it, and all its calls, to them. New uploads are linked to the uploader automatically.</div>` +
                 tbl(['File', 'Service', 'Status', 'Valid / total', 'Conversations', 'Uploaded', 'Admin'], rows.map(b => `<tr>
                 <td>${esc(b.filename)}</td><td>${cap(b.service)}</td><td>${statusPill(b.status)}</td><td>${esc(b.valid_rows)} / ${esc(b.total_rows)}</td><td>${esc(b.conversation_count)}</td>
-                <td>${esc(fmtDate(b.created_at))}</td><td>${ownerPick('data-own-batch', b.id, b.owner_user_id)}</td></tr>`), none);
+                <td>${esc(fmtDate(b.created_at))}</td><td>${ownerPick('data-own-batch', b.id, b.owner_user_id)}</td></tr>`), none, 'cs', renderCs);
         }
         $('#csBody').innerHTML = count + html;
     }
 
     $$('.cs-tab').forEach(b => b.addEventListener('click', () => {
-        cs.tab = b.dataset.cs;
+        cs.tab = b.dataset.cs; resetPage('cs');
         $$('.cs-tab').forEach(x => x.classList.toggle('active', x === b));
         fillStatusFilter(); loadCs();
     }));
-    $('#csSearch').addEventListener('input', renderCs);
-    $('#csOwner').addEventListener('change', renderCs);
-    $('#csStatus').addEventListener('change', renderCs);
+    $('#csSearch').addEventListener('input', () => { resetPage('cs'); renderCs(); });
+    $('#csOwner').addEventListener('change', () => { resetPage('cs'); renderCs(); });
+    $('#csStatus').addEventListener('change', () => { resetPage('cs'); renderCs(); });
     $('#callsRefresh').addEventListener('click', () => refreshAll().then(loadCs));
     fillStatusFilter();
 

@@ -237,14 +237,14 @@
                 </svg>
                 <span>Profile & Workspace</span>
               </button>
-              <button type="button" class="dropdown-item feature-placeholder-trigger" data-feature="Workspace Settings">
+              <a href="/settings" class="dropdown-item" style="text-decoration:none;">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <circle cx="12" cy="12" r="3" />
                   <path
                     d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
                 </svg>
                 <span>Settings</span>
-              </button>
+              </a>
               <a href="/" class="dropdown-item" style="text-decoration:none;">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
@@ -262,6 +262,12 @@
               </button>
             </div>
           </div>
+
+          <!-- Calling minutes left (set by the owner) -->
+          <div id="header-minutes-chip" title="Calling minutes left" style="display:none; align-items:center; gap:6px; padding:6px 12px; border-radius:999px; font-size:0.875rem; font-weight:800; white-space:nowrap; background:#EEF2FF; color:#3730A3;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+            <span id="header-minutes-text"></span>
+          </div>
         </div>
       </header>
 
@@ -270,6 +276,9 @@
 
         <!-- Global Admin Notification / Alert Banner -->
         <div id="admin-alert-banner" class="admin-alert-banner" style="display: none;"></div>
+
+        <!-- Calling minutes given by the owner: shown when they are finished or running low -->
+        <div id="minutes-banner" class="admin-alert-banner" style="display: none;" role="alert"></div>
 
         <!-- ==================================================================
              VIEW 1: DASHBOARD OVERVIEW
@@ -483,7 +492,7 @@
               <div style="display: flex; gap: 8px; align-items: center;">
                 <button type="button" class="btn-create-campaign-hero" id="btn-hero-new-campaign">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                  <span>+ Create Campaign</span>
+                  <span>Create Campaign</span>
                 </button>
                 <button type="button" class="btn-refresh-campaigns" id="btn-refresh-campaigns-list" title="Refresh Campaigns List">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
@@ -770,11 +779,15 @@
              ================================================================== -->
         <div class="admin-view-panel" id="view-agents">
           <div class="admin-card">
-            <div class="admin-card-header">
+            <div class="admin-card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
               <div class="admin-card-title-group">
                 <h3>My Agents</h3>
-                <p>Each agent has its own phone number and way of speaking. Outgoing calls come from the agent's number, and calls to that number are answered by the agent.</p>
+                <p>Agents you created and agents the owner gave you. Each has its own phone number and way of speaking. Outgoing calls come from the agent's number. You can edit all of them, and delete the ones you created. Agents given by the owner can be edited but not deleted.</p>
               </div>
+              <button type="button" class="btn-create-campaign-hero" id="btn-add-agent">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                <span>Add Agent</span>
+              </button>
             </div>
             <div class="table-responsive">
               <table class="admin-table">
@@ -785,11 +798,12 @@
                     <th>Work Type</th>
                     <th>Greeting</th>
                     <th>Status</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody id="agents-table-body">
                   <tr>
-                    <td colspan="5" style="text-align: center; padding: 28px; color: #94A3B8;">Loading your agents...</td>
+                    <td colspan="6" style="text-align: center; padding: 28px; color: #94A3B8;">Loading your agents...</td>
                   </tr>
                 </tbody>
               </table>
@@ -809,14 +823,37 @@
               </div>
               <button type="button" class="btn-create-campaign-hero" onclick="openCampaignCreateModal('recruitment')">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                <span>+ Create Campaign</span>
+                <span>Create Campaign</span>
               </button>
             </div>
 
             <!-- Which of this admin's agents places the calls (shown only when the owner gave them agents) -->
-            <div id="campaign-agent-row" style="display: none; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 14px;">
-              <label for="campaign-agent-select" style="font-size: 0.82rem; font-weight: 600; color: #475569;">Calling agent</label>
-              <select class="admin-select" id="campaign-agent-select" aria-label="Agent that places the calls"></select>
+            <div id="campaign-agent-row" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 14px;">
+              <span id="campaign-agent-group" style="display: none; align-items: center; gap: 10px;">
+                <label for="campaign-agent-select" style="font-size: 0.82rem; font-weight: 600; color: #475569;">Calling agent</label>
+                <select class="admin-select" id="campaign-agent-select" aria-label="Agent that places the calls"></select>
+              </span>
+              <label for="campaign-lang-select" style="font-size: 0.82rem; font-weight: 600; color: #475569; margin-left: 6px;">Primary Language</label>
+              <select class="admin-select" id="campaign-lang-select" aria-label="Language the AI speaks on the call">
+                <option value="en-IN" selected>English (India) — en-IN</option>
+                <option value="te-IN">Telugu (తెలుగు) — te-IN</option>
+                <option value="hi-IN">Hindi (हिन्दी) — hi-IN</option>
+                <option value="ta-IN">Tamil (தமிழ்) — ta-IN</option>
+                <option value="kn-IN">Kannada (ಕನ್ನಡ) — kn-IN</option>
+                <option value="ml-IN">Malayalam (മലയാളം) — ml-IN</option>
+                <option value="mr-IN">Marathi (मराठी) — mr-IN</option>
+              </select>
+              <label for="campaign-voice-select" style="font-size: 0.82rem; font-weight: 600; color: #475569; margin-left: 6px;">AI Voice</label>
+              <select class="admin-select" id="campaign-voice-select" aria-label="Voice the AI speaks with">
+                <option value="pooja" selected>Pooja (Female Voice) — Default</option>
+                <option value="abhinav">Abhinav (Male Voice)</option>
+                <option value="samar">Samar (Male Voice)</option>
+                <option value="anisha">Anisha (Female Voice)</option>
+                <option value="natalie">Natalie (Female Voice, US accent)</option>
+                <option value="michelle">Michelle (Female Voice, US accent)</option>
+                <option value="alia">Alia (Female Voice)</option>
+                <option value="prathamesh">Prathamesh (Male Voice)</option>
+              </select>
               <span id="campaign-agent-hint" style="font-size: 0.78rem; color: #94A3B8;"></span>
             </div>
 
@@ -856,24 +893,6 @@
                   <p class="dropzone-sub">Drag & drop your file here, or click to browse</p>
                   <p style="font-size: 0.72rem; color: #94A3B8; margin-top: 8px;">Supports .xlsx, .xls, and .csv formats
                   </p>
-                </div>
-
-                <!-- Document for these calls (same as step 4 of the Create Campaign popup) -->
-                <div class="form-group-wrap" id="qc-doc-wrap" style="margin-top: 16px;">
-                  <label class="form-label-bold" id="qc-label-pdf-upload">Upload Job Description Document (.pdf, .docx, .doc) (Required)</label>
-                  <div class="upload-dropzone" id="qc-pdf-dropzone" style="padding: 20px; border-width: 1.5px; cursor: pointer; position: relative;">
-                    <input type="file" id="qc-pdf-file-input" accept=".pdf,.docx,.doc" aria-label="Upload PDF or Word Document">
-                    <div style="display: flex; align-items: center; justify-content: center; gap: 12px;">
-                      <span style="font-size: 1.6rem;">📄</span>
-                      <div style="text-align: left; flex: 1;">
-                        <div style="font-weight: 700; font-size: 0.85rem; color: #0F172A;" id="qc-pdf-status-text">Click to choose or drop PDF or Word document (.docx, .doc)</div>
-                        <div style="font-size: 0.72rem; color: #64748B;" id="qc-pdf-sub-text">Extracts job title, core requirements, screening questions and notice period</div>
-                      </div>
-                      <button type="button" class="btn-card-secondary" id="qc-btn-remove-staged-pdf" style="display: none; padding: 4px 10px; font-size: 0.75rem; color: #DC2626; z-index: 2;" title="Remove this document">✕ Remove</button>
-                    </div>
-                  </div>
-                  <!-- Extracted knowledge preview: copied from the popup's preview the first time a document is read -->
-                  <div id="qc-preview-host"></div>
                 </div>
               </div>
 
@@ -982,6 +1001,15 @@
             <div class="admin-pagination">
               <span id="convs-page-info">Showing page 1</span>
               <div class="pagination-btns">
+                <label class="rows-per-page" for="convs-limit-select">
+                  <span>Rows per page</span>
+                  <select class="admin-select admin-select-sm" id="convs-limit-select">
+                    <option value="10" selected>10</option>
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                  </select>
+                </label>
                 <button type="button" class="btn-page" id="convs-prev-btn" disabled>Previous</button>
                 <button type="button" class="btn-page" id="convs-next-btn" disabled>Next</button>
               </div>
@@ -1069,50 +1097,7 @@
     </div>
   </div>
 
-  <!-- ======================================================================
-       3. PROFILE & WORKSPACE SETTINGS MODAL
-       ====================================================================== -->
-  <div class="modal-backdrop-layer" id="profile-modal">
-    <div class="modal-dialog-card">
-      <button type="button" class="modal-close-x" id="profile-modal-close" aria-label="Close modal">×</button>
-      <h3 class="modal-title-text">Profile & Workspace</h3>
-      <p class="modal-subtitle-text">Update your personalized details and workspace preferences.</p>
-
-      <div id="profile-modal-alert" style="display: none;"></div>
-
-      <form class="auth-form" id="profile-edit-form">
-        <div class="form-group">
-          <label class="form-label" for="edit-email">Account Email</label>
-          <input type="email" id="edit-email" class="auth-input input-readonly" readonly aria-readonly="true">
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="edit-name">Full Name</label>
-          <input type="text" id="edit-name" class="auth-input" required>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="edit-company">Company Name</label>
-          <input type="text" id="edit-company" class="auth-input" required>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="edit-phone">Phone Number</label>
-          <input type="tel" id="edit-phone" class="auth-input" required>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="edit-job-title">Job Title <span
-              style="color:#94A3B8;font-weight:400;">(Optional)</span></label>
-          <input type="text" id="edit-job-title" class="auth-input" placeholder="e.g. Founder, Head of People">
-        </div>
-
-        <button type="submit" class="btn-auth-primary" style="margin-top: 12px;">
-          <span>Save Changes</span>
-        </button>
-      </form>
-    </div>
-  </div>
+  <!-- (Profile & workspace settings now live on their own page: /settings) -->
 
   <!-- ======================================================================
        4. FEATURE PREVIEW MODAL (FOR UNBUILT MODULES)
@@ -1281,6 +1266,60 @@
   </div>
 
   <!-- ======================================================================
+       MY AGENTS: add / edit an agent (numbers come from the owner's approved list)
+       ====================================================================== -->
+  <div class="modal-backdrop-layer" id="modal-agent">
+    <div class="modal-dialog-card" style="max-width: 620px; width: 94%; max-height: 90vh; overflow-y: auto;">
+      <button type="button" class="modal-close-x" id="modal-agent-close" aria-label="Close modal">×</button>
+      <h3 class="modal-title-text" id="modal-agent-title">Add Agent</h3>
+      <p class="modal-subtitle-text">Calls made by this agent go out from its phone number, and calls to that number are answered with its greeting and instructions.</p>
+      <div id="agent-form-error" class="admin-alert-banner error" style="display: none; margin: 12px 0;"></div>
+      <form id="form-agent" novalidate>
+        <div class="form-group-wrap">
+          <label class="form-label-bold" for="agent-input-name">Agent name *</label>
+          <input type="text" id="agent-input-name" class="form-input-styled" maxlength="120" placeholder="e.g. Priya (hiring)">
+        </div>
+        <div class="form-group-wrap">
+          <label class="form-label-bold" for="agent-input-number">Phone number *</label>
+          <select id="agent-input-number" class="admin-select" style="width: 100%;"></select>
+          <span id="agent-number-hint" style="font-size: 0.7rem; color: #64748B; margin-top: 4px; display: block;">Only numbers approved by the owner can be used.</span>
+        </div>
+        <div class="form-group-wrap">
+          <label class="form-label-bold" for="agent-input-service">Work type</label>
+          <select id="agent-input-service" class="admin-select" style="width: 100%;">
+            <option value="recruitment">Recruitment</option>
+            <option value="sales">Sales</option>
+            <option value="support">Support</option>
+            <option value="appointment">Appointment setting</option>
+            <option value="receptionist">Receptionist</option>
+          </select>
+        </div>
+        <div class="form-group-wrap">
+          <label class="form-label-bold" for="agent-input-greeting">Greeting (optional)</label>
+          <textarea id="agent-input-greeting" class="form-input-styled" rows="2" maxlength="1000" placeholder="Hello {name}, this is {agent}. Do you have a minute?"></textarea>
+          <span style="font-size: 0.7rem; color: #64748B; margin-top: 4px; display: block;">You can use {name}, {role}, {company} and {agent}. Leave blank for the standard greeting.</span>
+        </div>
+        <div class="form-group-wrap">
+          <label class="form-label-bold" for="agent-input-instructions">Instructions (optional)</label>
+          <textarea id="agent-input-instructions" class="form-input-styled" rows="5" maxlength="6000" placeholder="How this agent should speak and behave, what to ask, what to avoid…"></textarea>
+          <span id="agent-instructions-count" style="font-size: 0.7rem; color: #64748B; margin-top: 4px; display: block;">0 words · 0 / 6,000 characters</span>
+        </div>
+        <div class="form-group-wrap">
+          <label class="form-label-bold" for="agent-input-status">Status</label>
+          <select id="agent-input-status" class="admin-select" style="width: 100%;">
+            <option value="active">On</option>
+            <option value="disabled">Switched off</option>
+          </select>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px;">
+          <button type="button" class="btn-card-secondary" id="btn-agent-cancel" style="padding: 8px 20px;"><span>Cancel</span></button>
+          <button type="submit" class="btn-create-campaign-hero" id="btn-agent-save"><span>Save Agent</span></button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ======================================================================
        7. ROW-BY-ROW EXCEL VALIDATION ERRORS MODAL
        ====================================================================== -->
   <div class="modal-backdrop-layer" id="val-errors-modal">
@@ -1367,27 +1406,6 @@
           <textarea id="camp-input-desc" class="form-input-styled" rows="2" placeholder="Campaign objective, target profiles, or special instructions..."></textarea>
         </div>
 
-        <!-- Step 3: AI Model Configuration -->
-        <div class="form-group-wrap" style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 14px;">
-          <label class="form-label-bold" style="margin-bottom: 8px;"><span class="form-step-badge">3</span>AI Model Configuration</label>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-            <div>
-              <span style="font-size: 0.72rem; color: #64748B; font-weight: 700; display: block; margin-bottom: 4px;">Primary LLM Engine:</span>
-              <select id="camp-input-model" class="admin-select" style="width: 100%;">
-                <option value="claude-haiku-5-5" selected>Claude Haiku (Fast Primary) + Gemini Fallback</option>
-                <option value="gemini-3.1-flash-lite">Gemini Flash Lite (Direct)</option>
-              </select>
-            </div>
-            <div>
-              <span style="font-size: 0.72rem; color: #64748B; font-weight: 700; display: block; margin-bottom: 4px;">Fallback LLM Routing:</span>
-              <select id="camp-input-voice" class="admin-select" style="width: 100%;">
-                <option value="auto" selected>Auto: High-Availability Failover</option>
-                <option value="gemini">Gemini Direct Stream</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
         <!-- Primary Language & Voice Configuration Card -->
         <div class="form-group-wrap voice-config-card" id="camp-voice-config-card" style="margin-top: 12px; margin-bottom: 18px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
@@ -1430,7 +1448,11 @@
                 <option value="pooja" selected>Pooja (Female Voice) — Default</option>
                 <option value="abhinav">Abhinav (Male Voice)</option>
                 <option value="samar">Samar (Male Voice)</option>
-                <option value="abirami">Abirami (Female Voice)</option>
+                <option value="anisha">Anisha (Female Voice)</option>
+                <option value="natalie">Natalie (Female Voice, US accent)</option>
+                <option value="michelle">Michelle (Female Voice, US accent)</option>
+                <option value="alia">Alia (Female Voice)</option>
+                <option value="prathamesh">Prathamesh (Male Voice)</option>
               </select>
               <span style="font-size: 0.7rem; color: #64748B; margin-top: 4px; display: block;">Selectable AI persona used for all spoken responses.</span>
             </div>
@@ -1464,13 +1486,45 @@
                 <div class="voice-tile-meta">Conversational</div>
                 <div class="voice-tile-status-badge supported">Supported</div>
               </div>
-              <!-- Voice Card: Abirami -->
-              <div class="voice-tile" data-voice-key="abirami" id="voice-card-abirami">
+              <!-- Voice Card: Anisha -->
+              <div class="voice-tile" data-voice-key="anisha" id="voice-card-anisha">
                 <div class="voice-tile-check">✓</div>
-                <div class="voice-tile-name">Abirami</div>
+                <div class="voice-tile-name">Anisha</div>
                 <div class="voice-tile-desc">Female Voice</div>
                 <div class="voice-tile-meta">Conversational</div>
-                <div class="voice-tile-status-badge unsupported">Unsupported</div>
+                <div class="voice-tile-status-badge supported">Supported</div>
+              </div>
+              <!-- Voice Card: Natalie (US accent) -->
+              <div class="voice-tile" data-voice-key="natalie" id="voice-card-natalie">
+                <div class="voice-tile-check">✓</div>
+                <div class="voice-tile-name">Natalie</div>
+                <div class="voice-tile-desc">Female Voice · US accent</div>
+                <div class="voice-tile-meta">English</div>
+                <div class="voice-tile-status-badge supported">Supported</div>
+              </div>
+              <!-- Voice Card: Michelle (US accent) -->
+              <div class="voice-tile" data-voice-key="michelle" id="voice-card-michelle">
+                <div class="voice-tile-check">✓</div>
+                <div class="voice-tile-name">Michelle</div>
+                <div class="voice-tile-desc">Female Voice · US accent</div>
+                <div class="voice-tile-meta">English</div>
+                <div class="voice-tile-status-badge supported">Supported</div>
+              </div>
+              <!-- Voice Card: Alia (English, Hindi, Telugu) -->
+              <div class="voice-tile" data-voice-key="alia" id="voice-card-alia">
+                <div class="voice-tile-check">✓</div>
+                <div class="voice-tile-name">Alia</div>
+                <div class="voice-tile-desc">Female Voice</div>
+                <div class="voice-tile-meta">English · Hindi · Telugu</div>
+                <div class="voice-tile-status-badge supported">Supported</div>
+              </div>
+              <!-- Voice Card: Prathamesh (English, Hindi, Telugu) -->
+              <div class="voice-tile" data-voice-key="prathamesh" id="voice-card-prathamesh">
+                <div class="voice-tile-check">✓</div>
+                <div class="voice-tile-name">Prathamesh</div>
+                <div class="voice-tile-desc">Male Voice</div>
+                <div class="voice-tile-meta">English · Hindi · Telugu</div>
+                <div class="voice-tile-status-badge supported">Supported</div>
               </div>
             </div>
           </div>
@@ -1496,150 +1550,19 @@
           </div>
         </div>
 
-        <!-- Step 4: Document Upload (Job Description / Knowledge Base / SOP) -->
+        <!-- Step 3: Calling agent (the agent whose number places the calls and whose instructions guide them) -->
         <div class="form-group-wrap">
-          <label class="form-label-bold" id="label-camp-pdf-upload">
-            <span class="form-step-badge">4</span>Upload Campaign Document (.pdf, .docx, .doc)
+          <label class="form-label-bold" for="camp-input-agent">
+            <span class="form-step-badge">3</span>Calling Agent
           </label>
-          <div class="upload-dropzone" id="camp-pdf-dropzone" style="padding: 20px; border-width: 1.5px; cursor: pointer; position: relative;">
-            <input type="file" id="camp-pdf-file-input" accept=".pdf,.docx,.doc" aria-label="Upload PDF or Word Document">
-            <div style="display: flex; align-items: center; justify-content: center; gap: 12px;">
-              <span style="font-size: 1.6rem;" id="camp-pdf-icon">📄</span>
-              <div style="text-align: left; flex: 1;">
-                <div style="font-weight: 700; font-size: 0.85rem; color: #0F172A;" id="camp-pdf-status-text">Click to choose or drop PDF or Word document (.docx, .doc)</div>
-                <div style="font-size: 0.72rem; color: #64748B;" id="camp-pdf-sub-text">Extracts campaign instructions, offering details, objection handling & custom questions</div>
-              </div>
-              <button type="button" class="btn-card-secondary" id="btn-camp-remove-staged-pdf" style="display: none; padding: 4px 10px; font-size: 0.75rem; color: #DC2626; z-index: 2;" title="Remove this document">✕ Remove</button>
-            </div>
-          </div>
-
-          <!-- Live Extracted Knowledge Preview & Correction Area -->
-          <div class="extracted-jd-preview-box" id="camp-extracted-preview" style="display: none;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-              <span style="font-size: 0.75rem; font-weight: 700; color: #031740; text-transform: uppercase;" id="camp-extracted-preview-title">Extracted Document Knowledge (Editable)</span>
-              <div style="display: flex; gap: 6px; align-items: center;">
-                <span class="badge-pill" id="camp-extracted-doctype-badge" style="font-size: 0.65rem; background: #EEF2FF; color: #4338CA; font-weight: 700;">DOCUMENT</span>
-                <span class="badge-pill badge-status-completed" style="font-size: 0.65rem;">PARSED</span>
-              </div>
-            </div>
-
-            <!-- Recruitment Extracted Fields -->
-            <div id="preview-fields-recruitment">
-              <div class="editable-field-row">
-                <span class="editable-field-label">Target Role Title:</span>
-                <input type="text" id="edit-jd-role" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;">
-              </div>
-              <div class="editable-field-row">
-                <span class="editable-field-label">Required Skills:</span>
-                <input type="text" id="edit-jd-skills" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. SAP FICO, S/4HANA, GL, AP">
-              </div>
-              <div class="editable-field-row">
-                <span class="editable-field-label">Min Experience (Yrs):</span>
-                <input type="text" id="edit-jd-exp" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. 5">
-              </div>
-              <div class="editable-field-row">
-                <span class="editable-field-label">Notice Period:</span>
-                <input type="text" id="edit-jd-notice" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. 30 days">
-              </div>
-              <div class="editable-field-row">
-                <span class="editable-field-label">Work Location:</span>
-                <input type="text" id="edit-jd-location" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Hyderabad / Hybrid">
-              </div>
-            </div>
-
-            <!-- Sales Extracted Fields -->
-            <div id="preview-fields-sales" style="display: none;">
-              <div class="editable-field-row">
-                <span class="editable-field-label">Product / Offering:</span>
-                <input type="text" id="edit-sales-product" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Enterprise Cloud SaaS">
-              </div>
-              <div class="editable-field-row">
-                <span class="editable-field-label">Company Name:</span>
-                <input type="text" id="edit-sales-company" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. TechCorp Solutions">
-              </div>
-              <div class="editable-field-row">
-                <span class="editable-field-label">Value Propositions:</span>
-                <input type="text" id="edit-sales-value" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. 90% reduction in manual screening time">
-              </div>
-              <div class="editable-field-row">
-                <span class="editable-field-label">Pricing / Plans:</span>
-                <input type="text" id="edit-sales-pricing" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Flexible monthly tiers">
-              </div>
-              <div class="editable-field-row">
-                <span class="editable-field-label">Call to Action (CTA):</span>
-                <input type="text" id="edit-sales-cta" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Schedule a 15-minute live platform demonstration">
-              </div>
-            </div>
-
-            <!-- Support Extracted Fields -->
-            <div id="preview-fields-support" style="display: none;">
-              <div class="editable-field-row">
-                <span class="editable-field-label">Supported Product:</span>
-                <input type="text" id="edit-support-product" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. TakeRemo Voice Platform">
-              </div>
-              <div class="editable-field-row">
-                <span class="editable-field-label">Supported Topics:</span>
-                <input type="text" id="edit-support-topics" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Account Access, Audio Quality, Billing">
-              </div>
-              <div class="editable-field-row">
-                <span class="editable-field-label">Escalation Policy:</span>
-                <input type="text" id="edit-support-escalation" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Escalate to senior technician if unresolved after 2 steps">
-              </div>
-            </div>
-
-            <!-- Appointment Setting Extracted Fields -->
-            <div id="preview-fields-appointment" style="display: none;">
-              <div class="editable-field-row">
-                <span class="editable-field-label">Business Name:</span>
-                <input type="text" id="edit-appt-company" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Smile Dental Clinic">
-              </div>
-              <div class="editable-field-row">
-                <span class="editable-field-label">Services / Appointment Types:</span>
-                <input type="text" id="edit-appt-services" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Check-up, Teeth cleaning, Root canal">
-              </div>
-              <div class="editable-field-row">
-                <span class="editable-field-label">Working Hours:</span>
-                <input type="text" id="edit-appt-hours" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Mon-Sat 9am to 6pm">
-              </div>
-              <div class="editable-field-row">
-                <span class="editable-field-label">Booking Rules:</span>
-                <input type="text" id="edit-appt-rules" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. 30-minute slots, cancel at least 4 hours before">
-              </div>
-            </div>
-
-            <!-- Receptionist Extracted Fields -->
-            <div id="preview-fields-receptionist" style="display: none;">
-              <div class="editable-field-row">
-                <span class="editable-field-label">Business Name:</span>
-                <input type="text" id="edit-recep-company" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Smile Dental Clinic">
-              </div>
-              <div class="editable-field-row">
-                <span class="editable-field-label">Services / Topics Handled:</span>
-                <input type="text" id="edit-recep-services" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Appointments, Fees, Directions">
-              </div>
-              <div class="editable-field-row">
-                <span class="editable-field-label">Working Hours:</span>
-                <input type="text" id="edit-recep-hours" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Mon-Sat 9am to 6pm">
-              </div>
-              <div class="editable-field-row">
-                <span class="editable-field-label">Message Policy:</span>
-                <input type="text" id="edit-recep-policy" class="form-input-styled" style="padding: 4px 8px; font-size: 0.775rem;" placeholder="e.g. Take name, number and reason; team calls back within one working day">
-              </div>
-            </div>
-
-            <div style="margin-top: 10px;">
-              <span style="font-size: 0.72rem; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Tailored AI Conversation Plan:</span>
-              <div class="question-plan-list" id="camp-generated-questions">
-                <!-- Dynamically injected questions -->
-              </div>
-            </div>
-          </div>
+          <select id="camp-input-agent" class="admin-select" style="width: 100%;" aria-label="Agent that places the calls"></select>
+          <span id="camp-agent-hint" style="font-size: 0.7rem; color: #64748B; margin-top: 4px; display: block;">Calls go out from this agent's phone number.</span>
         </div>
 
-        <!-- Step 5: Excel Contacts Upload -->
+        <!-- Step 4: Excel Contacts Upload -->
         <div class="form-group-wrap">
           <label class="form-label-bold">
-            <span class="form-step-badge">5</span>Upload Candidate / Lead Spreadsheet (.xlsx, .xls, .csv)
+            <span class="form-step-badge">4</span>Upload Candidate / Lead Spreadsheet (.xlsx, .xls, .csv)
           </label>
           <div class="upload-dropzone" id="camp-excel-dropzone" style="padding: 20px; border-width: 1.5px; cursor: pointer;">
             <input type="file" id="camp-excel-file-input" accept=".xlsx,.xls,.csv" aria-label="Upload Excel File">
@@ -1737,7 +1660,11 @@
                 <option value="pooja" selected>Pooja (Female Voice) — Default</option>
                 <option value="abhinav">Abhinav (Male Voice)</option>
                 <option value="samar">Samar (Male Voice)</option>
-                <option value="abirami">Abirami (Female Voice)</option>
+                <option value="anisha">Anisha (Female Voice)</option>
+                <option value="natalie">Natalie (Female Voice, US accent)</option>
+                <option value="michelle">Michelle (Female Voice, US accent)</option>
+                <option value="alia">Alia (Female Voice)</option>
+                <option value="prathamesh">Prathamesh (Male Voice)</option>
               </select>
               <span style="font-size: 0.7rem; color: #64748B; margin-top: 4px; display: block;">Selectable AI persona used for all spoken responses.</span>
             </div>
@@ -1768,12 +1695,40 @@
                 <div class="voice-tile-meta">Conversational</div>
                 <div class="voice-tile-status-badge supported">Supported</div>
               </div>
-              <div class="voice-tile" data-voice-key="abirami" id="edit-voice-card-abirami">
+              <div class="voice-tile" data-voice-key="anisha" id="edit-voice-card-anisha">
                 <div class="voice-tile-check">✓</div>
-                <div class="voice-tile-name">Abirami</div>
+                <div class="voice-tile-name">Anisha</div>
                 <div class="voice-tile-desc">Female Voice</div>
                 <div class="voice-tile-meta">Conversational</div>
-                <div class="voice-tile-status-badge unsupported">Unsupported</div>
+                <div class="voice-tile-status-badge supported">Supported</div>
+              </div>
+              <div class="voice-tile" data-voice-key="natalie" id="edit-voice-card-natalie">
+                <div class="voice-tile-check">✓</div>
+                <div class="voice-tile-name">Natalie</div>
+                <div class="voice-tile-desc">Female Voice · US accent</div>
+                <div class="voice-tile-meta">English</div>
+                <div class="voice-tile-status-badge supported">Supported</div>
+              </div>
+              <div class="voice-tile" data-voice-key="michelle" id="edit-voice-card-michelle">
+                <div class="voice-tile-check">✓</div>
+                <div class="voice-tile-name">Michelle</div>
+                <div class="voice-tile-desc">Female Voice · US accent</div>
+                <div class="voice-tile-meta">English</div>
+                <div class="voice-tile-status-badge supported">Supported</div>
+              </div>
+              <div class="voice-tile" data-voice-key="alia" id="edit-voice-card-alia">
+                <div class="voice-tile-check">✓</div>
+                <div class="voice-tile-name">Alia</div>
+                <div class="voice-tile-desc">Female Voice</div>
+                <div class="voice-tile-meta">English · Hindi · Telugu</div>
+                <div class="voice-tile-status-badge supported">Supported</div>
+              </div>
+              <div class="voice-tile" data-voice-key="prathamesh" id="edit-voice-card-prathamesh">
+                <div class="voice-tile-check">✓</div>
+                <div class="voice-tile-name">Prathamesh</div>
+                <div class="voice-tile-desc">Male Voice</div>
+                <div class="voice-tile-meta">English · Hindi · Telugu</div>
+                <div class="voice-tile-status-badge supported">Supported</div>
               </div>
             </div>
           </div>
@@ -1797,24 +1752,6 @@
               </button>
             </div>
           </div>
-        </div>
-
-        <!-- Attached Instructions Document Area -->
-        <div class="form-group-wrap" style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:12px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-            <label class="form-label-bold" style="margin:0;">Campaign Instructions Document (.pdf, .docx, .doc)</label>
-            <span id="edit-camp-doc-badge" class="badge-pill" style="font-size:0.65rem;">NO DOC</span>
-          </div>
-          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-            <span id="edit-camp-doc-name" style="font-size:0.8rem; color:#475569; font-family:monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">No document attached</span>
-            <div style="display:flex; gap:6px; flex:none;">
-              <input type="file" id="edit-camp-file-input" accept=".pdf,.docx,.doc" style="display:none;">
-              <button type="button" class="btn-card-secondary" id="btn-edit-camp-view-doc" style="padding:4px 10px; font-size:0.75rem; display:none;">View</button>
-              <button type="button" class="btn-card-secondary" id="btn-edit-camp-replace-doc" style="padding:4px 10px; font-size:0.75rem;">Upload / Replace</button>
-              <button type="button" class="btn-card-secondary" id="btn-edit-camp-remove-doc" style="padding:4px 10px; font-size:0.75rem; color:#DC2626; display:none;">Remove</button>
-            </div>
-          </div>
-          <div id="edit-camp-doc-status-msg" style="font-size:0.72rem; color:#16A34A; margin-top:4px; display:none;"></div>
         </div>
 
         <!-- Attached Contacts Spreadsheet Area -->
@@ -1897,29 +1834,6 @@
         <div id="reupload-excel-feedback" style="font-size: 0.75rem; margin-top: 6px; display: none;"></div>
       </div>
 
-      <!-- Section 2: Instructions Document -->
-      <div class="form-group-wrap" style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 14px; margin-bottom: 18px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-          <label class="form-label-bold" style="margin: 0; display: flex; align-items: center; gap: 6px;">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-            Job Description or Knowledge Document (.pdf, .docx, .doc)
-          </label>
-          <span id="reupload-doc-status-badge" class="badge-pill" style="font-size: 0.65rem;">CURRENT</span>
-        </div>
-        <p style="font-size: 0.75rem; color: #64748B; margin-bottom: 8px;" id="reupload-current-doc-desc">
-          Current document: None attached
-        </p>
-        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-          <input type="file" id="reupload-doc-input" accept=".pdf,.docx,.doc" style="display: none;">
-          <button type="button" class="btn-card-secondary" id="btn-reupload-browse-doc" style="padding: 6px 12px; font-size: 0.8rem; display: flex; align-items: center; gap: 5px;">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <span>Choose New Document</span>
-          </button>
-          <span id="reupload-chosen-doc-name" style="font-size: 0.8rem; color: #334155; font-family: monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px;">No new file selected</span>
-        </div>
-        <div id="reupload-doc-feedback" style="font-size: 0.75rem; margin-top: 6px; display: none;"></div>
-      </div>
-
       <!-- Footer Buttons -->
       <div style="display: flex; gap: 10px; justify-content: flex-end; align-items: center; flex-wrap: wrap;">
         <button type="button" class="btn-card-secondary" id="btn-reupload-cancel">Cancel</button>
@@ -1963,6 +1877,14 @@
             </svg>
             <span>Download Excel</span>
           </a>
+          <button type="button" id="camp-convs-audio-btn" class="btn-convs-excel btn-convs-audio" disabled title="Tick the calls you want, then click here to get their recordings in one .zip">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            <span id="camp-convs-audio-label">Download Audio</span>
+          </button>
           <button type="button" class="btn-convs-close" id="modal-camp-convs-close" aria-label="Close modal">×</button>
         </div>
       </div>
@@ -2039,6 +1961,7 @@
               <th style="width: 38px; text-align: center;">
                 <input type="checkbox" id="convs-select-all" class="convs-checkbox" title="Select all calls">
               </th>
+              <th style="width: 46px; text-align: center;">#</th>
               <th>Contact</th>
               <th>Phone</th>
               <th>Date & Time</th>
@@ -2057,11 +1980,25 @@
 
       <!-- Footer & Pager -->
       <div class="convs-footer">
-        <div id="camp-convs-count-info">0 calls recorded</div>
-        <div class="convs-pagination" id="camp-convs-pagination">
-          <button type="button" class="convs-page-btn" id="camp-convs-prev-btn" disabled>&lt;</button>
-          <span class="convs-page-btn active" id="camp-convs-curr-page">1</span>
-          <button type="button" class="convs-page-btn" id="camp-convs-next-btn" disabled>&gt;</button>
+        <div class="convs-footer-info">
+          <span id="camp-convs-count-info">0 calls recorded</span>
+          <span id="camp-convs-select-info" class="convs-select-info"></span>
+        </div>
+        <div class="convs-footer-right">
+          <label class="rows-per-page" for="camp-convs-limit">
+            <span>Rows per page</span>
+            <select class="admin-select admin-select-sm" id="camp-convs-limit">
+              <option value="10" selected>10</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </label>
+          <div class="convs-pagination" id="camp-convs-pagination">
+            <button type="button" class="convs-page-btn" id="camp-convs-prev-btn" disabled aria-label="Previous page">&lt;</button>
+            <span id="camp-convs-pages" class="convs-pages"></span>
+            <button type="button" class="convs-page-btn" id="camp-convs-next-btn" disabled aria-label="Next page">&gt;</button>
+          </div>
         </div>
       </div>
 
@@ -2107,6 +2044,39 @@
       if (greetingEl) {
         greetingEl.textContent = `${timeGreeting}, ${firstName}`;
       }
+
+      // Calling minutes the owner assigned: a notice when they are finished or nearly finished.
+      window.refreshMinutesBanner = async function () {
+        const box = document.getElementById('minutes-banner');
+        if (!box) return;
+        try {
+          const res = await AdminClient.request('/api/admin/minutes');
+          const m = res && res.minutes;
+          // Header chip, right of the profile: minutes left for this admin
+          const chip = document.getElementById('header-minutes-chip');
+          const chipText = document.getElementById('header-minutes-text');
+          if (chip && chipText && m) {
+            chipText.textContent = !m.allottedMinutes ? 'No minutes assigned' : (m.exhausted ? 'Minutes finished' : `${m.remainingMinutes} min left`);
+            chip.style.background = m.exhausted ? '#FEE2E2' : '#EEF2FF';
+            chip.style.color = m.exhausted ? '#B91C1C' : '#3730A3';
+            chip.style.display = 'inline-flex';
+          }
+          if (!m) { box.style.display = 'none'; return; }
+          if (!m.allottedMinutes) {
+            box.className = 'admin-alert-banner error';
+            box.textContent = 'No calling minutes have been assigned to you yet. You cannot start campaigns or calls until the owner adds minutes. Please contact support or the owner.';
+          } else if (m.exhausted) {
+            box.className = 'admin-alert-banner error';
+            box.textContent = `Your ${m.allottedMinutes} assigned calling minutes have finished. You cannot start campaigns or calls until more minutes are added. Please contact support or the owner.`;
+          } else if (m.remainingMinutes <= Math.max(5, m.allottedMinutes * 0.1)) {
+            box.className = 'admin-alert-banner info';
+            box.textContent = `Only ${m.remainingMinutes} of your ${m.allottedMinutes} assigned calling minutes are left. Contact support or the owner for more.`;
+          } else { box.style.display = 'none'; return; }
+          box.style.display = 'block';
+        } catch (e) { /* the banner is only a reminder; the server still blocks calls */ }
+      };
+      window.refreshMinutesBanner();
+      setInterval(window.refreshMinutesBanner, 60000); // keeps the header count current while calls run
 
       const compName = user.companyName || 'TakeRemo Workspace';
       const companyTagEl = document.getElementById('greeting-company-name');
@@ -2291,25 +2261,154 @@
                 <td style="font-family: monospace;">+${agentEsc(String(a.phoneNumber).replace(/^\+/, ''))}</td>
                 <td>${agentEsc(AGENT_SERVICE_NAME[a.service] || a.service)}</td>
                 <td style="max-width: 320px;">${a.greeting ? agentEsc(a.greeting) : '<span style="color:#94A3B8;">Standard greeting</span>'}</td>
-                <td>${a.status === 'disabled' ? 'Switched off' : 'On'}</td></tr>`).join('')
-            : `<tr><td colspan="5" style="text-align: center; padding: 28px; color: #94A3B8;">No agents have been given to your account yet. Calls use the shared company number until the owner assigns you an agent.</td></tr>`;
+                <td>${a.status === 'disabled' ? 'Switched off' : 'On'}</td>
+                <td style="white-space: nowrap;">
+                  <button type="button" class="btn-card-secondary" data-agent-edit="${agentEsc(a.id)}" style="padding: 4px 12px;"><span>Edit</span></button>
+                  ${a.mine
+                    ? `<button type="button" class="btn-card-secondary" data-agent-del="${agentEsc(a.id)}" style="padding: 4px 12px; color: #DC2626;"><span>Delete</span></button>`
+                    : '<div style="color:#94A3B8; font-size: 0.7rem; margin-top: 2px;">Given by owner</div>'}
+                </td></tr>`).join('')
+            : `<tr><td colspan="6" style="text-align: center; padding: 28px; color: #94A3B8;">You have no agents yet. Click "Add Agent" to create one, or ask the owner to give you one. Until then calls use the shared company number.</td></tr>`;
         }
 
-        // Campaign view: pick which agent places the calls (only when this admin has agents)
+        fillSectionAgentSelect();
+      }
+
+      // This admin's switched-on agents that handle one work type (recruitment, sales, ...)
+      function activeAgentsForService(service) {
+        return myAgents.filter((a) => a.status !== 'disabled' && (!service || a.service === service));
+      }
+
+      // Campaign view: pick which agent places the calls. Only the agents of the selected work type are listed,
+      // and the row shows only when this admin has agents at all.
+      function fillSectionAgentSelect() {
         const row = document.getElementById('campaign-agent-row');
         const sel = document.getElementById('campaign-agent-select');
-        if (row && sel) {
-          const active = myAgents.filter((a) => a.status !== 'disabled');
-          const keep = sel.value;
-          sel.innerHTML = '<option value="">Automatic (best match for the work type)</option>' +
-            active.map((a) => `<option value="${agentEsc(a.id)}">${agentEsc(a.name)} · +${agentEsc(String(a.phoneNumber).replace(/^\+/, ''))} · ${agentEsc(AGENT_SERVICE_NAME[a.service] || a.service)}</option>`).join('');
-          if (active.some((a) => a.id === keep)) sel.value = keep;
-          row.style.display = active.length ? 'flex' : 'none';
-          const hint = document.getElementById('campaign-agent-hint');
-          if (hint) hint.textContent = active.length ? 'Calls go out from this agent\'s phone number.' : '';
+        if (!row || !sel) return;
+        const activeTab = document.querySelector('#campaign-service-tabs .service-tab-btn.active');
+        const service = activeTab ? activeTab.getAttribute('data-service') : 'recruitment';
+        const anyActive = myAgents.some((a) => a.status !== 'disabled');
+        const list = activeAgentsForService(service);
+        const keep = sel.value;
+        sel.innerHTML = '<option value="">Automatic (best match for the work type)</option>' +
+          list.map((a) => `<option value="${agentEsc(a.id)}">${agentEsc(a.name)} · +${agentEsc(String(a.phoneNumber).replace(/^\+/, ''))}</option>`).join('');
+        if (list.some((a) => a.id === keep)) sel.value = keep;
+        // The row always shows (language and voice); only the agent part needs agents
+        const group = document.getElementById('campaign-agent-group');
+        if (group) group.style.display = anyActive ? 'inline-flex' : 'none';
+        const hint = document.getElementById('campaign-agent-hint');
+        if (hint) {
+          hint.textContent = !anyActive ? ''
+            : list.length ? 'Calls go out from this agent\'s phone number.'
+            : `You have no ${AGENT_SERVICE_NAME[service] || service} agent yet. Calls use the best match.`;
         }
       }
       loadMyAgents();
+
+      // ----------------------------------------------------------------------
+      // My Agents: add / edit / delete the agents this admin created
+      // ----------------------------------------------------------------------
+      var editingAgentId = null;
+      var agentNumbers = [];
+
+      function agentModalEl() { return document.getElementById('modal-agent'); }
+      function showAgentError(msg) {
+        const box = document.getElementById('agent-form-error');
+        if (!box) return;
+        box.textContent = msg || '';
+        box.style.display = msg ? 'flex' : 'none';
+      }
+      function updateAgentInstructionsCount() {
+        const box = document.getElementById('agent-input-instructions');
+        const out = document.getElementById('agent-instructions-count');
+        if (!box || !out) return;
+        const chars = box.value.length;
+        const words = (box.value.trim().match(/\S+/g) || []).length;
+        out.textContent = `${words.toLocaleString('en-US')} word${words === 1 ? '' : 's'} · ${chars.toLocaleString('en-US')} / 6,000 characters` + (chars >= 6000 ? ' · limit reached' : '');
+      }
+
+      async function openAgentModal(id) {
+        const a = id ? myAgents.find((x) => x.id === id) : null;
+        editingAgentId = a ? a.id : null;
+        showAgentError('');
+        document.getElementById('modal-agent-title').textContent = a ? 'Edit Agent' : 'Add Agent';
+        try {
+          const res = await AdminClient.getAgentNumbers();
+          agentNumbers = Array.isArray(res.numbers) ? res.numbers : [];
+        } catch (err) {
+          agentNumbers = [];
+        }
+        const sel = document.getElementById('agent-input-number');
+        const current = a ? String(a.phoneNumber) : '';
+        const options = agentNumbers.slice();
+        // An agent on a number that is no longer approved keeps showing it, so editing other fields still works.
+        if (current && !options.some((n) => String(n.phoneNumber).slice(-10) === current.slice(-10))) options.unshift({ phoneNumber: current, label: 'no longer approved' });
+        sel.innerHTML = options.length
+          ? options.map((n) => `<option value="${agentEsc(n.phoneNumber)}">+${agentEsc(String(n.phoneNumber).replace(/^\+/, ''))}${n.label ? ' — ' + agentEsc(n.label) : ''}</option>`).join('')
+          : '<option value="">No approved numbers yet</option>';
+        document.getElementById('agent-number-hint').textContent = agentNumbers.length
+          ? 'Only numbers approved by the owner can be used.'
+          : 'The owner has not approved any phone number for you yet. Ask the owner to approve one.';
+        document.getElementById('agent-input-name').value = a ? a.name : '';
+        if (a && current) sel.value = options.find((n) => String(n.phoneNumber).slice(-10) === current.slice(-10)).phoneNumber;
+        document.getElementById('agent-input-service').value = a ? a.service : 'recruitment';
+        document.getElementById('agent-input-greeting').value = a ? (a.greeting || '') : '';
+        document.getElementById('agent-input-instructions').value = a ? (a.instructions || '') : '';
+        document.getElementById('agent-input-status').value = a ? (a.status || 'active') : 'active';
+        updateAgentInstructionsCount();
+        agentModalEl().classList.add('open');
+        document.getElementById('agent-input-name').focus();
+      }
+      function closeAgentModal() { agentModalEl().classList.remove('open'); }
+
+      (function setupMyAgents() {
+        document.getElementById('btn-add-agent').addEventListener('click', () => openAgentModal(null));
+        document.getElementById('modal-agent-close').addEventListener('click', closeAgentModal);
+        document.getElementById('btn-agent-cancel').addEventListener('click', closeAgentModal);
+        document.getElementById('agent-input-instructions').addEventListener('input', updateAgentInstructionsCount);
+
+        document.getElementById('form-agent').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const btn = document.getElementById('btn-agent-save');
+          const body = {
+            name: document.getElementById('agent-input-name').value,
+            phoneNumber: document.getElementById('agent-input-number').value,
+            service: document.getElementById('agent-input-service').value,
+            greeting: document.getElementById('agent-input-greeting').value,
+            instructions: document.getElementById('agent-input-instructions').value,
+            status: document.getElementById('agent-input-status').value
+          };
+          showAgentError('');
+          btn.disabled = true;
+          try {
+            if (editingAgentId) await AdminClient.updateAgent(editingAgentId, body);
+            else await AdminClient.createAgent(body);
+            closeAgentModal();
+            await loadMyAgents();
+          } catch (err) {
+            showAgentError(err.message || 'Could not save the agent.');
+          } finally {
+            btn.disabled = false;
+          }
+        });
+
+        document.getElementById('agents-table-body').addEventListener('click', async (e) => {
+          const btn = e.target.closest('button');
+          if (!btn) return;
+          if (btn.dataset.agentEdit) return openAgentModal(btn.dataset.agentEdit);
+          if (btn.dataset.agentDel) {
+            const a = myAgents.find((x) => x.id === btn.dataset.agentDel);
+            if (!a) return;
+            if (!window.confirm(`Delete ${a.name}? Its number will stop being answered by this agent. Past calls are kept.`)) return;
+            try {
+              await AdminClient.deleteAgent(a.id);
+              await loadMyAgents();
+            } catch (err) {
+              window.alert(err.message || 'Could not delete the agent.');
+            }
+          }
+        });
+      })();
 
       async function loadDashboardStats() {
         try {
@@ -2679,6 +2778,7 @@
             closeBatchConfirmModal();
             showAdminAlert(`✓ Sequential outbound calling queue initialized for ${service.toUpperCase()} (${res.total || res.valid || 0} valid contacts queued). Calling 1 contact at a time.`, 'success');
             loadDashboardStats();
+            loadCampaigns(activeCampaignFilter);
           } catch (err) {
             showAdminAlert(`Failed to start ${service} calling queue: ${err.message}`, 'error');
           } finally {
@@ -2864,14 +2964,7 @@
       let activeCampaignSearch = '';
       let activeCampaignStatus = 'all';
       let activeCampaignSort = 'newest';
-      let stagedCreatePdfFile = null;
       let stagedCreateExcelFile = null;
-      let stagedExtractedData = null;
-      let stagedQuestionPlan = null;
-      // Quick launch (Upload Excel -> Start Calling) document
-      let qcDocFile = null;
-      let qcDocExtracted = null;
-      let qcDocPlan = null;
       let cachedCampaignsList = [];
 
       const serviceDefaults = {
@@ -2921,10 +3014,8 @@
           document.querySelectorAll('#campaign-service-tabs .service-tab-btn').forEach(b => b.classList.remove('active'));
           btn.classList.add('active');
           selectedCampaignService = btn.getAttribute('data-service') || 'recruitment';
+          fillSectionAgentSelect();
           updateCampaignPreview();
-          // A document is read for one work type, so a new tab starts without one.
-          resetQuickDocument();
-          updateQuickDocLabels(selectedCampaignService);
         });
       });
 
@@ -3003,211 +3094,6 @@
         }
       }
 
-      // ----------------------------------------------------------------------
-      // Quick launch document (same as step 4 of the Create Campaign popup)
-      // ----------------------------------------------------------------------
-      const qcEl = (id) => document.getElementById('qc-' + id);
-      const QC_DOC_TEXT = {
-        recruitment: ['Upload Job Description Document (.pdf, .docx, .doc) (Required)', 'Extracts job title, core requirements, screening questions and notice period'],
-        sales: ['Upload Product Guide & Sales Document (.pdf, .docx, .doc)', 'Extracts product features, pricing, value propositions, objection handling & custom questions'],
-        appointment: ['Upload Business Info & Booking Rules Document (.pdf, .docx, .doc)', 'Extracts services, working hours, location, booking rules and FAQs'],
-        receptionist: ['Upload Front-Desk Info & FAQ Document (.pdf, .docx, .doc)', 'Extracts what the front desk may answer: services, hours, departments, FAQs and message policy'],
-        support: ['Upload Support SOP & FAQ Document (.pdf, .docx, .doc)', 'Extracts product procedures, troubleshooting steps, FAQs, and escalation policies']
-      };
-      const QC_DOC_IDLE_TEXT = 'Click to choose or drop PDF or Word document (.docx, .doc)';
-
-      function updateQuickDocLabels(service) {
-        const text = QC_DOC_TEXT[service] || QC_DOC_TEXT.support;
-        const label = qcEl('label-pdf-upload');
-        const sub = qcEl('pdf-sub-text');
-        if (label) label.textContent = text[0];
-        if (sub) sub.textContent = text[1];
-      }
-
-      // The preview is a copy of the popup's, so both always show the same fields. Its ids get a "qc-" prefix.
-      function ensureQuickPreview() {
-        if (qcEl('camp-extracted-preview')) return;
-        const source = document.getElementById('camp-extracted-preview');
-        const host = qcEl('preview-host');
-        if (!source || !host) return;
-        const copy = source.cloneNode(true);
-        [copy, ...copy.querySelectorAll('[id]')].forEach(el => { if (el.id) el.id = 'qc-' + el.id; });
-        copy.style.display = 'none';
-        host.appendChild(copy);
-      }
-
-      function resetQuickDocument() {
-        const input = qcEl('pdf-file-input');
-        const status = qcEl('pdf-status-text');
-        const removeBtn = qcEl('btn-remove-staged-pdf');
-        const preview = qcEl('camp-extracted-preview');
-        const questions = qcEl('camp-generated-questions');
-        if (input) input.value = '';
-        if (status) status.textContent = QC_DOC_IDLE_TEXT;
-        if (removeBtn) removeBtn.style.display = 'none';
-        if (preview) preview.style.display = 'none';
-        if (questions) questions.innerHTML = '';
-        qcDocFile = null;
-        qcDocExtracted = null;
-        qcDocPlan = null;
-      }
-
-      function fillQuickDocFields(service, d) {
-        const set = (id, v) => { const el = qcEl(id); if (el) el.value = v || ''; };
-        if (service === 'appointment' || service === 'receptionist') {
-          const p = service === 'appointment' ? 'appt' : 'recep';
-          set(`edit-${p}-company`, d.company_name);
-          set(`edit-${p}-services`, (d.services_offered || []).join(', '));
-          set(`edit-${p}-hours`, d.working_hours);
-          set(service === 'appointment' ? 'edit-appt-rules' : 'edit-recep-policy', service === 'appointment' ? d.booking_rules : d.message_policy);
-        } else if (service === 'recruitment') {
-          set('edit-jd-role', d.job_title);
-          set('edit-jd-skills', (d.required_skills || []).join(', '));
-          set('edit-jd-exp', d.min_experience_years || '');
-          set('edit-jd-notice', d.max_notice_period_days ? `${d.max_notice_period_days} days` : (d.notice_period_description || '30 days'));
-          set('edit-jd-location', d.work_arrangement);
-        } else if (service === 'sales') {
-          set('edit-sales-product', d.product_name);
-          set('edit-sales-company', d.company_name);
-          set('edit-sales-value', (d.value_propositions || []).join('; '));
-          set('edit-sales-pricing', d.pricing_summary);
-          set('edit-sales-cta', d.desired_outcome);
-        } else if (service === 'support') {
-          set('edit-support-product', d.product_name);
-          set('edit-support-topics', (d.supported_topics || []).join(', '));
-          set('edit-support-escalation', d.escalation_policy);
-        }
-      }
-
-      // Copies the admin's edits in the preview into the extracted data (same rules as the popup).
-      function collectQuickDocEdits(service, d) {
-        const get = (id) => (qcEl(id)?.value || '').trim();
-        const list = (v, sep) => v.split(sep).map(s => s.trim()).filter(Boolean);
-        if (service === 'recruitment') {
-          if (get('edit-jd-role')) d.job_title = get('edit-jd-role');
-          if (get('edit-jd-skills')) d.required_skills = list(get('edit-jd-skills'), ',');
-          const exp = parseInt(get('edit-jd-exp'), 10);
-          if (!isNaN(exp)) d.min_experience_years = exp;
-          if (get('edit-jd-location')) d.work_arrangement = get('edit-jd-location');
-          if (get('edit-jd-notice')) d.notice_period_description = get('edit-jd-notice');
-        } else if (service === 'sales') {
-          if (get('edit-sales-product')) d.product_name = get('edit-sales-product');
-          if (get('edit-sales-company')) d.company_name = get('edit-sales-company');
-          if (get('edit-sales-value')) d.value_propositions = list(get('edit-sales-value'), ';');
-          if (get('edit-sales-pricing')) d.pricing_summary = get('edit-sales-pricing');
-          if (get('edit-sales-cta')) d.desired_outcome = get('edit-sales-cta');
-        } else if (service === 'support') {
-          if (get('edit-support-product')) d.product_name = get('edit-support-product');
-          if (get('edit-support-topics')) d.supported_topics = list(get('edit-support-topics'), ',');
-          if (get('edit-support-escalation')) d.escalation_policy = get('edit-support-escalation');
-        } else if (service === 'appointment' || service === 'receptionist') {
-          const p = service === 'appointment' ? 'appt' : 'recep';
-          if (get(`edit-${p}-company`)) d.company_name = get(`edit-${p}-company`);
-          if (get(`edit-${p}-services`)) d.services_offered = list(get(`edit-${p}-services`), ',');
-          if (get(`edit-${p}-hours`)) d.working_hours = get(`edit-${p}-hours`);
-          if (service === 'appointment' && get('edit-appt-rules')) d.booking_rules = get('edit-appt-rules');
-          if (service === 'receptionist' && get('edit-recep-policy')) d.message_policy = get('edit-recep-policy');
-        }
-        return d;
-      }
-
-      async function handleQuickDocSelection(file) {
-        const ext = file.name.split('.').pop().toLowerCase();
-        if (!['pdf', 'docx', 'doc'].includes(ext)) {
-          alert('Please select a valid PDF or Word document (.pdf, .docx, .doc)');
-          return;
-        }
-        const service = selectedCampaignService;
-        const status = qcEl('pdf-status-text');
-        const removeBtn = qcEl('btn-remove-staged-pdf');
-        const alertBox = document.getElementById('campaign-status-alert');
-        ensureQuickPreview();
-
-        if (status) {
-          status.innerHTML = `<span class="auth-spinner" style="width:12px;height:12px;margin-right:6px;"></span> Extracting instructions & custom questions from ${ext.toUpperCase()} document...`;
-        }
-
-        try {
-          const res = await AdminClient.previewCampaignDocument(file, service);
-          // The tab may have changed while the document was being read.
-          if (service !== selectedCampaignService) return;
-          qcDocFile = file;
-          qcDocExtracted = res.extractedData || {};
-          qcDocPlan = res.questionPlan || [];
-
-          if (status) {
-            status.innerHTML = `<span style="color:#16A34A;font-weight:700;">✓ ${file.name}</span> (${(file.size / 1024).toFixed(1)} KB — Extracted & Ready)`;
-          }
-          if (removeBtn) removeBtn.style.display = 'inline-block';
-          const badge = qcEl('camp-extracted-doctype-badge');
-          if (badge) badge.textContent = ext.toUpperCase();
-
-          ['recruitment', 'sales', 'support', 'appointment', 'receptionist'].forEach(s => {
-            const box = qcEl(`preview-fields-${s}`);
-            if (box) box.style.display = s === service ? 'block' : 'none';
-          });
-          fillQuickDocFields(service, qcDocExtracted);
-
-          const questions = qcEl('camp-generated-questions');
-          if (questions) {
-            questions.innerHTML = qcDocPlan.length === 0
-              ? `<div style="color:#94A3B8; font-size:0.75rem;">No questions generated.</div>`
-              : qcDocPlan.map((q, idx) => `
-                <div class="question-plan-item" style="padding:6px 10px; background:#FFFFFF; border:1px solid #E2E8F0; border-radius:6px; margin-bottom:6px; font-size:0.75rem; display:flex; gap:8px; align-items:flex-start;">
-                  <span class="badge-pill" style="font-size:0.65rem; background:#EFF6FF; color:#2563EB; font-weight:700; flex:none;">${q.stage || 'Q' + (idx + 1)}</span>
-                  <span style="color:#0F172A; flex:1;">${q.text}</span>
-                </div>`).join('');
-          }
-          const preview = qcEl('camp-extracted-preview');
-          if (preview) preview.style.display = 'block';
-          if (alertBox) alertBox.style.display = 'none';
-        } catch (err) {
-          if (status) status.textContent = QC_DOC_IDLE_TEXT;
-          if (removeBtn) removeBtn.style.display = 'none';
-          if (alertBox) {
-            alertBox.className = 'admin-alert-banner error';
-            alertBox.textContent = `Document Analysis Error: ${err.message}`;
-            alertBox.style.display = 'flex';
-          }
-        }
-      }
-
-      (function setupQuickDocDropzone() {
-        const dropzone = qcEl('pdf-dropzone');
-        const input = qcEl('pdf-file-input');
-        const removeBtn = qcEl('btn-remove-staged-pdf');
-        if (!dropzone || !input) return;
-        updateQuickDocLabels(selectedCampaignService);
-
-        dropzone.addEventListener('click', (e) => {
-          if (e.target !== input && e.target !== removeBtn) input.click();
-        });
-        if (removeBtn) {
-          removeBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            resetQuickDocument();
-          });
-        }
-        ['dragenter', 'dragover'].forEach(name => dropzone.addEventListener(name, (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          dropzone.style.borderColor = '#2563EB';
-        }));
-        ['dragleave', 'drop'].forEach(name => dropzone.addEventListener(name, (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          dropzone.style.borderColor = '';
-        }));
-        dropzone.addEventListener('drop', async (e) => {
-          const files = e.dataTransfer.files;
-          if (files && files.length > 0) await handleQuickDocSelection(files[0]);
-        });
-        input.addEventListener('change', async () => {
-          if (input.files && input.files.length > 0) await handleQuickDocSelection(input.files[0]);
-        });
-      })();
-
       // Start Calling Button
       const startCampaignBtn = document.getElementById('btn-start-campaign');
       if (startCampaignBtn) {
@@ -3215,29 +3101,11 @@
           e.preventDefault();
           const alertBox = document.getElementById('campaign-status-alert');
 
-          // Recruitment screening needs its Job Description; the other work types can start without a document.
-          if (selectedCampaignService === 'recruitment' && !qcDocExtracted) {
-            if (alertBox) {
-              alertBox.className = 'admin-alert-banner error';
-              alertBox.textContent = 'A Job Description PDF is required for recruitment screening campaigns.';
-              alertBox.style.display = 'flex';
-            }
-            return;
-          }
-
           startCampaignBtn.disabled = true;
           startCampaignBtn.innerHTML = `<span class="auth-spinner"></span> <span>Initiating AI Telephony...</span>`;
 
           try {
-            // A document read on this page goes with the sheet, so the calls use its facts and question plan.
-            const documentInfo = qcDocExtracted
-              ? {
-                  filename: qcDocFile ? qcDocFile.name : 'document',
-                  extractedData: collectQuickDocEdits(selectedCampaignService, qcDocExtracted),
-                  questionPlan: qcDocPlan || []
-                }
-              : null;
-            const res = await AdminClient.startCalling(selectedCampaignService, stagedFileId, getSelectedAgentId(), documentInfo);
+            const res = await AdminClient.startCalling(selectedCampaignService, stagedFileId, getSelectedAgentId());
 
             if (alertBox) {
               alertBox.className = 'admin-alert-banner success';
@@ -3252,6 +3120,8 @@
             }
 
             startCampaignBtn.innerHTML = `✓ Calling In Progress (${res.total} Lines)`;
+            // The run is saved as a campaign: show it in "Saved Voice Campaigns & Job Screening" right away.
+            loadCampaigns(activeCampaignFilter);
           } catch (err) {
             if (alertBox) {
               alertBox.className = 'admin-alert-banner error';
@@ -3385,12 +3255,9 @@
             const choice = btn.getAttribute('data-service-choice') || 'recruitment';
             const hidden = document.getElementById('camp-input-service');
             if (hidden) hidden.value = choice;
-            updateCreateModalLabels(choice);
+            fillCreateAgentSelect();
           });
         });
-
-        // PDF Dropzone & File Input
-        setupCreatePdfDropzone();
 
         // Excel Dropzone & File Input
         setupCreateExcelDropzone();
@@ -3519,7 +3386,11 @@
         pooja: { name: 'Pooja', gender: 'Female Voice', locales: ['en-IN', 'te-IN', 'hi-IN', 'ta-IN', 'kn-IN'] },
         abhinav: { name: 'Abhinav', gender: 'Male Voice', locales: ['en-IN', 'hi-IN', 'ml-IN', 'mr-IN'] },
         samar: { name: 'Samar', gender: 'Male Voice', locales: ['en-IN', 'te-IN', 'hi-IN', 'ta-IN', 'kn-IN', 'mr-IN'] },
-        abirami: { name: 'Abirami', gender: 'Female Voice', locales: ['ta-IN', 'te-IN', 'hi-IN'] }
+        anisha: { name: 'Anisha', gender: 'Female Voice', locales: ['en-IN', 'hi-IN', 'te-IN'] },
+        natalie: { name: 'Natalie', gender: 'Female Voice (US accent)', locales: ['en-IN'] },
+        michelle: { name: 'Michelle', gender: 'Female Voice (US accent)', locales: ['en-IN'] },
+        alia: { name: 'Alia', gender: 'Female Voice', locales: ['en-IN', 'hi-IN', 'te-IN'] },
+        prathamesh: { name: 'Prathamesh', gender: 'Male Voice', locales: ['en-IN', 'hi-IN', 'te-IN'] }
       };
 
       const LANG_NAME_MAP = {
@@ -3613,6 +3484,29 @@
         return isCompatible;
       }
 
+      // Campaigns section: Primary Language and AI Voice next to "Calling agent". Voices that do not speak the
+      // chosen language are greyed out, and a voice that cannot is replaced by the first one that can.
+      function syncSectionVoiceChoices() {
+        const langSel = document.getElementById('campaign-lang-select');
+        const voiceSel = document.getElementById('campaign-voice-select');
+        if (!langSel || !voiceSel) return;
+        const locale = langSel.value || 'en-IN';
+        [...voiceSel.options].forEach((o) => {
+          const v = VOICE_COMPAT_MATRIX[o.value];
+          o.disabled = !(v && v.locales.includes(locale));
+        });
+        const current = voiceSel.options[voiceSel.selectedIndex];
+        if (!current || current.disabled) {
+          const first = [...voiceSel.options].find((o) => !o.disabled);
+          if (first) voiceSel.value = first.value;
+        }
+      }
+      (function setupSectionVoiceChoices() {
+        const langSel = document.getElementById('campaign-lang-select');
+        if (langSel) langSel.addEventListener('change', syncSectionVoiceChoices);
+        syncSectionVoiceChoices();
+      })();
+
       function setupVoiceConfigListeners(prefix) {
         const langSelect = document.getElementById(`${prefix}-input-primary-lang`);
         const voiceSelect = document.getElementById(`${prefix}-input-voice-select`);
@@ -3705,51 +3599,23 @@
         }
       }
 
-      function updateCreateModalLabels(service) {
-        const pdfLabel = document.getElementById('label-camp-pdf-upload');
-        const pdfSubText = document.getElementById('camp-pdf-sub-text');
-        if (pdfLabel) {
-          if (service === 'recruitment') {
-            pdfLabel.innerHTML = '<span class="form-step-badge">4</span>Upload Job Description Document (.pdf, .docx, .doc) (Required)';
-          } else if (service === 'sales') {
-            pdfLabel.innerHTML = '<span class="form-step-badge">4</span>Upload Product Guide & Sales Document (.pdf, .docx, .doc)';
-          } else if (service === 'appointment') {
-            pdfLabel.innerHTML = '<span class="form-step-badge">4</span>Upload Business Info & Booking Rules Document (.pdf, .docx, .doc)';
-          } else if (service === 'receptionist') {
-            pdfLabel.innerHTML = '<span class="form-step-badge">4</span>Upload Front-Desk Info & FAQ Document (.pdf, .docx, .doc)';
-          } else {
-            pdfLabel.innerHTML = '<span class="form-step-badge">4</span>Upload Support SOP & FAQ Document (.pdf, .docx, .doc)';
-          }
-        }
-        if (pdfSubText) {
-          if (service === 'recruitment') {
-            pdfSubText.textContent = 'Extracts job title, core requirements, screening questions and notice period';
-          } else if (service === 'sales') {
-            pdfSubText.textContent = 'Extracts product features, pricing, value propositions, objection handling & custom questions';
-          } else if (service === 'appointment') {
-            pdfSubText.textContent = 'Extracts services, working hours, location, booking rules and FAQs';
-          } else if (service === 'receptionist') {
-            pdfSubText.textContent = 'Extracts what the front desk may answer: services, hours, departments, FAQs and message policy';
-          } else {
-            pdfSubText.textContent = 'Extracts product procedures, troubleshooting steps, FAQs, and escalation policies';
-          }
-        }
-      }
-
-      function resetStagedDocument() {
-        const pdfInput = document.getElementById('camp-pdf-file-input');
-        const pdfStatus = document.getElementById('camp-pdf-status-text');
-        const removeBtn = document.getElementById('btn-camp-remove-staged-pdf');
-        const extractedPreview = document.getElementById('camp-extracted-preview');
-        const questionsList = document.getElementById('camp-generated-questions');
-        if (pdfInput) pdfInput.value = '';
-        if (pdfStatus) pdfStatus.textContent = 'Click to choose or drop PDF or Word document (.docx, .doc)';
-        if (removeBtn) removeBtn.style.display = 'none';
-        if (extractedPreview) extractedPreview.style.display = 'none';
-        if (questionsList) questionsList.innerHTML = '';
-        stagedCreatePdfFile = null;
-        stagedExtractedData = null;
-        stagedQuestionPlan = null;
+      // Fills the popup's "Calling Agent" list with this admin's active agents.
+      function fillCreateAgentSelect() {
+        const sel = document.getElementById('camp-input-agent');
+        if (!sel) return;
+        const service = document.getElementById('camp-input-service')?.value || 'recruitment';
+        const all = (typeof myAgents !== 'undefined' ? myAgents : []).filter((a) => a.status !== 'disabled');
+        const active = all.filter((a) => a.service === service);
+        const keep = sel.value;
+        sel.innerHTML = '<option value="">Automatic (best match for the work type)</option>' +
+          active.map((a) => `<option value="${agentEsc(a.id)}">${agentEsc(a.name)} · +${agentEsc(String(a.phoneNumber).replace(/^\+/, ''))}</option>`).join('');
+        if (active.some((a) => a.id === keep)) sel.value = keep;
+        const hint = document.getElementById('camp-agent-hint');
+        if (hint) hint.textContent = active.length
+          ? 'Calls go out from this agent\'s phone number, using its greeting and instructions.'
+          : all.length
+            ? `You have no ${AGENT_SERVICE_NAME[service] || service} agent yet, so calls use the best match. Add one in My Agents.`
+            : 'You have no agents yet, so calls use the shared company number. Add one in My Agents.';
       }
 
       function openCampaignCreateModal(service = 'recruitment') {
@@ -3769,16 +3635,20 @@
           if (b.getAttribute('data-service-choice') === service) b.classList.add('selected');
           else b.classList.remove('selected');
         });
-        updateCreateModalLabels(service);
-
-        // Reset Document preview
-        resetStagedDocument();
+        // Calling agent list (preselects the agent already chosen in the Campaigns section)
+        fillCreateAgentSelect();
+        const agentSel = document.getElementById('camp-input-agent');
+        const sectionAgent = typeof getSelectedAgentId === 'function' ? getSelectedAgentId() : '';
+        if (agentSel && sectionAgent && [...agentSel.options].some((o) => o.value === sectionAgent)) agentSel.value = sectionAgent;
 
         // Reset Primary Language and Voice to defaults
         const langInput = document.getElementById('camp-input-primary-lang');
         const voiceSelectInput = document.getElementById('camp-input-voice-select');
-        if (langInput) langInput.value = 'en-IN';
-        if (voiceSelectInput) voiceSelectInput.value = 'pooja';
+        // Start from the language and voice chosen in the Campaigns section (English / Pooja by default)
+        const sectionLang = document.getElementById('campaign-lang-select');
+        const sectionVoice = document.getElementById('campaign-voice-select');
+        if (langInput) langInput.value = (sectionLang && sectionLang.value) || 'en-IN';
+        if (voiceSelectInput) voiceSelectInput.value = (sectionVoice && sectionVoice.value) || 'pooja';
         updateVoiceCompatibilityUI('camp');
 
         // Reset Excel preview
@@ -3801,166 +3671,6 @@
       function closeCampaignCreateModal() {
         const modal = document.getElementById('modal-campaign-create');
         if (modal) modal.classList.remove('open');
-      }
-
-      function setupCreatePdfDropzone() {
-        const dropzone = document.getElementById('camp-pdf-dropzone');
-        const fileInput = document.getElementById('camp-pdf-file-input');
-        const removeBtn = document.getElementById('btn-camp-remove-staged-pdf');
-        if (!dropzone || !fileInput) return;
-
-        dropzone.addEventListener('click', (e) => {
-          if (e.target !== fileInput && e.target !== removeBtn) fileInput.click();
-        });
-
-        if (removeBtn) {
-          removeBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            resetStagedDocument();
-          });
-        }
-
-        ['dragenter', 'dragover'].forEach(name => {
-          dropzone.addEventListener(name, (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            dropzone.style.borderColor = '#2563EB';
-          });
-        });
-
-        ['dragleave', 'drop'].forEach(name => {
-          dropzone.addEventListener(name, (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            dropzone.style.borderColor = '';
-          });
-        });
-
-        dropzone.addEventListener('drop', async (e) => {
-          const files = e.dataTransfer.files;
-          if (files && files.length > 0) {
-            await handlePdfSelection(files[0]);
-          }
-        });
-
-        fileInput.addEventListener('change', async () => {
-          if (fileInput.files && fileInput.files.length > 0) {
-            await handlePdfSelection(fileInput.files[0]);
-          }
-        });
-      }
-
-      async function handlePdfSelection(file) {
-        const ext = file.name.split('.').pop().toLowerCase();
-        if (!['pdf', 'docx', 'doc'].includes(ext)) {
-          alert('Please select a valid PDF or Word document (.pdf, .docx, .doc)');
-          return;
-        }
-
-        const pdfStatus = document.getElementById('camp-pdf-status-text');
-        const removeBtn = document.getElementById('btn-camp-remove-staged-pdf');
-        const docBadge = document.getElementById('camp-extracted-doctype-badge');
-        const alertBox = document.getElementById('camp-modal-alert');
-        const extractedPreview = document.getElementById('camp-extracted-preview');
-        const questionsList = document.getElementById('camp-generated-questions');
-        const service = document.getElementById('camp-input-service')?.value || 'recruitment';
-
-        if (pdfStatus) {
-          pdfStatus.innerHTML = `<span class="auth-spinner" style="width:12px;height:12px;margin-right:6px;"></span> Extracting instructions & custom questions from ${ext.toUpperCase()} document...`;
-        }
-
-        try {
-          const res = await AdminClient.previewCampaignDocument(file, service);
-          stagedCreatePdfFile = file;
-          stagedExtractedData = res.extractedData || {};
-          stagedQuestionPlan = res.questionPlan || [];
-
-          if (pdfStatus) {
-            pdfStatus.innerHTML = `<span style="color:#16A34A;font-weight:700;">✓ ${file.name}</span> (${(file.size / 1024).toFixed(1)} KB — Extracted & Ready)`;
-          }
-          if (removeBtn) removeBtn.style.display = 'inline-block';
-          if (docBadge) docBadge.textContent = ext.toUpperCase();
-
-          // Toggle service-specific preview sections
-          const pRec = document.getElementById('preview-fields-recruitment');
-          const pSales = document.getElementById('preview-fields-sales');
-          const pSupp = document.getElementById('preview-fields-support');
-          if (pRec) pRec.style.display = service === 'recruitment' ? 'block' : 'none';
-          if (pSales) pSales.style.display = service === 'sales' ? 'block' : 'none';
-          if (pSupp) pSupp.style.display = service === 'support' ? 'block' : 'none';
-          const pAppt = document.getElementById('preview-fields-appointment');
-          const pRecep = document.getElementById('preview-fields-receptionist');
-          if (pAppt) pAppt.style.display = service === 'appointment' ? 'block' : 'none';
-          if (pRecep) pRecep.style.display = service === 'receptionist' ? 'block' : 'none';
-
-          if (service === 'appointment' || service === 'receptionist') {
-            const p = service === 'appointment' ? 'appt' : 'recep';
-            const setVal = (suffix, v) => { const el = document.getElementById(`edit-${p}-${suffix}`); if (el) el.value = v || ''; };
-            setVal('company', stagedExtractedData.company_name);
-            setVal('services', (stagedExtractedData.services_offered || []).join(', '));
-            setVal('hours', stagedExtractedData.working_hours);
-            setVal(service === 'appointment' ? 'rules' : 'policy', service === 'appointment' ? stagedExtractedData.booking_rules : stagedExtractedData.message_policy);
-          } else if (service === 'recruitment') {
-            const editRole = document.getElementById('edit-jd-role');
-            const editSkills = document.getElementById('edit-jd-skills');
-            const editExp = document.getElementById('edit-jd-exp');
-            const editNotice = document.getElementById('edit-jd-notice');
-            const editLoc = document.getElementById('edit-jd-location');
-
-            if (editRole) editRole.value = stagedExtractedData.job_title || '';
-            if (editSkills) editSkills.value = (stagedExtractedData.required_skills || []).join(', ');
-            if (editExp) editExp.value = stagedExtractedData.min_experience_years || '';
-            if (editNotice) editNotice.value = stagedExtractedData.max_notice_period_days ? `${stagedExtractedData.max_notice_period_days} days` : (stagedExtractedData.notice_period_description || '30 days');
-            if (editLoc) editLoc.value = stagedExtractedData.work_arrangement || '';
-          } else if (service === 'sales') {
-            const editProd = document.getElementById('edit-sales-product');
-            const editComp = document.getElementById('edit-sales-company');
-            const editVal = document.getElementById('edit-sales-value');
-            const editPrice = document.getElementById('edit-sales-pricing');
-            const editCta = document.getElementById('edit-sales-cta');
-
-            if (editProd) editProd.value = stagedExtractedData.product_name || '';
-            if (editComp) editComp.value = stagedExtractedData.company_name || '';
-            if (editVal) editVal.value = (stagedExtractedData.value_propositions || []).join('; ');
-            if (editPrice) editPrice.value = stagedExtractedData.pricing_summary || '';
-            if (editCta) editCta.value = stagedExtractedData.desired_outcome || '';
-          } else if (service === 'support') {
-            const editProd = document.getElementById('edit-support-product');
-            const editTopics = document.getElementById('edit-support-topics');
-            const editEsc = document.getElementById('edit-support-escalation');
-
-            if (editProd) editProd.value = stagedExtractedData.product_name || '';
-            if (editTopics) editTopics.value = (stagedExtractedData.supported_topics || []).join(', ');
-            if (editEsc) editEsc.value = stagedExtractedData.escalation_policy || '';
-          }
-
-          // Render tailored question plan
-          if (questionsList) {
-            const plan = stagedQuestionPlan;
-            if (plan.length === 0) {
-              questionsList.innerHTML = `<div style="color:#94A3B8; font-size:0.75rem;">No questions generated.</div>`;
-            } else {
-              questionsList.innerHTML = plan.map((q, idx) => `
-                <div class="question-plan-item" style="padding:6px 10px; background:#FFFFFF; border:1px solid #E2E8F0; border-radius:6px; margin-bottom:6px; font-size:0.75rem; display:flex; gap:8px; align-items:flex-start;">
-                  <span class="badge-pill" style="font-size:0.65rem; background:#EFF6FF; color:#2563EB; font-weight:700; flex:none;">${q.stage || 'Q' + (idx + 1)}</span>
-                  <span style="color:#0F172A; flex:1;">${q.text}</span>
-                </div>
-              `).join('');
-            }
-          }
-
-          if (extractedPreview) extractedPreview.style.display = 'block';
-          if (alertBox) alertBox.style.display = 'none';
-        } catch (err) {
-          if (pdfStatus) pdfStatus.textContent = 'Click to choose or drop PDF or Word document (.docx, .doc)';
-          if (removeBtn) removeBtn.style.display = 'none';
-          if (alertBox) {
-            alertBox.className = 'admin-alert-banner error';
-            alertBox.textContent = `Document Analysis Error: ${err.message}`;
-            alertBox.style.display = 'flex';
-          }
-        }
       }
 
       function setupCreateExcelDropzone() {
@@ -4052,16 +3762,12 @@
         const nameInput = document.getElementById('camp-input-name');
         const descInput = document.getElementById('camp-input-desc');
         const serviceInput = document.getElementById('camp-input-service');
-        const modelInput = document.getElementById('camp-input-model');
-        const voiceInput = document.getElementById('camp-input-voice');
         const primaryLangInput = document.getElementById('camp-input-primary-lang');
         const voiceSelectInput = document.getElementById('camp-input-voice-select');
 
         const name = (nameInput?.value || '').trim();
         const description = (descInput?.value || '').trim();
         const service = serviceInput?.value || 'recruitment';
-        const primaryModel = modelInput?.value || 'claude-haiku-5-5';
-        const voiceRouting = voiceInput?.value || 'auto';
         const primaryLocale = primaryLangInput?.value || 'en-IN';
         const voiceId = voiceSelectInput?.value || 'pooja';
 
@@ -4086,15 +3792,6 @@
           return;
         }
 
-        if (service === 'recruitment' && !stagedCreatePdfFile) {
-          if (alertBox) {
-            alertBox.className = 'admin-alert-banner error';
-            alertBox.textContent = 'A Job Description PDF is required for recruitment screening campaigns.';
-            alertBox.style.display = 'flex';
-          }
-          return;
-        }
-
         if (startNow && !stagedCreateExcelFile) {
           if (alertBox) {
             alertBox.className = 'admin-alert-banner error';
@@ -4114,73 +3811,18 @@
         }
 
         try {
-          // 1. Sync manual edits made to extracted criteria
-          if (stagedExtractedData) {
-            if (service === 'recruitment') {
-              const roleVal = document.getElementById('edit-jd-role')?.value.trim();
-              if (roleVal) stagedExtractedData.job_title = roleVal;
-
-              const skillsVal = document.getElementById('edit-jd-skills')?.value.trim();
-              if (skillsVal) {
-                stagedExtractedData.required_skills = skillsVal.split(',').map(s => s.trim()).filter(Boolean);
-              }
-
-              const expVal = parseInt(document.getElementById('edit-jd-exp')?.value.trim(), 10);
-              if (!isNaN(expVal)) stagedExtractedData.min_experience_years = expVal;
-
-              const locVal = document.getElementById('edit-jd-location')?.value.trim();
-              if (locVal) stagedExtractedData.work_arrangement = locVal;
-
-              const noticeVal = document.getElementById('edit-jd-notice')?.value.trim();
-              if (noticeVal) stagedExtractedData.notice_period_description = noticeVal;
-            } else if (service === 'sales') {
-              const prodVal = document.getElementById('edit-sales-product')?.value.trim();
-              if (prodVal) stagedExtractedData.product_name = prodVal;
-
-              const compVal = document.getElementById('edit-sales-company')?.value.trim();
-              if (compVal) stagedExtractedData.company_name = compVal;
-
-              const valProps = document.getElementById('edit-sales-value')?.value.trim();
-              if (valProps) stagedExtractedData.value_propositions = valProps.split(';').map(s => s.trim()).filter(Boolean);
-
-              const priceVal = document.getElementById('edit-sales-pricing')?.value.trim();
-              if (priceVal) stagedExtractedData.pricing_summary = priceVal;
-
-              const ctaVal = document.getElementById('edit-sales-cta')?.value.trim();
-              if (ctaVal) stagedExtractedData.desired_outcome = ctaVal;
-            } else if (service === 'support') {
-              const prodVal = document.getElementById('edit-support-product')?.value.trim();
-              if (prodVal) stagedExtractedData.product_name = prodVal;
-
-              const topicsVal = document.getElementById('edit-support-topics')?.value.trim();
-              if (topicsVal) stagedExtractedData.supported_topics = topicsVal.split(',').map(s => s.trim()).filter(Boolean);
-
-              const escVal = document.getElementById('edit-support-escalation')?.value.trim();
-              if (escVal) stagedExtractedData.escalation_policy = escVal;
-            } else if (service === 'appointment' || service === 'receptionist') {
-              const p = service === 'appointment' ? 'appt' : 'recep';
-              const getVal = (suffix) => (document.getElementById(`edit-${p}-${suffix}`)?.value || '').trim();
-              if (getVal('company')) stagedExtractedData.company_name = getVal('company');
-              if (getVal('services')) stagedExtractedData.services_offered = getVal('services').split(',').map(s => s.trim()).filter(Boolean);
-              if (getVal('hours')) stagedExtractedData.working_hours = getVal('hours');
-              if (service === 'appointment' && getVal('rules')) stagedExtractedData.booking_rules = getVal('rules');
-              if (service === 'receptionist' && getVal('policy')) stagedExtractedData.message_policy = getVal('policy');
-            }
-          }
-
-          // 2. Create Campaign record with Language & Voice configuration
+          // 1. Create Campaign record with Language & Voice configuration and the calling agent
           const campRes = await AdminClient.createCampaign({
             name,
             service,
             description,
+            agentId: document.getElementById('camp-input-agent')?.value || '',
             primary_language: primaryLocale,
             primary_locale: primaryLocale,
             voice_id: voiceId,
             voice_provider: 'murf',
             voice_model: 'falcon-2.1',
             config: {
-              primaryModel,
-              voiceRouting,
               primary_language: primaryLocale,
               primary_locale: primaryLocale,
               voice_id: voiceId,
@@ -4190,24 +3832,14 @@
           });
           const campaign = campRes.campaign;
 
-          // 3. Attach Document if provided
-          if (stagedCreatePdfFile) {
-            await AdminClient.uploadCampaignDocument(campaign.id, stagedCreatePdfFile);
-            if (stagedExtractedData) {
-              await AdminClient.updateCampaign(campaign.id, {
-                extracted_data: stagedExtractedData
-              });
-            }
-          }
-
-          // 4. Attach Excel if provided
+          // 2. Attach Excel if provided
           if (stagedCreateExcelFile) {
             await AdminClient.uploadCampaignExcel(campaign.id, stagedCreateExcelFile);
           }
 
-          // 5. Start Campaign if requested
+          // 3. Start Campaign if requested (with the agent chosen in the popup)
           if (startNow) {
-            await AdminClient.startCampaign(campaign.id, getSelectedAgentId());
+            await AdminClient.startCampaign(campaign.id, document.getElementById('camp-input-agent')?.value || '');
             showAdminAlert(`✓ Campaign "${campaign.name}" launched successfully! Sequential outbound AI telephony active.`, 'success');
           } else {
             showAdminAlert(`✓ Campaign "${campaign.name}" saved as draft. You can launch or edit it anytime.`, 'success');
@@ -4460,7 +4092,7 @@
                 <span class="camp-file-tag tag-muted"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> No Document</span>
                 <button type="button" class="btn-file-chip-action btn-camp-chip-doc" data-camp-id="${c.id}" title="Upload document">
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                  <span>+ Upload</span>
+                  <span>Upload</span>
                 </button>
                </div>`;
 
@@ -4476,7 +4108,7 @@
                 <span class="camp-file-tag tag-muted"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> No contacts sheet</span>
                 <button type="button" class="btn-file-chip-action btn-camp-chip-excel" data-camp-id="${c.id}" title="Upload contacts sheet">
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                  <span>+ Upload</span>
+                  <span>Upload</span>
                 </button>
                </div>`;
 
@@ -4725,100 +4357,6 @@
           if (editLangInput) editLangInput.value = c.primary_locale || c.primary_language || 'en-IN';
           if (editVoiceInput) editVoiceInput.value = c.voice_id || 'pooja';
           updateVoiceCompatibilityUI('edit-camp');
-
-          // Setup Document Area in Edit Modal
-          const docBadge = document.getElementById('edit-camp-doc-badge');
-          const docName = document.getElementById('edit-camp-doc-name');
-          const replaceBtn = document.getElementById('btn-edit-camp-replace-doc');
-          const removeBtn = document.getElementById('btn-edit-camp-remove-doc');
-          const viewBtn = document.getElementById('btn-edit-camp-view-doc');
-          const fileInput = document.getElementById('edit-camp-file-input');
-          const statusMsg = document.getElementById('edit-camp-doc-status-msg');
-
-          if (statusMsg) {
-            statusMsg.style.display = 'none';
-            statusMsg.textContent = '';
-          }
-
-          if (c.pdf_filename) {
-            const ext = c.pdf_filename.split('.').pop().toUpperCase();
-            if (docBadge) {
-              docBadge.textContent = ext;
-              docBadge.className = 'badge-pill badge-status-completed';
-            }
-            if (docName) docName.textContent = c.pdf_filename;
-            if (removeBtn) removeBtn.style.display = 'inline-block';
-            if (viewBtn) viewBtn.style.display = 'inline-block';
-          } else {
-            if (docBadge) {
-              docBadge.textContent = 'NO DOC';
-              docBadge.className = 'badge-pill';
-            }
-            if (docName) docName.textContent = 'No document attached';
-            if (removeBtn) removeBtn.style.display = 'none';
-            if (viewBtn) viewBtn.style.display = 'none';
-          }
-
-          if (viewBtn) {
-            viewBtn.onclick = () => window.open(`/api/admin/campaigns/${encodeURIComponent(campaignId)}/document`, '_blank', 'noopener');
-          }
-
-          if (replaceBtn && fileInput) {
-            replaceBtn.onclick = () => fileInput.click();
-            fileInput.onchange = async () => {
-              if (fileInput.files && fileInput.files.length > 0) {
-                const file = fileInput.files[0];
-                replaceBtn.disabled = true;
-                replaceBtn.textContent = 'Uploading...';
-                try {
-                  const uploadRes = await AdminClient.uploadCampaignDocument(campaignId, file);
-                  if (docName) docName.textContent = file.name;
-                  if (docBadge) {
-                    docBadge.textContent = file.name.split('.').pop().toUpperCase();
-                    docBadge.className = 'badge-pill badge-status-completed';
-                  }
-                  if (removeBtn) removeBtn.style.display = 'inline-block';
-                  if (viewBtn) viewBtn.style.display = 'inline-block';
-                  if (statusMsg) {
-                    statusMsg.textContent = `✓ Document ${file.name} attached & parsed successfully.`;
-                    statusMsg.style.display = 'block';
-                  }
-                  await loadCampaigns(activeCampaignFilter);
-                } catch (err) {
-                  alert(`Document upload failed: ${err.message}`);
-                } finally {
-                  replaceBtn.disabled = false;
-                  replaceBtn.textContent = 'Upload / Replace';
-                }
-              }
-            };
-          }
-
-          if (removeBtn) {
-            removeBtn.onclick = async () => {
-              if (!confirm('Remove document from this campaign?')) return;
-              removeBtn.disabled = true;
-              try {
-                await AdminClient.removeCampaignDocument(campaignId);
-                if (docName) docName.textContent = 'No document attached';
-                if (docBadge) {
-                  docBadge.textContent = 'NO DOC';
-                  docBadge.className = 'badge-pill';
-                }
-                removeBtn.style.display = 'none';
-                if (viewBtn) viewBtn.style.display = 'none';
-                if (statusMsg) {
-                  statusMsg.textContent = 'Document removed.';
-                  statusMsg.style.display = 'block';
-                }
-                await loadCampaigns(activeCampaignFilter);
-              } catch (err) {
-                alert(`Failed to remove document: ${err.message}`);
-              } finally {
-                removeBtn.disabled = false;
-              }
-            };
-          }
 
           // Setup Excel Area in Edit Modal
           const excelBadge = document.getElementById('edit-camp-excel-badge');
@@ -5171,6 +4709,66 @@
         return palettes[code % palettes.length];
       }
 
+      // Paging and ticking for the popup. The whole campaign list is loaded once; the filters, the page and the
+      // ticks are all handled here. Ticks are kept by call id, so they survive page changes and filters.
+      const CAMP_CONVS_LIMIT_CHOICES = [10, 25, 50, 100];
+      const CAMP_CONVS_ZIP_MAX = 200; // same limit as the server (routes/admin.js)
+      let campConvsPage = 1;
+      let campConvsLimit = 10;
+      try {
+        const savedLimit = parseInt(window.localStorage.getItem('camp-convs-rows-per-page'), 10);
+        if (CAMP_CONVS_LIMIT_CHOICES.includes(savedLimit)) campConvsLimit = savedLimit;
+      } catch (e) { /* storage unavailable: keep 10 */ }
+      const campConvsLimitSelect = document.getElementById('camp-convs-limit');
+      if (campConvsLimitSelect) campConvsLimitSelect.value = String(campConvsLimit);
+      const selectedCampConvIds = new Set();
+      let campConvsFiltered = [];
+
+      function renderCampConvsPager(totalPages) {
+        const pagesEl = document.getElementById('camp-convs-pages');
+        const prevBtn = document.getElementById('camp-convs-prev-btn');
+        const nextBtn = document.getElementById('camp-convs-next-btn');
+        if (pagesEl) {
+          const wanted = new Set([1, totalPages, campConvsPage - 1, campConvsPage, campConvsPage + 1]);
+          let html = '';
+          let last = 0;
+          [...wanted].filter(p => p >= 1 && p <= totalPages).sort((a, b) => a - b).forEach(p => {
+            if (last && p - last > 1) html += '<span class="convs-page-gap">…</span>';
+            html += `<button type="button" class="convs-page-btn${p === campConvsPage ? ' active' : ''}" data-page="${p}" aria-label="Page ${p}">${p}</button>`;
+            last = p;
+          });
+          pagesEl.innerHTML = html;
+        }
+        if (prevBtn) prevBtn.disabled = campConvsPage <= 1;
+        if (nextBtn) nextBtn.disabled = campConvsPage >= totalPages;
+      }
+
+      function updateCampConvsSelectionUi() {
+        const count = selectedCampConvIds.size;
+        const audioBtn = document.getElementById('camp-convs-audio-btn');
+        const audioLabel = document.getElementById('camp-convs-audio-label');
+        if (audioBtn && !audioBtn.dataset.busy) {
+          audioBtn.disabled = count === 0;
+          if (audioLabel) audioLabel.textContent = count > 0 ? `Download Audio (${count})` : 'Download Audio';
+        }
+        const boxes = [...document.querySelectorAll('#camp-convs-tbody .row-select-checkbox')];
+        const ticked = boxes.filter(cb => cb.checked).length;
+        const headerBox = document.getElementById('convs-select-all');
+        if (headerBox) {
+          headerBox.checked = boxes.length > 0 && ticked === boxes.length;
+          headerBox.indeterminate = ticked > 0 && ticked < boxes.length;
+        }
+        const info = document.getElementById('camp-convs-select-info');
+        if (info) {
+          let html = '';
+          if (count > 0) html += `${count} selected <button type="button" class="convs-link-btn" data-act="clear">Clear</button>`;
+          if (campConvsFiltered.length > campConvsLimit && count < campConvsFiltered.length) {
+            html += `<button type="button" class="convs-link-btn" data-act="all">Select all ${campConvsFiltered.length} calls</button>`;
+          }
+          info.innerHTML = html;
+        }
+      }
+
       function filterAndRenderCampaignConversations() {
         const tbody = document.getElementById('camp-convs-tbody');
         const countInfo = document.getElementById('camp-convs-count-info');
@@ -5215,21 +4813,32 @@
           return true;
         });
 
+        // Paging: only the rows of the current page are drawn
+        campConvsFiltered = filtered;
+        const totalPages = Math.max(1, Math.ceil(filtered.length / campConvsLimit));
+        campConvsPage = Math.min(Math.max(1, campConvsPage), totalPages);
+        const pageStart = (campConvsPage - 1) * campConvsLimit;
+        const pageRows = filtered.slice(pageStart, pageStart + campConvsLimit);
+
         // Update call count label
         if (countInfo) {
           const total = activeCampaignConvs.length;
           const shown = filtered.length;
+          const from = shown === 0 ? 0 : pageStart + 1;
+          const to = pageStart + pageRows.length;
           countInfo.textContent = total === shown
-            ? `Showing 1-${shown} of ${total} calls`
-            : `Showing ${shown} of ${total} calls (filtered)`;
+            ? `Showing ${from}-${to} of ${total} calls`
+            : `Showing ${from}-${to} of ${shown} calls (filtered from ${total})`;
         }
+        renderCampConvsPager(totalPages);
 
         if (filtered.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:44px 20px; color:#94A3B8; font-size:0.875rem;">No calls match the selected duration and outcome filters.</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:44px 20px; color:#94A3B8; font-size:0.875rem;">No calls match the selected duration and outcome filters.</td></tr>`;
+          updateCampConvsSelectionUi();
           return;
         }
 
-        tbody.innerHTML = filtered.map((c) => {
+        tbody.innerHTML = pageRows.map((c, rowIdx) => {
           const contactName = c.contact_display_name || c.contact_name || c.contact || 'Candidate';
           const contactPhone = c.contact_phone || c.phone || '—';
           const companyOrRole = c.contact_company || c.contact_role || (c.service ? c.service.toUpperCase() : 'Campaign Contact');
@@ -5336,8 +4945,9 @@
           return `
             <tr data-row-id="${c.id}">
               <td style="text-align: center;">
-                <input type="checkbox" class="convs-checkbox row-select-checkbox" data-conv-id="${c.id}">
+                <input type="checkbox" class="convs-checkbox row-select-checkbox" data-conv-id="${c.id}"${selectedCampConvIds.has(String(c.id)) ? ' checked' : ''} aria-label="Select this call">
               </td>
+              <td style="text-align: center; color: #64748B; font-weight: 600;">${pageStart + rowIdx + 1}</td>
               <td>
                 <div class="convs-contact-cell">
                   <div class="convs-avatar" style="background:${avatarColor.bg}; color:${avatarColor.text};">
@@ -5537,16 +5147,26 @@
           });
         });
 
-        // 6. Checkbox select all
+        // 6. Ticks: each row, and the header box (ticks or unticks the rows on this page)
+        tbody.querySelectorAll('.row-select-checkbox').forEach(cb => {
+          cb.addEventListener('change', () => {
+            const id = cb.getAttribute('data-conv-id');
+            if (cb.checked) selectedCampConvIds.add(id); else selectedCampConvIds.delete(id);
+            updateCampConvsSelectionUi();
+          });
+        });
         const selectAllCb = document.getElementById('convs-select-all');
         if (selectAllCb) {
-          selectAllCb.checked = false;
           selectAllCb.onchange = () => {
             tbody.querySelectorAll('.row-select-checkbox').forEach(cb => {
               cb.checked = selectAllCb.checked;
+              const id = cb.getAttribute('data-conv-id');
+              if (cb.checked) selectedCampConvIds.add(id); else selectedCampConvIds.delete(id);
             });
+            updateCampConvsSelectionUi();
           };
         }
+        updateCampConvsSelectionUi();
       }
 
       async function openCampaignConversationsModal(campaignId) {
@@ -5564,6 +5184,8 @@
         // Reset filter states to defaults
         activeDurationFilter = 'all';
         activeOutcomeFilter = 'all';
+        campConvsPage = 1;
+        selectedCampConvIds.clear();
         stopActiveConvsAudio();
 
         // Reset pills UI
@@ -5578,7 +5200,7 @@
         });
 
         if (titleEl) titleEl.textContent = 'Loading Campaign Conversations...';
-        if (tbody) tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:36px; color:#94A3B8;"><span class="auth-spinner" style="margin-right:8px;"></span> Loading conversations...</td></tr>`;
+        if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:36px; color:#94A3B8;"><span class="auth-spinner" style="margin-right:8px;"></span> Loading conversations...</td></tr>`;
 
         modal.classList.add('open');
 
@@ -5612,7 +5234,7 @@
           filterAndRenderCampaignConversations();
 
         } catch (err) {
-          if (tbody) tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:28px; color:#DC2626;">Failed to load conversations: ${err.message}</td></tr>`;
+          if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:28px; color:#DC2626;">Failed to load conversations: ${err.message}</td></tr>`;
         }
       }
 
@@ -5622,6 +5244,7 @@
           document.querySelectorAll('#convs-pills-duration .convs-pill-btn').forEach(b => b.classList.remove('active'));
           btn.classList.add('active');
           activeDurationFilter = btn.getAttribute('data-duration') || 'all';
+          campConvsPage = 1;
           filterAndRenderCampaignConversations();
         });
       });
@@ -5631,6 +5254,7 @@
           document.querySelectorAll('#convs-pills-sales .convs-pill-btn').forEach(b => b.classList.remove('active'));
           btn.classList.add('active');
           activeOutcomeFilter = btn.getAttribute('data-sales') || 'all';
+          campConvsPage = 1;
           filterAndRenderCampaignConversations();
         });
       });
@@ -5640,6 +5264,7 @@
           document.querySelectorAll('#convs-pills-rec .convs-pill-btn').forEach(b => b.classList.remove('active'));
           btn.classList.add('active');
           activeOutcomeFilter = btn.getAttribute('data-rec') || 'all';
+          campConvsPage = 1;
           filterAndRenderCampaignConversations();
         });
       });
@@ -5647,6 +5272,7 @@
       document.getElementById('btn-convs-clear-filters')?.addEventListener('click', () => {
         activeDurationFilter = 'all';
         activeOutcomeFilter = 'all';
+        campConvsPage = 1;
         document.querySelectorAll('#convs-pills-duration .convs-pill-btn').forEach(btn => {
           btn.classList.toggle('active', btn.getAttribute('data-duration') === 'all');
         });
@@ -5657,6 +5283,69 @@
           btn.classList.toggle('active', btn.getAttribute('data-rec') === 'all');
         });
         filterAndRenderCampaignConversations();
+      });
+
+      // Pager: previous / next / page numbers / rows per page
+      function goToCampConvsPage(page) {
+        campConvsPage = page;
+        filterAndRenderCampaignConversations();
+        document.querySelector('#modal-campaign-conversations .convs-table-container')?.scrollTo({ top: 0 });
+      }
+      document.getElementById('camp-convs-prev-btn')?.addEventListener('click', () => goToCampConvsPage(campConvsPage - 1));
+      document.getElementById('camp-convs-next-btn')?.addEventListener('click', () => goToCampConvsPage(campConvsPage + 1));
+      document.getElementById('camp-convs-pages')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-page]');
+        if (btn) goToCampConvsPage(parseInt(btn.getAttribute('data-page'), 10));
+      });
+      campConvsLimitSelect?.addEventListener('change', () => {
+        const chosen = parseInt(campConvsLimitSelect.value, 10);
+        if (!CAMP_CONVS_LIMIT_CHOICES.includes(chosen)) return;
+        campConvsLimit = chosen;
+        try { window.localStorage.setItem('camp-convs-rows-per-page', String(chosen)); } catch (e) { /* not remembered */ }
+        goToCampConvsPage(1); // a different page size changes which page holds which rows, so start again at page 1
+      });
+
+      // "Select all N calls" / "Clear" links next to the count
+      document.getElementById('camp-convs-select-info')?.addEventListener('click', (e) => {
+        const act = e.target.closest('[data-act]')?.getAttribute('data-act');
+        if (act === 'all') campConvsFiltered.forEach(c => selectedCampConvIds.add(String(c.id)));
+        else if (act === 'clear') selectedCampConvIds.clear();
+        else return;
+        document.querySelectorAll('#camp-convs-tbody .row-select-checkbox').forEach(cb => {
+          cb.checked = selectedCampConvIds.has(cb.getAttribute('data-conv-id'));
+        });
+        updateCampConvsSelectionUi();
+      });
+
+      // Download Audio: the ticked calls' recordings in one .zip (files named name_date_phone.mp3)
+      document.getElementById('camp-convs-audio-btn')?.addEventListener('click', async () => {
+        const btn = document.getElementById('camp-convs-audio-btn');
+        const label = document.getElementById('camp-convs-audio-label');
+        const ids = [...selectedCampConvIds];
+        if (ids.length === 0 || btn.dataset.busy) return;
+        if (ids.length > CAMP_CONVS_ZIP_MAX) {
+          alert(`You ticked ${ids.length} calls. Please download at most ${CAMP_CONVS_ZIP_MAX} at a time.`);
+          return;
+        }
+        btn.dataset.busy = '1';
+        btn.disabled = true;
+        if (label) label.textContent = 'Preparing zip…';
+        try {
+          const { blob, filename } = await AdminClient.downloadAudioZip(ids);
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = filename;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 60000);
+        } catch (err) {
+          alert(`Could not download the audio: ${err.message}`);
+        } finally {
+          delete btn.dataset.busy;
+          updateCampConvsSelectionUi();
+        }
       });
 
       document.getElementById('modal-summary-view-close')?.addEventListener('click', () => {
@@ -5674,6 +5363,16 @@
       let currentConvsPage = 1;
       let totalConvsPages = 1;
 
+      // Rows per page: the visitor picks one of these; the server allows 1 to 100. The choice is remembered.
+      const CONVS_LIMIT_CHOICES = [10, 25, 50, 100];
+      let convsLimit = 10;
+      try {
+        const saved = parseInt(window.localStorage.getItem('convs-rows-per-page'), 10);
+        if (CONVS_LIMIT_CHOICES.includes(saved)) convsLimit = saved;
+      } catch (e) { /* storage unavailable: keep 10 */ }
+      const convsLimitSelect = document.getElementById('convs-limit-select');
+      if (convsLimitSelect) convsLimitSelect.value = String(convsLimit);
+
       function updateConvsPager(pagination, shown) {
         const total = pagination ? (pagination.totalCount ?? pagination.total ?? shown) : shown;
         totalConvsPages = pagination ? (pagination.totalPages || 1) : 1;
@@ -5681,7 +5380,7 @@
         if (pageInfo) {
           pageInfo.textContent = total === 0
             ? 'No conversations'
-            : `Showing page ${currentConvsPage} of ${totalConvsPages} (${total} total)`;
+            : `Showing ${shown} ${shown === 1 ? 'row' : 'rows'} (${total} total) · Page ${currentConvsPage} of ${totalConvsPages}`;
         }
         const prevBtn = document.getElementById('convs-prev-btn');
         const nextBtn = document.getElementById('convs-next-btn');
@@ -5702,7 +5401,7 @@
         tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 28px; color: #94A3B8;"><span class="auth-spinner" style="margin-right: 8px;"></span> Loading conversations...</td></tr>`;
 
         try {
-          const res = await AdminClient.getConversations({ service, status, search, page: currentConvsPage });
+          const res = await AdminClient.getConversations({ service, status, search, page: currentConvsPage, limit: convsLimit });
           const convs = res.data || [];
 
           // The last page can disappear (e.g. after the filter changed); step back to the new last page.
@@ -5793,6 +5492,15 @@
 
       const convsStatusSelect = document.getElementById('convs-status-select');
       if (convsStatusSelect) convsStatusSelect.addEventListener('change', () => loadConversations(1));
+
+      if (convsLimitSelect) {
+        convsLimitSelect.addEventListener('change', () => {
+          const chosen = parseInt(convsLimitSelect.value, 10);
+          convsLimit = CONVS_LIMIT_CHOICES.includes(chosen) ? chosen : 10;
+          try { window.localStorage.setItem('convs-rows-per-page', String(convsLimit)); } catch (e) { /* storage unavailable */ }
+          loadConversations(1); // a different page size changes which page holds which rows, so start again at page 1
+        });
+      }
 
       const convsPrevBtn = document.getElementById('convs-prev-btn');
       if (convsPrevBtn) {
@@ -6205,53 +5913,14 @@
 
       setupTooltips();
 
-      // Profile Modal Handlers
-      const profileModal = document.getElementById('profile-modal');
-      const profileClose = document.getElementById('profile-modal-close');
+      // Settings: profile, company and sign-in details open on their own page
       const ddProfileBtn = document.getElementById('dd-profile-btn');
       const sidebarSettingsBtn = document.getElementById('sidebar-settings-btn');
+      const openSettingsPage = () => { window.location.href = '/settings'; };
 
-      function openProfileModal() {
-        if (!profileModal) return;
-        document.getElementById('edit-email').value = user.email || '';
-        document.getElementById('edit-name').value = user.name || '';
-        document.getElementById('edit-company').value = user.companyName || '';
-        document.getElementById('edit-phone').value = user.phone || '';
-        document.getElementById('edit-job-title').value = user.jobTitle || '';
-        profileModal.classList.add('open');
-      }
-
-      if (ddProfileBtn) ddProfileBtn.addEventListener('click', openProfileModal);
-      if (sidebarSettingsBtn) sidebarSettingsBtn.addEventListener('click', openProfileModal);
-      if (sidebarCompanyCard) sidebarCompanyCard.addEventListener('click', openProfileModal);
-      if (profileClose) profileClose.addEventListener('click', () => profileModal.classList.remove('open'));
-
-      const profileForm = document.getElementById('profile-edit-form');
-      if (profileForm) {
-        profileForm.addEventListener('submit', async (e) => {
-          e.preventDefault();
-          AuthClient.clearAlert('profile-modal-alert');
-          const name = document.getElementById('edit-name').value.trim();
-          const companyName = document.getElementById('edit-company').value.trim();
-          const phone = document.getElementById('edit-phone').value.trim();
-          const jobTitle = document.getElementById('edit-job-title').value.trim();
-          const submitBtn = profileForm.querySelector('button[type="submit"]');
-
-          const orig = submitBtn.innerHTML;
-          submitBtn.disabled = true;
-          submitBtn.innerHTML = `<span class="auth-spinner"></span> <span>Saving...</span>`;
-
-          try {
-            await AuthClient.updateProfile({ name, companyName, phone, jobTitle });
-            AuthClient.showAlert('profile-modal-alert', 'Profile updated successfully!', 'success');
-            setTimeout(() => window.location.reload(), 700);
-          } catch (err) {
-            AuthClient.showAlert('profile-modal-alert', err.message);
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = orig;
-          }
-        });
-      }
+      if (ddProfileBtn) ddProfileBtn.addEventListener('click', openSettingsPage);
+      if (sidebarSettingsBtn) sidebarSettingsBtn.addEventListener('click', openSettingsPage);
+      if (sidebarCompanyCard) sidebarCompanyCard.addEventListener('click', openSettingsPage);
 
       // Talk to Remo demo
       const talkBtn = document.getElementById('btn-talk-to-Remo');
@@ -6259,6 +5928,13 @@
       const triggerTalk = () => { window.location.href = '/#instant-call-demo'; };
       if (talkBtn) talkBtn.addEventListener('click', triggerTalk);
       if (qaTalkBtn) qaTalkBtn.addEventListener('click', triggerTalk);
+
+      // Opened from the Settings page sidebar: /dashboard#users, #campaigns, #agents, #conversations, #calls
+      // (runs last, after every loader above has been set up)
+      const startView = (window.location.hash || '').replace('#', '');
+      if (startView && startView !== 'dashboard' && document.getElementById(`view-${startView}`)) {
+        switchAdminView(startView);
+      }
 
     });
 

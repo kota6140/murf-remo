@@ -59,6 +59,25 @@ await test('A language the caller really switches to still stops the old languag
     assert.strictEqual(s.activeSpeechTimer, null);
 });
 
+// ── the watchdog ───────────────────────────────────────────────────────────
+await test('The watchdog leaves "speaking" alone while the next sentence is still being made', () => {
+    const { s } = makeSession();
+    s.isAiSpeaking = true;
+    s.aiSpeechEndTime = Date.now() - 6000;       // the audio sent so far ended 6 s ago ...
+    s.pendingSpeech = 1;                         // ... but the next sentence is on its way (Murf is slow to start)
+    assert.strictEqual(s.checkHealth(Date.now()), null);
+    assert.strictEqual(s.isAiSpeaking, true, 'still marked as speaking');
+});
+
+await test('The watchdog still frees a call whose speech really ended and nothing more is coming', () => {
+    const { s } = makeSession();
+    s.isAiSpeaking = true;
+    s.aiSpeechEndTime = Date.now() - 6000;
+    s.pendingSpeech = 0;
+    assert.strictEqual(s.checkHealth(Date.now()), 'speaking-reset');
+    assert.strictEqual(s.isAiSpeaking, false);
+});
+
 // ── interruption counting ──────────────────────────────────────────────────
 await test('Opening turn: 80 loud frames interrupt, 79 do not', async () => {
     const a = makeSession();

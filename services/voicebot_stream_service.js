@@ -826,7 +826,8 @@ export class CallSession {
                                 this.jobRole = this.campaignContext.product_name;
                             }
                         }
-                        if (campCtx.question_plan) {
+                        // A campaign without a document has no plan of its own: keep the call's default plan then.
+                        if (Array.isArray(campCtx.question_plan) && campCtx.question_plan.length) {
                             this.questionPlan = campCtx.question_plan;
                         }
 
@@ -1009,7 +1010,8 @@ export class CallSession {
         if (this.service === 'sales') {
             const rawName = (this.contact && this.contact.name) ? String(this.contact.name).trim() : '';
             const isNamed = rawName && !rawName.startsWith('Contact') && !rawName.startsWith('Caller') && !rawName.startsWith('Customer');
-            this.currentStage = isNamed ? 'GREETING' : 'PERMISSION_CHECK';
+            // An opening that already asks "is now a good time?" is the permission question; a "yes" moves on.
+            this.currentStage = isNamed && !IntentService.asksIfGoodTime(greeting) ? 'GREETING' : 'PERMISSION_CHECK';
         } else if (this.service === 'recruitment' && /\bam i speaking with\b/i.test(greeting)) {
             // "Hello, am I speaking with <name>?": the candidate confirms who they are first, then hears the introduction.
             this.currentStage = 'GREETING';
@@ -1260,7 +1262,9 @@ export class CallSession {
             this.processingSince = 0;
             return 'processing-reset';
         }
-        if (this.isAiSpeaking && this.aiSpeechEndTime > 0 && now > this.aiSpeechEndTime + SPEECH_GRACE_MS) {
+        // Speech still being made (queued, or the voice service has not started streaming it yet) is not "stuck":
+        // the audio sent so far may have ended while the next sentence is still on its way.
+        if (this.isAiSpeaking && this.pendingSpeech === 0 && this.aiSpeechEndTime > 0 && now > this.aiSpeechEndTime + SPEECH_GRACE_MS) {
             console.warn('[CallSession] Watchdog: the bot was still marked as speaking after its audio ended. Switching back to listening.');
             this.isAiSpeaking = false;
             if (this.activeSpeechTimer) { clearTimeout(this.activeSpeechTimer); this.activeSpeechTimer = null; }
@@ -1441,11 +1445,23 @@ export class CallSession {
             let streamedBytes = 0;
 
             if (!audioBuffer) {
-                // A request that takes too long is given up on, and audio that arrives after that is dropped.
+                // A request that does not start speaking in time is given up on, and audio that arrives after that is
+                // dropped. The limit is for the speech to START: once audio is flowing, a long sentence legitimately
+                // takes as long as it takes to stream (Murf can need 4s to begin and then stream at normal speed), so
+                // only a much longer cap applies from then on.
                 let abandoned = false;
                 let ttsTimer = null;
+                let giveUpNow = () => {};
                 const envTimeout = parseInt(process.env.TTS_TIMEOUT_MS, 10);
                 const ttsTimeoutMs = envTimeout >= 100 ? envTimeout : TTS_TIMEOUT_MS;
+                const ttsStreamCapMs = Math.max(ttsTimeoutMs * 5, 45000);
+                const giveUpPromise = new Promise((resolve) => { giveUpNow = () => resolve(null); });
+                const giveUp = (limitMs, why) => {
+                    abandoned = true;
+                    console.warn(`[CallSession] Text-to-speech (${ttsProvider}) ${why} within ${limitMs}ms. Giving up on this piece of speech.`);
+                    this.logDiagnostic('tts_timeout', { provider: ttsProvider, responseId: response ? response.id : null, text: String(text).slice(0, 60) });
+                    giveUpNow();
+                };
 
                 const onChunkHandler = (chunk) => {
                     if (!chunk || abandoned || this.isClosed || !this.ws || this.ws.readyState !== this.ws.OPEN) return;
@@ -1461,6 +1477,11 @@ export class CallSession {
                         this.latencyTracker.markFirstAudioChunkSent();
                         this.noteSpeechStarted(text, response);
                         console.log(`[CallSession] First audio chunk streamed to Plivo (${chunk.length} bytes via ${ttsProvider})`);
+                        // It has started: replace the start-up limit with the long cap for a sentence still streaming.
+                        if (ttsTimer) {
+                            clearTimeout(ttsTimer);
+                            ttsTimer = setTimeout(() => giveUp(ttsStreamCapMs, 'was still streaming'), ttsStreamCapMs);
+                        }
                     }
 
                     // Stream audio frame incrementally to Plivo
@@ -1504,17 +1525,8 @@ export class CallSession {
                 }
 
                 try {
-                    audioBuffer = await Promise.race([
-                        ttsPromise,
-                        new Promise((resolve) => {
-                            ttsTimer = setTimeout(() => {
-                                abandoned = true;
-                                console.warn(`[CallSession] Text-to-speech (${ttsProvider}) did not answer within ${ttsTimeoutMs}ms. Giving up on this piece of speech.`);
-                                this.logDiagnostic('tts_timeout', { provider: ttsProvider, responseId: response ? response.id : null, text: String(text).slice(0, 60) });
-                                resolve(null);
-                            }, ttsTimeoutMs);
-                        })
-                    ]);
+                    ttsTimer = setTimeout(() => giveUp(ttsTimeoutMs, 'did not start speaking'), ttsTimeoutMs);
+                    audioBuffer = await Promise.race([ttsPromise, giveUpPromise]);
                 } catch (ttsErr) {
                     console.error(`[CallSession] TTS Error (${ttsProvider}):`, ttsErr.message);
                     this.logDiagnostic('tts_error', { provider: ttsProvider, error: ttsErr.message, responseId: response ? response.id : null });
@@ -1602,7 +1614,7 @@ export class CallSession {
 
         // Watchdog: never stay deaf. If the bot is still marked as speaking well after its audio ended
         // (its end-of-speech timer was lost), go back to listening right now.
-        if (this.isAiSpeaking && this.aiSpeechEndTime > 0 && this.lastInboundAudioAt > this.aiSpeechEndTime + SPEECH_GRACE_MS) {
+        if (this.isAiSpeaking && this.pendingSpeech === 0 && this.aiSpeechEndTime > 0 && this.lastInboundAudioAt > this.aiSpeechEndTime + SPEECH_GRACE_MS) {
             console.warn('[CallSession] Watchdog: the bot was still marked as speaking after its audio ended. Switching back to listening.');
             this.isAiSpeaking = false;
             if (this.activeSpeechTimer) { clearTimeout(this.activeSpeechTimer); this.activeSpeechTimer = null; }

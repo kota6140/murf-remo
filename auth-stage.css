@@ -1,0 +1,220 @@
+/* ==========================================================================
+   auth-stage.css — the animated Login and Create Account pages.
+   Loaded after auth.css, and only by signin.html and signup.html (forgot-password and onboarding keep the
+   plain look). Pure white page: the logo on top, then three cards side by side (Industries We Serve, the login or
+   sign-up card, Our Services), then a row of highlights. Each list lights up one item at a time, and TakeRemo's
+   services drift softly behind everything.
+   ========================================================================== */
+
+@property --as-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+:root {
+  --as-red: #FC2415;
+  --as-ink: #0F172A;
+  --as-ease: cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+body.auth-stage {
+  background: #FFFFFF;
+  color: var(--as-ink);
+  min-height: 100vh;
+  display: block;
+  overflow-x: hidden;
+}
+
+/* ---------- the background: pure white, with services drifting softly behind everything ---------- */
+.as-bg { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; background: #FFFFFF; }
+
+.as-chips { position: absolute; inset: -6%; transform: translate3d(calc(var(--mx, 0) * -22px), calc(var(--my, 0) * -14px), 0); transition: transform 0.6s var(--as-ease); }
+
+.as-chip { position: absolute; left: var(--x); bottom: -90px; display: inline-flex; align-items: center; gap: 10px;
+  padding: 9px 16px 9px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 700; color: #334155; white-space: nowrap;
+  background: #FFFFFF; border: 1px solid #E2E8F0;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+  /* --d is the depth: far chips (small d) are smaller, fainter and blurred, near ones are sharper */
+  filter: blur(calc((1 - var(--d, 1)) * 4px));
+  opacity: 0; animation: as-rise var(--dur) linear var(--delay) infinite; }
+.as-chip i { width: 9px; height: 9px; border-radius: 50%; background: rgb(var(--c)); box-shadow: 0 0 10px rgba(var(--c), 0.6); }
+.as-chip b { font-weight: 800; color: rgb(var(--c)); filter: brightness(0.85) saturate(1.2); }
+@keyframes as-rise {
+  0% { transform: translateY(0) scale(calc(var(--d, 1) * 0.92)); opacity: 0; }
+  10% { opacity: calc(0.12 + var(--d, 1) * 0.5); }
+  85% { opacity: calc(0.1 + var(--d, 1) * 0.42); }
+  100% { transform: translateY(-115vh) scale(calc(var(--d, 1) * 1.04)); opacity: 0; }
+}
+
+.as-dot { position: absolute; width: var(--s); height: var(--s); border-radius: 50%; left: var(--x); top: var(--y); background: #031740; opacity: 0; animation: as-twinkle var(--dur) ease-in-out var(--delay) infinite; }
+@keyframes as-twinkle { 0%, 100% { opacity: 0; transform: translateY(0); } 50% { opacity: 0.22; transform: translateY(-26px); } }
+
+/* ---------- layout: logo on top, three cards in a row, highlights along the bottom ---------- */
+.as-shell { position: relative; z-index: 2; min-height: 100vh; max-width: 1440px; margin: 0 auto;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 440px) minmax(0, 1fr); align-content: center; align-items: center;
+  column-gap: clamp(18px, 2.4vw, 40px); row-gap: 26px; padding: 26px clamp(16px, 3vw, 44px) 30px; }
+
+/* the logo from the services pages (the version made for light backgrounds), centred on top */
+.as-logo { grid-column: 1 / -1; grid-row: 1; justify-self: center; position: relative; z-index: 1; display: inline-block; animation: as-in 0.8s var(--as-ease) both; }
+.as-logo img { display: block; height: 62px; width: auto; max-width: 100%; }
+
+.as-formcol { position: relative; grid-column: 2; grid-row: 2; width: 100%; max-width: 440px; justify-self: center; display: flex; flex-direction: column; align-items: center; }
+.as-panel-left { grid-column: 1; grid-row: 2; }
+.as-panel-right { grid-column: 3; grid-row: 2; }
+.as-features { grid-column: 1 / -1; grid-row: 3; }
+
+/* ---------- the side cards ---------- */
+.as-panel { position: relative; z-index: 1; width: 100%; max-width: 440px; background: #FFFFFF; border: 1px solid #E8ECF4; border-radius: 24px; overflow: hidden;
+  box-shadow: 0 18px 50px -18px rgba(3, 23, 64, 0.16); min-width: 0; }
+.as-panel-left { justify-self: end; animation: as-in-l 0.9s var(--as-ease) 0.15s both; }
+.as-panel-right { justify-self: start; animation: as-in-r 0.9s var(--as-ease) 0.15s both; }
+@keyframes as-in-l { from { opacity: 0; transform: translateX(-34px); } to { opacity: 1; transform: none; } }
+@keyframes as-in-r { from { opacity: 0; transform: translateX(34px); } to { opacity: 1; transform: none; } }
+
+.as-panel-head { display: flex; align-items: center; gap: 14px; padding: 18px 20px; background: linear-gradient(180deg, #F6F8FD, #FFFFFF); border-bottom: 1px solid #EEF1F7; }
+.as-head-ico { --c: 59, 130, 246; flex: none; width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; color: rgb(var(--c)); background: rgba(var(--c), 0.12); }
+.as-panel-title { font-size: 1.15rem; font-weight: 800; letter-spacing: -0.015em; color: var(--as-ink); line-height: 1.2; }
+.as-panel-sub { margin-top: 2px; font-size: 0.8rem; color: #64748B; line-height: 1.35; }
+
+/* industry tiles: two columns */
+.as-grid { list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 16px; }
+.as-tile { --c: 59, 130, 246; display: flex; align-items: center; gap: 11px; min-height: 58px; padding: 9px 12px; border-radius: 14px; cursor: default;
+  background: #FFFFFF; border: 1px solid #E8ECF4; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04); }
+.as-tile-ico { flex: none; width: 28px; display: grid; place-items: center; color: rgb(var(--c)); }
+.as-tile-name { font-size: 0.8rem; font-weight: 700; line-height: 1.25; color: #1E293B; }
+
+/* service rows */
+.as-rows { list-style: none; display: grid; gap: 10px; padding: 16px; }
+.as-row { --c: 59, 130, 246; display: flex; align-items: center; gap: 13px; padding: 10px 14px 10px 10px; border-radius: 14px; cursor: default;
+  background: #FFFFFF; border: 1px solid #E8ECF4; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04); }
+.as-row-ico { flex: none; width: 44px; height: 44px; border-radius: 13px; display: grid; place-items: center; color: rgb(var(--c)); background: rgba(var(--c), 0.12); }
+.as-row-text { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.as-row-name { font-size: 0.9rem; font-weight: 800; color: var(--as-ink); line-height: 1.25; }
+.as-row-sub { font-size: 0.75rem; line-height: 1.3; color: #64748B; }
+.as-row-go { flex: none; color: #94A3B8; display: grid; place-items: center; transition: color 0.4s ease; }
+
+/* the bottom row of highlights */
+.as-features { position: relative; z-index: 1; display: flex; align-items: stretch; justify-content: space-between; gap: 0; max-width: 1180px; width: 100%; justify-self: center;
+  padding: 6px 0; animation: as-in 0.9s var(--as-ease) 0.4s both; }
+.as-feature { --c: 59, 130, 246; flex: 1; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 12px 14px; cursor: default; border-radius: 16px; position: relative; }
+.as-feature + .as-feature::before { content: ""; position: absolute; left: 0; top: 18%; bottom: 18%; width: 1px; background: #E2E8F0; }
+.as-feature-ico { flex: none; display: grid; place-items: center; color: rgb(var(--c)); }
+.as-feature-name { font-size: 0.86rem; font-weight: 700; color: #1E293B; line-height: 1.25; }
+
+/* the light that moves from item to item: colour, border and glow only (nothing moves) */
+.as-item { position: relative; overflow: hidden; transition: background 0.5s ease, border-color 0.5s ease, box-shadow 0.5s ease; }
+.as-item::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: rgb(var(--c)); transform: scaleX(0); transform-origin: left; }
+.as-tile, .as-row { animation: as-in 0.7s var(--as-ease) calc(0.4s + var(--i, 0) * 70ms) both; }
+.as-item.is-on::after { animation: as-sweep 2.6s linear forwards; }
+@keyframes as-sweep { to { transform: scaleX(1); } }
+.as-tile.is-on, .as-row.is-on { background: linear-gradient(100deg, rgba(var(--c), 0.14), rgba(var(--c), 0.03)), #FFFFFF; border-color: rgba(var(--c), 0.7);
+  box-shadow: 0 0 0 1px rgba(var(--c), 0.16), 0 12px 30px rgba(var(--c), 0.26); }
+.as-row.is-on .as-row-go { color: rgb(var(--c)); }
+.as-feature.is-on { background: rgba(var(--c), 0.08); box-shadow: 0 0 0 1px rgba(var(--c), 0.3), 0 10px 26px rgba(var(--c), 0.2); }
+.as-feature.is-on::before, .as-feature.is-on + .as-feature::before { opacity: 0; }
+.as-feature.is-on::after { left: 18px; right: 18px; }
+
+/* ---------- the form card ---------- */
+.as-glow { position: absolute; left: -2%; right: -2%; top: 8%; bottom: 4%; z-index: 0; border-radius: 40px; filter: blur(48px); opacity: 0.26;
+  background: conic-gradient(from var(--as-angle), #FC2415, #FF8A3D, #3B6BFF, #A855F7, #FC2415); animation: as-angle 7s linear infinite; }
+@keyframes as-angle { to { --as-angle: 360deg; } }
+
+body.auth-stage .auth-card { position: relative; z-index: 1; width: 100%; max-width: 440px; padding: 34px 30px 26px; border-radius: 24px; border: 2px solid transparent;
+  background: linear-gradient(#FFFFFF, #FFFFFF) padding-box, conic-gradient(from var(--as-angle), #FC2415, #FF8A3D, #3B6BFF, #A855F7, #FC2415) border-box;
+  animation: as-angle 7s linear infinite, as-card-in 1s var(--as-ease) both;
+  box-shadow: 0 30px 80px -24px rgba(3, 23, 64, 0.28); }
+@keyframes as-card-in { from { opacity: 0; transform: translateY(40px) scale(0.96); } to { opacity: 1; transform: none; } }
+@keyframes as-in { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
+
+/* each piece of the card slides in one after the other (added by auth-stage.js) */
+.as-seq { animation: as-in 0.7s var(--as-ease) calc(0.25s + var(--i, 0) * 70ms) both; }
+
+body.auth-stage .auth-header { margin-bottom: 22px; }
+body.auth-stage .auth-headline { font-size: 1.6rem; letter-spacing: -0.03em; }
+body.auth-stage .auth-subtitle { font-size: 0.9rem; }
+body.auth-stage .auth-form { gap: 15px; }
+body.auth-stage .form-label { font-size: 0.8rem; letter-spacing: 0.01em; }
+
+/* inputs with an icon that lights up when you type */
+body.auth-stage .input-wrapper { position: relative; }
+.as-ico { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: #94A3B8; pointer-events: none; transition: color 0.25s ease; }
+.input-wrapper:focus-within .as-ico { color: var(--as-red); }
+body.auth-stage .auth-input { height: 50px; padding: 0 14px 0 44px; border: 1.5px solid #E2E8F0; border-radius: 13px; background: #F8FAFC; font-weight: 600;
+  transition: border-color 0.25s ease, box-shadow 0.3s ease, background 0.25s ease; }
+body.auth-stage .auth-input.input-has-toggle { padding-right: 46px; }
+body.auth-stage .auth-input:hover { border-color: #CBD5E1; }
+body.auth-stage .auth-input:focus { background: #fff; border-color: var(--as-red); box-shadow: 0 0 0 4px rgba(252, 36, 21, 0.13), 0 12px 28px rgba(252, 36, 21, 0.1); }
+body.auth-stage .otp-input { padding: 0 14px; height: 60px; }
+
+/* password strength */
+.as-strength { display: flex; align-items: center; gap: 6px; height: 0; margin-top: -6px; overflow: hidden; opacity: 0; transition: opacity 0.3s, height 0.3s var(--as-ease), margin 0.3s var(--as-ease); }
+.as-strength.on { height: 16px; margin-top: 0; opacity: 1; }
+.as-strength i { flex: 1; height: 5px; border-radius: 5px; background: #E2E8F0; transition: background 0.35s ease; }
+.as-strength[data-level="1"] i:nth-child(-n+1) { background: #EF4444; }
+.as-strength[data-level="2"] i:nth-child(-n+2) { background: #F59E0B; }
+.as-strength[data-level="3"] i:nth-child(-n+3) { background: #84CC16; }
+.as-strength[data-level="4"] i:nth-child(-n+4) { background: #10B981; }
+.as-strength span { min-width: 52px; text-align: right; font-size: 0.72rem; font-weight: 800; color: #64748B; }
+
+/* the main button: bright logo red with a glass shine that sweeps across */
+body.auth-stage .btn-auth-primary { position: relative; overflow: hidden; isolation: isolate; height: 52px; border-radius: 13px; font-size: 1rem; letter-spacing: 0.01em;
+  background: #FC2415; box-shadow: 0 14px 30px rgba(252, 36, 21, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.45); }
+body.auth-stage .btn-auth-primary::before { content: ""; position: absolute; inset: 0 0 50% 0; background: linear-gradient(rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0)); pointer-events: none; }
+body.auth-stage .btn-auth-primary::after { content: ""; position: absolute; top: -30%; bottom: -30%; left: -70%; width: 38%; transform: skewX(-22deg); pointer-events: none;
+  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.75), transparent); animation: as-shine 3.6s ease-in-out infinite; }
+@keyframes as-shine { 0% { left: -70%; } 55%, 100% { left: 135%; } }
+body.auth-stage .btn-auth-primary:hover:not(:disabled) { background: #FC2415; transform: translateY(-2px); box-shadow: 0 20px 40px rgba(252, 36, 21, 0.46), inset 0 1px 0 rgba(255, 255, 255, 0.45); }
+body.auth-stage .btn-auth-primary:active:not(:disabled) { transform: translateY(0) scale(0.985); }
+body.auth-stage .btn-auth-primary:disabled::after { display: none; }
+
+body.auth-stage .btn-google { height: 48px; border-radius: 13px; border: 1.5px solid #E2E8F0; }
+body.auth-stage .btn-google:hover { border-color: #94A3B8; background: #F8FAFC; }
+body.auth-stage .auth-divider { margin: 18px 0; }
+body.auth-stage .auth-footer { margin-top: 18px; }
+
+body.auth-stage .auth-back-link { margin-top: 18px; color: #64748B; position: relative; z-index: 1; }
+body.auth-stage .auth-back-link:hover { color: var(--as-ink); }
+
+/* ---------- tablets and phones: logo, the card, then Industries, Services and the highlights below it ---------- */
+@media (max-width: 1180px) {
+  .as-shell { grid-template-columns: minmax(0, 1fr); align-content: start; justify-items: center; row-gap: 26px; padding-top: 22px; padding-bottom: 36px; }
+  .as-logo, .as-formcol, .as-panel-left, .as-panel-right, .as-features { grid-column: 1; }
+  .as-formcol { grid-row: 2; }
+  .as-panel { max-width: 520px; }
+  .as-panel-left { grid-row: 3; justify-self: center; }
+  .as-panel-right { grid-row: 4; justify-self: center; }
+  .as-features { grid-row: 5; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: 520px; }
+  .as-feature { flex: 1 1 45%; justify-content: flex-start; background: #FFFFFF; border: 1px solid #E8ECF4; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04); }
+  .as-feature + .as-feature::before { display: none; }
+  .as-feature.is-on { border-color: rgba(var(--c), 0.7); }
+}
+
+/* ---------- phones ---------- */
+@media (max-width: 520px) {
+  .as-shell { padding: 18px 14px 28px; row-gap: 22px; }
+  .as-logo img { height: 50px; }
+  .as-glow { top: 4%; }
+  body.auth-stage .auth-card { padding: 28px 20px 22px; border-radius: 22px; }
+  body.auth-stage .auth-headline { font-size: 1.5rem; }
+  .as-panel-head { padding: 14px 14px; }
+  .as-grid, .as-rows { padding: 12px; gap: 8px; }
+  .as-tile { padding: 8px 10px; gap: 8px; min-height: 54px; }
+  .as-tile-name { font-size: 0.74rem; }
+  .as-row-sub { font-size: 0.72rem; }
+  .as-feature { flex-basis: 100%; }
+  .as-chip { font-size: 0.72rem; padding: 7px 12px 7px 9px; }
+  /* 16px inputs stop iOS from zooming the page on focus */
+  body.auth-stage .auth-card input { font-size: 16px; }
+}
+
+/* ---------- reduced motion: keep the look, drop the movement ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .as-chip, .as-dot, .as-glow, body.auth-stage .auth-card,
+  body.auth-stage .btn-auth-primary::after { animation: none !important; }
+  .as-chip { opacity: 0.5; bottom: auto; top: var(--y, 30%); }
+  .as-chips { transform: none; transition: none; }
+  .as-seq, .as-logo, .as-panel, .as-tile, .as-row, .as-features, .as-item::after { animation: none !important; }
+  .as-item.is-on::after { transform: scaleX(1); }
+  body.auth-stage .auth-card { background: #fff; border: 1px solid #E2E8F0; }
+}

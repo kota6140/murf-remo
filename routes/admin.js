@@ -34,6 +34,7 @@ import AgentService from '../services/agent_service.js';
 import GeminiService from '../services/gemini_service.js';
 import VoiceRegistry from '../services/voice_registry.js';
 import { updateDemoCallStatus } from './demo.js';
+import MinutesService, { requireMinutes } from '../services/minutes_service.js';
 
 const SERVICES = {
     recruitment: RecruitmentService,
@@ -102,14 +103,7 @@ router.get('/dashboard', wrap(async (req, res) => {
         FROM call_queue q JOIN contacts ct ON ct.id = q.contact_id
         WHERE q.status = 'IN_PROGRESS' AND q.batch_id IN (SELECT id FROM batches WHERE owner_user_id = ?)
         ORDER BY q.updated_at DESC LIMIT 1`, [req.user.id]);
-    const q = stats.queue || {};
-    stats.queue = {
-        ...q,
-        queuedCount: q.queueLength || 0,
-        inProgressCount: active ? 1 : 0,
-        isRunning: !!q.active,
-        activeCall: active ? { contact_name: active.name, name: active.name, phone: active.phone, service: active.service } : null
-    };
+    stats.queue = AdminService.buildQueuePanel(stats, active);
 
     res.json({ success: true, ...stats });
 }));
@@ -151,9 +145,41 @@ router.get('/users', (req, res) => {
 // ============================================================================
 // GET /api/admin/agents  -  only the agents the owner assigned to this admin
 // ============================================================================
+// What an admin sees of an agent: no other admin's ids, and whether they made it (and so may change it).
+function adminAgentView(a, userId) {
+    const v = AgentService.publicView(a);
+    delete v.assignedUserId;
+    delete v.assignedUserIds;
+    delete v.createdByUserId;
+    delete v.inboundDefault;
+    return { ...v, mine: a.created_by_user_id === userId };
+}
+
 router.get('/agents', wrap(async (req, res) => {
     const agents = await AgentService.list({ userId: req.user.id });
-    res.json({ success: true, agents: agents.map(AgentService.publicView) });
+    res.json({ success: true, agents: agents.map((a) => adminAgentView(a, req.user.id)) });
+}));
+
+// The phone numbers the owner approved: an admin builds agents only on these.
+router.get('/agents/numbers', wrap(async (req, res) => {
+    const rows = await AgentService.listApprovedNumbers();
+    res.json({ success: true, numbers: rows.map((r) => ({ phoneNumber: r.phone_number, label: r.label || '' })) });
+}));
+
+// An admin creates / changes / deletes their own agents (agents the owner gave them are view and use only).
+router.post('/agents', wrap(async (req, res) => {
+    const agent = await AgentService.createForAdmin(req.user.id, req.body || {});
+    res.status(201).json({ success: true, agent: adminAgentView(agent, req.user.id) });
+}));
+
+router.put('/agents/:id', wrap(async (req, res) => {
+    const agent = await AgentService.updateForAdmin(req.user.id, req.params.id, req.body || {});
+    res.json({ success: true, agent: adminAgentView(agent, req.user.id) });
+}));
+
+router.delete('/agents/:id', wrap(async (req, res) => {
+    await AgentService.removeForAdmin(req.user.id, req.params.id);
+    res.json({ success: true });
 }));
 
 // Picks the agent a start request should use. null means "no agents assigned: use the shared number".
@@ -186,7 +212,12 @@ router.post('/:service/upload', serviceFor, (req, res, next) => {
     res.json({ success: true, ...result });
 }));
 
-router.post('/:service/start', serviceFor, wrap(async (req, res) => {
+// Calling minutes the owner gave this admin (the dashboard shows what is left, or the "finished" notice).
+router.get('/minutes', wrap(async (req, res) => {
+    res.json({ success: true, minutes: await MinutesService.statusFor(req.user.id) });
+}));
+
+router.post('/:service/start', requireMinutes, serviceFor, wrap(async (req, res) => {
     // Only this admin's own contact sheets can be started.
     let { fileId } = req.body || {};
     fileId = typeof fileId === 'string' ? fileId.trim() : '';
@@ -214,16 +245,25 @@ router.post('/:service/start', serviceFor, wrap(async (req, res) => {
             filename: doc.filename,
             extractedData: doc.extractedData,
             questionPlan: doc.questionPlan,
-            ownerUserId: req.user.id
+            ownerUserId: req.user.id,
+            agent
         });
         docCampaignId = attached.campaignId;
+    } else {
+        // No document: the run still becomes a campaign, so it shows on the dashboard list (see recordSheetCampaign).
+        try {
+            const recorded = await CampaignService.recordSheetCampaign({ batchId: batch.id, service: req.serviceName, ownerUserId: req.user.id, agent });
+            docCampaignId = recorded.campaignId;
+        } catch (e) {
+            console.error('[AdminRoutes] Could not record the campaign for this run:', e.message);
+        }
     }
 
     const result = await SERVICES[req.serviceName].startCallingCampaign(batch.id);
     if (docCampaignId) {
         await db.run("UPDATE campaigns SET status = 'IN_PROGRESS', updated_at = ? WHERE id = ?", [utcNow(), docCampaignId]);
     }
-    res.json({ success: true, ...result, agent: agent ? { id: agent.id, name: agent.name, phoneNumber: agent.phone_number } : null });
+    res.json({ success: true, ...result, campaignId: docCampaignId, agent: agent ? { id: agent.id, name: agent.name, phoneNumber: agent.phone_number } : null });
 }));
 
 router.get('/:service/download', serviceFor, wrap(async (req, res) => {
@@ -264,6 +304,54 @@ router.get('/conversations/:id/recording-info', wrap(async (req, res) => {
     if (!row) return fail(res, 404, 'Conversation not found.');
     const recording = RecordingService.describe(await RecordingService.resolve(row), '/api/admin');
     res.json({ success: true, ...recording });
+}));
+
+// Several recordings in one .zip (the dashboard's "Download Audio" for the ticked calls). Files are named
+// name_date_phone.mp3. An admin only gets their own calls; a call that is not theirs, has no recording or whose
+// recording expired is left out and listed in NOT_INCLUDED.txt inside the zip.
+const ZIP_MAX_CALLS = 200;
+router.post('/conversations/audio-zip', wrap(async (req, res) => {
+    const ids = [...new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).map(id => String(id).trim()).filter(Boolean))];
+    if (ids.length === 0) return fail(res, 400, 'Tick at least one call first.');
+    if (ids.length > ZIP_MAX_CALLS) return fail(res, 400, `Tick at most ${ZIP_MAX_CALLS} calls at a time.`);
+
+    const rows = [];
+    const notFound = [];
+    for (const id of ids) {
+        const row = await RecordingService.findConversation(id, { adminId: req.user.id });
+        if (row) rows.push(row); else notFound.push(`Call ${id}: not found`);
+    }
+    const { available, notIncluded } = RecordingService.splitDownloadable(rows);
+    if (available.length === 0) {
+        return fail(res, 404, 'None of the ticked calls has a recording that can be downloaded (no recording, or older than 30 days).');
+    }
+
+    const day = new Date().toISOString().slice(0, 10);
+    res.status(200);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="call-recordings_${day}.zip"`);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('X-Recordings-Requested', String(ids.length));
+
+    let closed = false;
+    res.on('close', () => { closed = true; });
+    const write = (chunk) => new Promise((resolve) => {
+        if (closed) return resolve();
+        if (res.write(chunk)) return resolve();
+        res.once('drain', resolve);
+        res.once('close', resolve);
+    });
+    try {
+        const result = await RecordingService.streamZip(available, write, {
+            notIncluded: [...notFound, ...notIncluded],
+            shouldStop: () => closed
+        });
+        console.log(`[Recordings] Zip sent: ${result.included} recording(s), ${result.notIncluded} left out`);
+        if (!closed) res.end();
+    } catch (err) {
+        console.error('[Recordings] Zip failed:', err.message);
+        res.destroy(); // headers are already sent; a broken download is better than a zip that looks complete
+    }
 }));
 
 router.delete('/conversations/:id', wrap(async (req, res) => {
@@ -308,7 +396,7 @@ router.post('/queue/pause', (req, res) => {
     res.json({ success: true, message: 'Queue paused.' });
 });
 
-router.post('/queue/resume', (req, res) => {
+router.post('/queue/resume', requireMinutes, (req, res) => {
     CallQueueWorker.resumeQueue(req.user.id);
     res.json({ success: true, message: 'Queue resumed.' });
 });
@@ -321,7 +409,7 @@ router.post('/queue/cancel', wrap(async (req, res) => {
 // ============================================================================
 // POST /api/admin/test-call
 // ============================================================================
-router.post('/test-call', async (req, res) => {
+router.post('/test-call', requireMinutes, async (req, res) => {
     const { phone, name, service } = req.body || {};
     if (!phone || !name) return fail(res, 400, 'Phone and name are required.');
 
@@ -510,7 +598,7 @@ router.get('/campaigns/:id', wrap(async (req, res) => {
 }));
 
 // Create campaign
-router.post('/campaigns', wrap(async (req, res) => {
+router.post('/campaigns', requireMinutes, wrap(async (req, res) => {
     const { name, service, description, config, primary_language, primary_locale, voice_id, voice_provider, voice_model } = req.body;
     if (!name || !name.trim()) return fail(res, 400, 'Campaign name is required.');
 
@@ -523,6 +611,10 @@ router.post('/campaigns', wrap(async (req, res) => {
         ...(voice_model ? { voice_model } : {})
     };
 
+    // The calling agent chosen in the popup must be one of this admin's own (or given) active agents.
+    const agentId = typeof req.body.agentId === 'string' ? req.body.agentId.trim() : '';
+    const agent = agentId ? await AgentService.resolveForOutbound(req.user.id, { service, agentId }) : null;
+
     const campaign = await CampaignService.createCampaign({
         name,
         service: service || 'recruitment',
@@ -530,6 +622,10 @@ router.post('/campaigns', wrap(async (req, res) => {
         config: mergedConfig,
         ownerUserId: req.user.id
     });
+    if (agent) {
+        await db.run('UPDATE campaigns SET agent_id = ? WHERE id = ?', [agent.id, campaign.id]);
+        campaign.agent_id = agent.id;
+    }
     res.status(201).json({ success: true, campaign });
 }));
 
@@ -579,11 +675,16 @@ router.post('/campaigns/:id/upload-excel', upload.single('file'), wrap(async (re
 }));
 
 // Start / Dispatch Campaign
-router.post('/campaigns/:id/start', wrap(async (req, res) => {
+router.post('/campaigns/:id/start', requireMinutes, wrap(async (req, res) => {
     const campaign = await CampaignService.getCampaign(req.params.id, req.user.id);
     if (!campaign) return fail(res, 404, 'Campaign not found.');
+    // The agent picked now wins; otherwise the one chosen when the campaign was created.
+    if (!(typeof (req.body || {}).agentId === 'string' && req.body.agentId.trim()) && campaign.agent_id) {
+        req.body = { ...(req.body || {}), agentId: campaign.agent_id };
+    }
     const agent = await pickAgent(req, campaign.service);
     if (campaign.batch_id) await AgentService.stampBatch(campaign.batch_id, agent);
+    await db.run('UPDATE campaigns SET agent_id = ? WHERE id = ?', [agent ? agent.id : null, campaign.id]).catch(() => {});
     const result = await CampaignService.startCampaign(req.params.id, req.user.id);
     res.json({ success: true, ...result, agent: agent ? { id: agent.id, name: agent.name, phoneNumber: agent.phone_number } : null });
 }));
@@ -595,13 +696,13 @@ router.post('/campaigns/:id/pause', wrap(async (req, res) => {
 }));
 
 // Resume Campaign
-router.post('/campaigns/:id/resume', wrap(async (req, res) => {
+router.post('/campaigns/:id/resume', requireMinutes, wrap(async (req, res) => {
     const result = await CampaignService.resumeCampaign(req.params.id, req.user.id);
     res.json({ success: true, ...result });
 }));
 
 // Duplicate Campaign
-router.post('/campaigns/:id/duplicate', wrap(async (req, res) => {
+router.post('/campaigns/:id/duplicate', requireMinutes, wrap(async (req, res) => {
     const result = await CampaignService.duplicateCampaign(req.params.id, req.user.id);
     res.status(201).json({ success: true, campaign: result });
 }));
@@ -654,7 +755,7 @@ router.get('/campaigns/:id/conversations', wrap(async (req, res) => {
         FROM conversations c
         LEFT JOIN contacts ct ON c.contact_id = ct.id
         WHERE c.campaign_id = ? OR (c.batch_id = ? AND c.batch_id IS NOT NULL AND c.batch_id != '')
-        ORDER BY c.started_at DESC LIMIT 100
+        ORDER BY c.started_at DESC LIMIT 5000
     `, [req.params.id, campaign.batch_id || '']);
 
     const enriched = rows.map(r => {

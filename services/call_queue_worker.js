@@ -5,6 +5,7 @@ import AgentService from './agent_service.js';
 import ElevenLabsService from './elevenlabs_service.js';
 import MurfService from './murf_service.js';
 import GeminiService from './gemini_service.js';
+import MinutesService from './minutes_service.js';
 
 export class CallQueueWorker {
     static isPaused = false;
@@ -158,6 +159,17 @@ export class CallQueueWorker {
                 `, [now]);
 
                 this.isRunning = false;
+                return;
+            }
+
+            // An admin whose assigned minutes are finished is not dialled any more: their waiting contacts are
+            // cancelled with a clear reason, and the queue moves straight on to the next job.
+            const batchOwner = await db.get('SELECT owner_user_id FROM batches WHERE id = ?', [nextJob.batch_id]);
+            if (batchOwner && await MinutesService.isExhausted(batchOwner.owner_user_id)) {
+                const stamp = utcNow();
+                await db.run("UPDATE call_queue SET status = 'CANCELLED', updated_at = ? WHERE id = ?", [stamp, nextJob.queue_id]);
+                await db.run("UPDATE contacts SET call_status = 'CANCELLED', error_details = ?, updated_at = ? WHERE id = ?", ['Assigned calling minutes finished', stamp, nextJob.contact_id]);
+                setImmediate(() => this._processNext());
                 return;
             }
 

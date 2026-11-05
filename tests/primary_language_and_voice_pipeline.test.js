@@ -3,7 +3,7 @@
  * Validates end-to-end integration:
  * - Environment variables and secrets protection
  * - Voice Registry & 7 supported primary languages
- * - Exact 4 voices (Pooja, Abhinav, Samar, Abirami)
+ * - Exact 4 voices (Pooja, Abhinav, Samar, Anisha)
  * - Strict compatibility matrix and rejection of invalid combinations
  * - Campaign persistence and backward compatibility
  * - Live call pipeline voice & language propagation
@@ -63,10 +63,10 @@ async function runTests() {
     assert(pooja.isDefault, 'Pooja must be configured as default voice');
   });
 
-  test('2. Abhinav, Samar, and Abirami are registered and have provider voice IDs', () => {
+  test('2. Abhinav, Samar, and Anisha are registered and have provider voice IDs', () => {
     const abhinav = VoiceRegistry.getVoiceConfig('abhinav');
     const samar = VoiceRegistry.getVoiceConfig('samar');
-    const abirami = VoiceRegistry.getVoiceConfig('abirami');
+    const anisha = VoiceRegistry.getVoiceConfig('anisha');
 
     assert(abhinav, 'Abhinav voice must exist');
     assert.strictEqual(abhinav.gender, 'Male Voice');
@@ -76,14 +76,27 @@ async function runTests() {
     assert.strictEqual(samar.gender, 'Male Voice');
     assert.strictEqual(samar.voiceId, 'en-IN-samar');
 
-    assert(abirami, 'Abirami voice must exist');
-    assert.strictEqual(abirami.gender, 'Female Voice');
-    assert.strictEqual(abirami.voiceId, 'ta-IN-abirami');
+    assert(anisha, 'Anisha voice must exist');
+    assert.strictEqual(anisha.gender, 'Female Voice');
+    assert.strictEqual(anisha.voiceId, 'en-IN-anisha');
+    // Abirami was replaced by Anisha: an old campaign saved with "abirami" resolves to Anisha.
+    assert.strictEqual(VoiceRegistry.normalizeVoiceKey('abirami'), 'anisha');
+    assert.strictEqual(VoiceRegistry.getVoiceConfig('ta-IN-abirami').key, 'anisha');
   });
 
   test('3. API keys and internal secrets are NEVER exposed in client-facing public config', () => {
     const publicConfig = VoiceRegistry.getPublicConfig();
-    assert(publicConfig.voices && publicConfig.voices.length === 4, 'Must return exactly 4 public voices');
+    assert(publicConfig.voices && publicConfig.voices.length === 8, 'Must return exactly 8 public voices');
+    assert.strictEqual(VoiceRegistry.getVoiceConfig('prathamesh').voiceId, 'mr-IN-prathamesh');
+    ['en-IN', 'hi-IN', 'te-IN'].forEach(l => assert(VoiceRegistry.isLocaleSupported('prathamesh', l), `Prathamesh must support ${l}`));
+    assert.strictEqual(VoiceRegistry.getVoiceConfig('michelle').voiceId, 'en-US-michelle');
+    assert.strictEqual(VoiceRegistry.getVoiceConfig('alia').voiceId, 'en-IN-alia');
+    ['en-IN', 'hi-IN', 'te-IN'].forEach(l => assert(VoiceRegistry.isLocaleSupported('alia', l), `Alia must support ${l}`));
+    assert.strictEqual(VoiceRegistry.isAllowlistedVoice('elvira'), false, 'Elvira was removed');
+    const natalie = VoiceRegistry.getVoiceConfig('natalie');
+    assert.strictEqual(natalie.voiceId, 'en-US-natalie');
+    assert.strictEqual(natalie.gender, 'Female Voice');
+    assert(VoiceRegistry.isLocaleSupported('natalie', 'en-IN'), 'Natalie must support English');
     assert(publicConfig.languages && publicConfig.languages.length === 7, 'Must return exactly 7 languages');
 
     // Convert to JSON and assert no secrets or env vars leaked
@@ -109,20 +122,20 @@ async function runTests() {
     // Telugu (te-IN)
     assert(VoiceRegistry.isLocaleSupported('pooja', 'te-IN'), 'Pooja must support Telugu');
     assert(VoiceRegistry.isLocaleSupported('samar', 'te-IN'), 'Samar must support Telugu');
-    assert(VoiceRegistry.isLocaleSupported('abirami', 'te-IN'), 'Abirami must support Telugu');
+    assert(VoiceRegistry.isLocaleSupported('anisha', 'te-IN'), 'Anisha must support Telugu');
     assert(!VoiceRegistry.isLocaleSupported('abhinav', 'te-IN'), 'Abhinav must NOT support Telugu');
 
     // English (en-IN)
     assert(VoiceRegistry.isLocaleSupported('pooja', 'en-IN'), 'Pooja must support English');
     assert(VoiceRegistry.isLocaleSupported('abhinav', 'en-IN'), 'Abhinav must support English');
     assert(VoiceRegistry.isLocaleSupported('samar', 'en-IN'), 'Samar must support English');
-    assert(!VoiceRegistry.isLocaleSupported('abirami', 'en-IN'), 'Abirami must NOT support English');
+    assert(VoiceRegistry.isLocaleSupported('anisha', 'en-IN'), 'Anisha must support English');
 
     // Hindi (hi-IN) - supported by all 4
     assert(VoiceRegistry.isLocaleSupported('pooja', 'hi-IN'), 'Pooja must support Hindi');
     assert(VoiceRegistry.isLocaleSupported('abhinav', 'hi-IN'), 'Abhinav must support Hindi');
     assert(VoiceRegistry.isLocaleSupported('samar', 'hi-IN'), 'Samar must support Hindi');
-    assert(VoiceRegistry.isLocaleSupported('abirami', 'hi-IN'), 'Abirami must support Hindi');
+    assert(VoiceRegistry.isLocaleSupported('anisha', 'hi-IN'), 'Anisha must support Hindi');
 
     // Malayalam (ml-IN) - Abhinav only
     assert(VoiceRegistry.isLocaleSupported('abhinav', 'ml-IN'), 'Abhinav must support Malayalam');

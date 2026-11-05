@@ -34,6 +34,10 @@ process.env.RECRUITMENT_VAD_SILENCE_MS = '1400';
 
 const { CallSession, ConversationStates } = await import('../services/voicebot_stream_service.js');
 const { default: ElevenLabsService } = await import('../services/elevenlabs_service.js');
+// The speech in this test is mocked below (ElevenLabsService). With MURF_API_KEY in .env the call would pick the
+// real, paid Murf service instead, so Murf is switched off here.
+const { default: MurfService } = await import('../services/murf_service.js');
+MurfService.isConfigured = () => false;
 const { default: GeminiService } = await import('../services/gemini_service.js');
 const { default: IntentService } = await import('../services/intent_service.js');
 const { ConversationMemory } = await import('../services/conversation_memory.js');
@@ -314,7 +318,7 @@ await test('3. "No, I\'m busy" offers a callback and asks no screening question'
     await playbackDone(s);
     await callerSays(s, "No, I'm busy");
     await playbackDone(s);
-    assert.ok(/better time/i.test(ttsLog[1]), ttsLog[1]);
+    assert.ok(/better time|another time be better/i.test(ttsLog[1]), ttsLog[1]);
     assert.strictEqual(s.currentStage, 'CALLBACK_TIME');
     assert.ok(!ttsLog.some(t => /experience|notice period/i.test(t)));
 });
@@ -402,6 +406,46 @@ await test('6. the caller interrupts: the rest of the reply is cancelled and the
     const after = s.ws.sent.slice(clearedAt + 1).filter(m => m.event === 'playAudio');
     assert.strictEqual(after.length, 0, 'no stale audio is sent after the interruption');
     assert.ok(!ttsLog.some(t => t.includes('second sentence')), 'queued speech never started');
+});
+
+await test('6b. a long sentence that streams for longer than the speech time limit is played to the end', async () => {
+    resetMocks();
+    const saved = process.env.TTS_TIMEOUT_MS;
+    process.env.TTS_TIMEOUT_MS = '250';             // the limit for speech to START
+    ttsChunkCount = 40; ttsChunkDelayMs = 15;       // the sentence streams for about 0.6 s, longer than the limit
+    const warnings = [];
+    console.warn = (...a) => warnings.push(a.join(' '));
+    try {
+        const s = makeSession();
+        s.greetingDelivered = true;
+        const response = s.beginResponse(1);
+        await s.playAiAudio('This is a long sentence that needs more time to stream than the limit for speech to start.', response);
+        assert.strictEqual(ttsLog.length, 1, 'the mocked voice service was used, not a real one');
+        assert.strictEqual(audioMessages(s).length, 40, `every piece of the sentence reached the phone (${warnings.join(' | ')})`);
+        assert.strictEqual(response.cancelled, false);
+        assert.ok(!warnings.some(w => /Giving up/.test(w)), 'no timeout was triggered');
+    } finally {
+        if (saved === undefined) delete process.env.TTS_TIMEOUT_MS; else process.env.TTS_TIMEOUT_MS = saved;
+    }
+});
+
+await test('6c. speech that never starts is given up on at the limit and the call goes on', async () => {
+    resetMocks();
+    const saved = process.env.TTS_TIMEOUT_MS;
+    process.env.TTS_TIMEOUT_MS = '150';
+    const realTts = ElevenLabsService.textToSpeech;
+    ElevenLabsService.textToSpeech = async () => { await sleep(2000); return null; };   // never answers in time
+    try {
+        const s = makeSession();
+        s.greetingDelivered = true;
+        const started = Date.now();
+        await s.playAiAudio('Hello there.', s.beginResponse(1));
+        assert.ok(Date.now() - started < 1200, 'did not wait for the voice service');
+        assert.strictEqual(audioMessages(s).length, 0);
+    } finally {
+        ElevenLabsService.textToSpeech = realTts;
+        if (saved === undefined) delete process.env.TTS_TIMEOUT_MS; else process.env.TTS_TIMEOUT_MS = saved;
+    }
 });
 
 await test('7. the same reply through early streaming and completion plays once', async () => {

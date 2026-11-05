@@ -2,8 +2,9 @@
  * tests/multi_agent.test.js
  *
  * Multi-agent support:
- * 1. Any number of agents can be created, each with its own phone number (duplicates rejected)
- * 2. One admin can hold several agents; an agent belongs to at most one admin
+ * 1. Any number of agents can be created; several agents can share one phone number
+ *    (incoming calls on it go to the default agent, else the oldest active one)
+ * 2. One admin can hold several agents; one agent can be given to several admins
  * 3. Outgoing calls pick the admin's agent (explicit choice, then work type, then first); admins without agents keep the shared number
  * 4. An admin can never use another admin's agent
  * 5. Plivo outgoing calls use the agent's number as caller ID and carry the agent to the answer webhook
@@ -23,6 +24,7 @@ import './_local_db_only.js'; // keep first: tests must never touch the live dat
 import assert from 'assert';
 import db, { initDb } from '../services/db.js';
 import AgentService, { ensureAgentSchema } from '../services/agent_service.js';
+import CampaignService from '../services/campaign_service.js';
 import PlivoService from '../services/plivo_service.js';
 import { handlePlivoAnswer } from '../routes/admin.js';
 import GeminiService from '../services/gemini_service.js';
@@ -48,7 +50,9 @@ const created = [];
 
 async function cleanup() {
     // GLOB is case-sensitive (SQLite only; MySQL has no GLOB, so this fails instead of matching a real "Test ..." agent).
+    await db.run("DELETE FROM agent_admins WHERE agent_id IN (SELECT id FROM agents WHERE id GLOB 'agt_*' AND name GLOB 'TEST *')");
     await db.run("DELETE FROM agents WHERE id GLOB 'agt_*' AND name GLOB 'TEST *'");
+    await db.run("DELETE FROM campaigns WHERE batch_id LIKE 'batch_agenttest_%'");
     await db.run("DELETE FROM contacts WHERE id LIKE 'cnt_agenttest_%'");
     await db.run("DELETE FROM batches WHERE id LIKE 'batch_agenttest_%'");
 }
@@ -68,9 +72,40 @@ await test('creates several agents with their own numbers', async () => {
     assert.ok(a.id.startsWith('agt_'));
 });
 
-await test('rejects a duplicate phone number (any formatting)', async () => {
-    await assert.rejects(() => AgentService.create({ name: 'TEST Clash', phoneNumber: '080 1111 2222', service: 'sales' }), /already uses this phone number/);
-    await assert.rejects(() => AgentService.create({ name: 'TEST Clash', phoneNumber: '8011112222' }), /already uses/);
+await test('several agents can share one phone number (same or different work type, any formatting)', async () => {
+    const same = await AgentService.create({ name: 'TEST Hiring 2', phoneNumber: '080 1111 2222', service: 'recruitment', assignedUserId: 'usr_test_admin_c', instructions: 'Different instructions.' });
+    const other = await AgentService.create({ name: 'TEST Sales on shared', phoneNumber: '8011112222', service: 'sales', assignedUserId: 'usr_test_admin_c' });
+    created.push(same, other);
+    assert.strictEqual(same.phone_number, '918011112222');
+    assert.strictEqual(other.phone_number, '918011112222');
+    assert.strictEqual(same.instructions, 'Different instructions.');
+});
+
+await test('incoming: a shared number is answered by its default agent, else the oldest active one', async () => {
+    const [hiring, , , same, other] = created;
+    assert.strictEqual((await AgentService.findByNumber('+91 80 1111 2222')).id, hiring.id); // oldest
+    await AgentService.update(other.id, { inboundDefault: true });
+    assert.strictEqual((await AgentService.findByNumber('918011112222')).id, other.id);
+    await AgentService.update(same.id, { inboundDefault: true }); // only one default per number
+    assert.strictEqual((await AgentService.findByNumber('918011112222')).id, same.id);
+    assert.strictEqual((await AgentService.get(other.id, { fresh: true })).inbound_default, 0);
+    await AgentService.update(same.id, { status: 'disabled' }); // a switched-off default is skipped
+    assert.strictEqual((await AgentService.findByNumber('918011112222')).id, hiring.id);
+    await AgentService.update(same.id, { status: 'active', inboundDefault: false });
+    await AgentService.update(other.id, { inboundDefault: false });
+});
+
+await test('one agent can be given to several admins', async () => {
+    const [hiring] = created;
+    await AgentService.setAdmins(hiring.id, [ADMIN_A, ADMIN_B]);
+    const got = await AgentService.get(hiring.id, { fresh: true });
+    assert.deepStrictEqual(got.admin_ids, [ADMIN_A, ADMIN_B]);
+    assert.strictEqual(got.assigned_user_id, ADMIN_A); // main admin owns incoming calls
+    assert.ok((await AgentService.list({ userId: ADMIN_A })).some((x) => x.id === hiring.id));
+    assert.ok((await AgentService.list({ userId: ADMIN_B })).some((x) => x.id === hiring.id));
+    assert.strictEqual((await AgentService.resolveForOutbound(ADMIN_B, { agentId: hiring.id })).id, hiring.id);
+    await AgentService.setAdmins(hiring.id, [ADMIN_A]);
+    assert.ok(!(await AgentService.list({ userId: ADMIN_B })).some((x) => x.id === hiring.id));
 });
 
 await test('rejects bad input', async () => {
@@ -118,11 +153,77 @@ await test('giving an agent to another admin / taking it back', async () => {
     const [hiring] = created;
     await AgentService.assign(hiring.id, ADMIN_B);
     assert.strictEqual((await AgentService.list({ userId: ADMIN_B })).filter((x) => x.name.startsWith('TEST')).length, 2);
+    // Ticking agents for ADMIN_A adds ADMIN_A without taking the agent away from ADMIN_B.
     await AgentService.setAgentsForUser(ADMIN_A, [hiring.id, created[1].id]);
-    assert.strictEqual((await AgentService.get(hiring.id, { fresh: true })).assigned_user_id, ADMIN_A);
+    assert.deepStrictEqual((await AgentService.get(hiring.id, { fresh: true })).admin_ids.sort(), [ADMIN_A, ADMIN_B].sort());
     await AgentService.setAgentsForUser(ADMIN_A, [created[1].id]);
+    assert.deepStrictEqual((await AgentService.get(hiring.id, { fresh: true })).admin_ids, [ADMIN_B]);
+    await AgentService.assign(hiring.id, null);
     assert.strictEqual((await AgentService.get(hiring.id, { fresh: true })).assigned_user_id, null);
     await AgentService.assign(hiring.id, ADMIN_A);
+});
+
+await test('an admin builds agents only on numbers the owner approved, and only changes their own', async () => {
+    const NUM = '918077770001';
+    const OTHER = '918077770002';
+    await AgentService.addApprovedNumber('+91 80 7777 0001', 'TEST line');
+    try {
+        assert.ok(await AgentService.isApprovedNumber('08077770001'));
+        assert.ok(!(await AgentService.isApprovedNumber(OTHER)));
+        await assert.rejects(() => AgentService.addApprovedNumber(NUM), /already approved/);
+
+        // not approved: refused
+        await assert.rejects(() => AgentService.createForAdmin(ADMIN_B, { name: 'TEST Mine bad', phoneNumber: OTHER, service: 'sales' }), /approved/);
+
+        // approved: created, owned by the admin, not given to anyone else, no voice / default can be forced
+        const mine = await AgentService.createForAdmin(ADMIN_B, {
+            name: 'TEST Mine', phoneNumber: '+91 80 7777 0001', service: 'sales', instructions: 'Be polite.',
+            voiceId: 'sneaky', inboundDefault: true, assignedUserIds: [ADMIN_A]
+        });
+        created.push(mine);
+        assert.strictEqual(mine.created_by_user_id, ADMIN_B);
+        assert.deepStrictEqual(mine.admin_ids, [ADMIN_B]);
+        assert.strictEqual(mine.voice_id, '');
+        assert.strictEqual(mine.inbound_default, 0);
+
+        // the creator sees it; other admins do not
+        assert.ok((await AgentService.list({ userId: ADMIN_B })).some((x) => x.id === mine.id));
+        assert.ok(!(await AgentService.list({ userId: ADMIN_A })).some((x) => x.id === mine.id));
+        assert.strictEqual((await AgentService.resolveForOutbound(ADMIN_B, { agentId: mine.id })).id, mine.id);
+        await assert.rejects(() => AgentService.resolveForOutbound(ADMIN_A, { agentId: mine.id }), /not assigned to you/);
+
+        // the creator changes it (even after the owner changed it); other admins cannot
+        await AgentService.update(mine.id, { name: 'TEST Mine (owner edit)', status: 'disabled' }); // owner edit
+        const seen = await AgentService.get(mine.id, { fresh: true });
+        assert.strictEqual(seen.name, 'TEST Mine (owner edit)');
+        assert.strictEqual(seen.status, 'disabled');
+        const changed = await AgentService.updateForAdmin(ADMIN_B, mine.id, { name: 'TEST Mine v2', status: 'active', voiceId: 'x', inboundDefault: true });
+        assert.strictEqual(changed.name, 'TEST Mine v2');
+        assert.strictEqual(changed.status, 'active');
+        assert.strictEqual(changed.voice_id, '');
+        await assert.rejects(() => AgentService.updateForAdmin(ADMIN_A, mine.id, { name: 'hijack' }), /only change your own agents/);
+        await assert.rejects(() => AgentService.removeForAdmin(ADMIN_A, mine.id), /only delete agents you created/);
+
+        // moving to an unapproved number is refused; keeping the current number is fine even if it was un-approved later
+        await assert.rejects(() => AgentService.updateForAdmin(ADMIN_B, mine.id, { phoneNumber: OTHER }), /approved/);
+        await AgentService.removeApprovedNumber(NUM);
+        assert.strictEqual((await AgentService.updateForAdmin(ADMIN_B, mine.id, { phoneNumber: NUM, greeting: 'Hi {name}' })).greeting, 'Hi {name}');
+
+        // an agent the owner gave an admin can be edited by that admin, but not deleted, and not by other admins
+        const [hiring] = created; // given to ADMIN_A
+        const edited = await AgentService.updateForAdmin(ADMIN_A, hiring.id, { greeting: 'Hello from A', inboundDefault: true, voiceId: 'x' });
+        assert.strictEqual(edited.greeting, 'Hello from A');
+        assert.strictEqual(edited.inbound_default, 0);
+        assert.strictEqual(edited.voice_id, '');
+        await AgentService.update(hiring.id, { greeting: '' });
+        await assert.rejects(() => AgentService.updateForAdmin(ADMIN_B, hiring.id, { name: 'nope' }), /only change your own agents/);
+        await assert.rejects(() => AgentService.removeForAdmin(ADMIN_A, hiring.id), /only delete/);
+
+        await AgentService.removeForAdmin(ADMIN_B, mine.id);
+        assert.strictEqual(await AgentService.get(mine.id, { fresh: true }), null);
+    } finally {
+        await AgentService.removeApprovedNumber(NUM);
+    }
 });
 
 await test('a stamped contact dials with its stamped agent', async () => {
@@ -138,6 +239,25 @@ await test('a stamped contact dials with its stamped agent', async () => {
     await db.run("UPDATE contacts SET agent_id = NULL WHERE id = 'cnt_agenttest_1'");
     const plain = await db.get("SELECT * FROM contacts WHERE id = 'cnt_agenttest_1'");
     assert.strictEqual((await AgentService.resolveForContact(plain)).id, hiring.id);
+});
+
+await test('Start Calling without a document still saves a campaign (named sheet + date + agent), once per sheet', async () => {
+    const [hiring] = created;
+    const first = await CampaignService.recordSheetCampaign({ batchId: 'batch_agenttest_1', service: 'recruitment', ownerUserId: ADMIN_A, agent: hiring });
+    assert.ok(first.created);
+    const camp = await CampaignService.getCampaign(first.campaignId, ADMIN_A);
+    assert.ok(/^t - \d{2} \w{3} \d{4} - TEST Hiring$/.test(camp.name), camp.name);
+    assert.strictEqual(camp.agent_id, hiring.id);
+    assert.strictEqual(camp.batch_id, 'batch_agenttest_1');
+    assert.strictEqual(camp.service, 'recruitment');
+    assert.ok((await CampaignService.listCampaigns(ADMIN_A)).some((c) => c.id === first.campaignId));
+    assert.ok(!(await CampaignService.listCampaigns(ADMIN_B)).some((c) => c.id === first.campaignId));
+    // The calls themselves are untouched: the sheet and its contacts are not linked to the campaign.
+    assert.strictEqual((await db.get("SELECT campaign_id FROM batches WHERE id = 'batch_agenttest_1'")).campaign_id || null, null);
+    assert.strictEqual((await db.get("SELECT campaign_id FROM contacts WHERE id = 'cnt_agenttest_1'")).campaign_id || null, null);
+    const again = await CampaignService.recordSheetCampaign({ batchId: 'batch_agenttest_1', service: 'recruitment', ownerUserId: ADMIN_A, agent: hiring });
+    assert.ok(!again.created);
+    assert.strictEqual(again.campaignId, first.campaignId);
 });
 
 await test('Plivo outgoing call uses the agent number as caller ID and passes the agent on', async () => {

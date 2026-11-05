@@ -54,6 +54,9 @@ venv.bak/
 *.log
 data/*.db
 data/demo_requests.json
+data/users.json
+data/proposals.json
+data/user_uploads/
 data/*.db-wal
 data/*.db-shm
 data/uploads/*

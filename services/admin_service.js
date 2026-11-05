@@ -129,6 +129,27 @@ export default class AdminService {
         };
     }
 
+    /**
+     * The numbers in the dashboard's "Sequential Outbound Calling Worker" panel. Completed and failed
+     * come from the same totals as the metric cards, so the panel never sits at 0 while calls have finished.
+     * @param {object} stats  result of getDashboardStats (queue, completedCalls, failedCalls)
+     * @param {{name?: string, phone?: string, service?: string}|null} active  the contact being called now
+     */
+    static buildQueuePanel(stats = {}, active = null) {
+        const q = stats.queue || {};
+        return {
+            ...q,
+            queuedCount: q.queueLength || 0,
+            inProgressCount: active ? 1 : 0,
+            completedCount: Number(stats.completedCalls) || 0,
+            failedCount: Number(stats.failedCalls) || 0,
+            isRunning: !!q.active,
+            activeCall: active
+                ? { contact_name: active.name, name: active.name, phone: active.phone, phone_number: active.phone, service: active.service }
+                : null
+        };
+    }
+
     static getUsers(page = 1, limit = 10, search = "", status = "") {
         const mockUsers = [
             { id: "usr_adm_001", name: "Sarah Jenkins", email: "sarah.j@apexsystems.com", company: "Apex Systems Group", role: "admin", services: ["recruitment", "sales"], totalCalls: 84, activeCalls: 2, lastActivity: "2026-10-05T10:15:00Z", status: "active" },

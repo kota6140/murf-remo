@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import WebSocket from 'ws';
+import { expandTitles } from './speech_text.js';
 
 /**
  * services/murf_service.js
@@ -84,6 +85,7 @@ function getCacheKey(text, voiceId, modelId, locale) {
 export default class MurfService {
     /** True while Murf is trusted to send { final: true } at the end of each request (see the idle fallback in textToSpeech). */
     static finalMessageExpected = true;
+    static concurrencyLogged = false;
 
     static isConfigured() {
         return Boolean((process.env.MURF_API_KEY || '').trim());
@@ -101,8 +103,19 @@ export default class MurfService {
         return (process.env.MURF_WS_URL || 'wss://global.api.murf.ai/v1/speech/stream-input').trim();
     }
 
-    static getSttWsUrl() {
-        return (process.env.MURF_STT_WS_URL || 'wss://in.api.murf.ai/v1/transcription/stream-input').trim();
+    /** Each Murf STT model is served from its own region: finch_global_1.0 in us-east, finch_indic_1.0 in India. MURF_STT_WS_URL overrides. */
+    static getSttWsUrl(model) {
+        const forced = (process.env.MURF_STT_WS_URL || '').trim();
+        if (forced) return forced;
+        const host = model === 'finch_global_1.0' ? 'us-east.api.murf.ai' : 'in.api.murf.ai';
+        return `wss://${host}/v1/transcription/stream-input`;
+    }
+
+    /** Murf STT needs a model: finch_indic_1.0 for English (India) and Indian languages, finch_global_1.0 for auto-detect. MURF_STT_MODEL overrides. */
+    static getSttModel(langParam) {
+        const forced = (process.env.MURF_STT_MODEL || '').trim();
+        if (forced) return forced;
+        return langParam === 'auto' ? 'finch_global_1.0' : 'finch_indic_1.0';
     }
 
     static mapLanguageCodeForStt(lang) {
@@ -202,7 +215,8 @@ export default class MurfService {
      * @returns {Promise<Buffer|null>} - Complete 8kHz mu-law audio buffer
      */
     static async textToSpeech(text, options = {}) {
-        const trimmed = String(text || '').trim();
+        // "Dr. Ravi" is spoken "Doctor Ravi"; the spoken form is also the cache key.
+        const trimmed = String(expandTitles(text) || '').trim();
         if (!trimmed) return Buffer.alloc(0);
 
         const voiceId = this.getVoiceId(options);
@@ -243,6 +257,10 @@ export default class MurfService {
             let isFirstAudioMsg = true;
             let remainderPcm = Buffer.alloc(0);
             const collectedMulawChunks = [];
+            let lastAudioAt = 0;
+            // timeoutMs is how long Murf may take to START speaking. Once audio is flowing, a long sentence takes as
+            // long as it takes to stream, so only this much longer cap applies (the idle fallback guards stalls).
+            const streamCapMs = Math.max(timeoutMs * 5, 45000);
 
             let idleTimer = null;
 
@@ -261,7 +279,8 @@ export default class MurfService {
                 if (resultBuffer && resultBuffer.length > 0) {
                     const totalMs = Date.now() - startTime;
                     const audioDurationMs = Math.round((resultBuffer.length / 8000) * 1000);
-                    console.log(`[MurfService] Audio ${complete ? 'complete' : 'ended without a final message'}: ${resultBuffer.length} bytes in ${totalMs}ms (Model: ${modelId}, ~${audioDurationMs}ms audio)`);
+                    const finalLag = complete && lastAudioAt ? `, final message ${Date.now() - lastAudioAt}ms after the last audio` : '';
+                    console.log(`[MurfService] Audio ${complete ? 'complete' : 'ended without a final message'}: ${resultBuffer.length} bytes in ${totalMs}ms (Model: ${modelId}, ~${audioDurationMs}ms audio${finalLag})`);
                     if (complete) {
                         MurfService.precacheAudio(trimmed, resultBuffer, { voiceId, model: modelId, locale });
                     }
@@ -287,7 +306,7 @@ export default class MurfService {
             };
 
             timer = setTimeout(() => {
-                console.warn(`[MurfService] TTS request timed out after ${timeoutMs}ms.`);
+                console.warn(`[MurfService] TTS request did not start speaking within ${timeoutMs}ms.`);
                 finish(collectedAudio());
             }, timeoutMs);
 
@@ -355,6 +374,13 @@ export default class MurfService {
                         if (parsed.final === true) {
                             isFinalFrame = true;
                             MurfService.finalMessageExpected = true;
+                            // Murf says which region served the request and how many requests are open at once.
+                            // Log it the first time, and whenever the plan's limit is reached (that slows requests down).
+                            const c = parsed.concurrency;
+                            if (c && (!MurfService.concurrencyLogged || (c.limit && c.used >= c.limit))) {
+                                MurfService.concurrencyLogged = true;
+                                console.log(`[MurfService] Murf region ${c.region || 'unknown'}: ${c.used}/${c.limit} requests open at once${c.limit && c.used >= c.limit ? ' (at the limit: further requests wait or fail)' : ''}.`);
+                            }
                         }
                     } catch (_) {}
                 } else if (isBinary) {
@@ -398,7 +424,14 @@ export default class MurfService {
                             firstChunkReceived = true;
                             const firstByteMs = Date.now() - startTime;
                             console.log(`[MurfService] First audio chunk received in ${firstByteMs}ms (Model: ${modelId})`);
+                            // It has started: replace the start-up limit with the long cap for a sentence still streaming.
+                            if (timer) clearTimeout(timer);
+                            timer = setTimeout(() => {
+                                console.warn(`[MurfService] TTS stream still running after ${streamCapMs}ms; ending it.`);
+                                finish(collectedAudio());
+                            }, streamCapMs);
                         }
+                        lastAudioAt = Date.now();
                         collectedMulawChunks.push(mulawChunk);
                         if (onChunk) {
                             try { onChunk(mulawChunk); } catch (_) {}
@@ -474,9 +507,10 @@ export default class MurfService {
             return { transcript: '', language: options.language || 'en', error: err.message };
         }
 
-        const wsBaseUrl = this.getSttWsUrl();
         const langParam = this.mapLanguageCodeForStt(options.language);
-        const connectUrl = `${wsBaseUrl}?api_key=${encodeURIComponent(apiKey)}&language=${encodeURIComponent(langParam)}&text_formatting=true`;
+        const sttModel = this.getSttModel(langParam);
+        const wsBaseUrl = this.getSttWsUrl(sttModel);
+        const connectUrl = `${wsBaseUrl}?api_key=${encodeURIComponent(apiKey)}&model=${encodeURIComponent(sttModel)}&language=${encodeURIComponent(langParam)}&text_formatting=true`;
 
         const codec = options.codec || 'mulaw';
         const sampleRate = options.sampleRate || 8000;
@@ -644,9 +678,10 @@ export class MurfSttStreamSession {
             return this;
         }
 
-        const wsBaseUrl = MurfService.getSttWsUrl();
         const langParam = MurfService.mapLanguageCodeForStt(this.language);
-        const connectUrl = `${wsBaseUrl}?api_key=${encodeURIComponent(apiKey)}&language=${encodeURIComponent(langParam)}&text_formatting=true`;
+        const sttModel = MurfService.getSttModel(langParam);
+        const wsBaseUrl = MurfService.getSttWsUrl(sttModel);
+        const connectUrl = `${wsBaseUrl}?api_key=${encodeURIComponent(apiKey)}&model=${encodeURIComponent(sttModel)}&language=${encodeURIComponent(langParam)}&text_formatting=true`;
 
         try {
             this.ws = new WebSocket(connectUrl, {

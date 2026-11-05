@@ -1,12 +1,9 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import { defineCollection } from './services/doc_collections.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const DATA_DIR = path.resolve(__dirname, 'data');
-const USERS_FILE = path.join(DATA_DIR, 'users.json');
+// Accounts live in the database (table app_users), not in data/users.json, so a zip upload cannot replace them.
+// The list is loaded once at startup (initCollections in server.js).
+const usersCollection = defineCollection('users', 'app_users');
 
 export class UserStoreError extends Error {
     constructor(message, statusCode = 500) {
@@ -15,29 +12,12 @@ export class UserStoreError extends Error {
     }
 }
 
-function initStore() {
-    if (!fs.existsSync(DATA_DIR)) {
-        fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    if (!fs.existsSync(USERS_FILE)) {
-        fs.writeFileSync(USERS_FILE, JSON.stringify([], null, 2), 'utf-8');
-    }
-}
-
 export function readUsers() {
-    initStore();
-    try {
-        const data = fs.readFileSync(USERS_FILE, 'utf-8');
-        return JSON.parse(data);
-    } catch (e) {
-        console.error(`[USER_STORE] Error reading users file: ${e}`);
-        return [];
-    }
+    return usersCollection.read();
 }
 
 export function writeUsers(users) {
-    initStore();
-    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
+    usersCollection.write(users);
 }
 
 export function findUserByEmail(email) {
@@ -214,6 +194,7 @@ export function adminCreateUser(fields, passwordHash) {
         profileCompleted: false,
         role: fields.role === 'admin' ? 'admin' : 'user',
         disabled: false,
+        minutesAllotted: fields.minutesAllotted === undefined ? 0 : fields.minutesAllotted,
         passwordHash,
         createdAt: now,
         updatedAt: now,
@@ -245,6 +226,10 @@ export function adminUpdateUser(userId, fields, passwordHash) {
     }
     if (fields.role === 'admin' || fields.role === 'user') user.role = fields.role;
     if (typeof fields.disabled === 'boolean') user.disabled = fields.disabled;
+    // Calling minutes given by the owner (a number; never unlimited).
+    if (fields.minutesAllotted !== undefined) user.minutesAllotted = fields.minutesAllotted;
+    // Total call time when the minutes were given: only calls after it use up the minutes.
+    if (typeof fields.minutesBaseSeconds === 'number') user.minutesBaseSeconds = fields.minutesBaseSeconds;
     if (passwordHash) {
         user.passwordHash = passwordHash;
         user.resetToken = null;
@@ -263,5 +248,3 @@ export function deleteUser(userId) {
     writeUsers(users);
     return publicUser(removed);
 }
-
-initStore();

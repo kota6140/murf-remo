@@ -2,6 +2,7 @@
 // Without --apply it only shows how many rows would change.
 import 'dotenv/config';
 import { assignUnownedToAdmin } from '../services/unowned_assign.js';
+import { initCollections } from '../services/doc_collections.js';
 
 const email = process.argv[2];
 const apply = process.argv.includes('--apply');
@@ -12,6 +13,7 @@ if (!email || email.startsWith('--')) {
 }
 
 try {
+    await initCollections({ createTables: false });
     const result = await assignUnownedToAdmin(email, { apply });
     console.log(`${apply ? 'Assigned' : 'Would assign'} to ${email} (${result.adminId}):`);
     console.table(result.counts);

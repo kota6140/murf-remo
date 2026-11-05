@@ -24,7 +24,8 @@ node tests/<file>.test.js    # run one test file (no test runner; each file exit
 
 - Node.js >= 18, ESM (`"type": "module"`), Express, `ws`.
 - Telephony: **Plivo** (webhooks `/api/plivo/*`, audio WebSocket `/voicebot`). Speech in/out: **ElevenLabs**. LLM: Claude Haiku first, Gemini as fallback (`services/llm_service.js`). Exotel and Sarvam are old providers kept for compatibility; do not build on them.
-- Database: MySQL in production, SQLite locally (`services/db.js`). Some older JSON stores write to `data/`.
+- Database: MySQL in production, SQLite locally (`services/db.js`). In production a MySQL failure stops the app; it never falls back to SQLite.
+- Accounts, proposals and demo requests live in the database (tables `app_users`, `app_proposals`, `app_demo_requests`) through `services/doc_collections.js`, not in `data/*.json`. They are loaded into memory at startup (`initCollections` in `server.js`; scripts that read accounts must call it too) and re-read every 30 seconds (`startRefresh`), so accounts made on live or on localhost (one shared database) show up on the other side without a restart; a refresh is skipped while a local write is still being saved. `node scripts/import_json_to_mysql.js` copies the old JSON files in (dry run by default, `--apply` to import; it only adds, never overwrites). Uploaded files still sit in `data/uploads/` and `data/user_uploads/`.
 - Frontend: plain HTML/CSS/JS served from the project root. There is no build step and no framework.
 
 ## Layout
@@ -61,7 +62,8 @@ Key rules to keep in mind:
 - Reply lifecycle: every caller turn has one response (`beginResponse`). Speech is queued so sentences play in order (`playAiAudio`), a barge-in or a newer response cancels the rest (`cancelActiveResponse`), and the state goes back to `LISTENING` only when the audio has really finished (`completePlayback`, ended by Plivo's `playedStream` checkpoint or by the audio-length timer). Never set `LISTENING` right after `playAiAudio`; use `finishTurn`.
 - Murf speech: the text frame carries `end: true` and Murf answers `{ final: true }` when everything is spoken. A clip is complete (and cached) only on that message; a timer, error or closed connection still ends the request with what arrived, but the clip is never cached (`tests/murf_stream_completion.test.js`). Never end a Murf clip by guessing at a pause.
 - Interrupting the AI (barge-in): the caller needs `BARGE_IN_ENERGY_THRESHOLD` loudness (default 850, valid 450–3000) for 60 frames (80 during the opening greeting); a quiet gap of up to 8 frames inside speech does not restart the count. A campaign's language read from the database never clears the audio that is playing (`setSessionLanguage`, reason `CAMPAIGN_CONFIG`).
-- `TTS_TIMEOUT_MS` (default 8000) gives up on a text-to-speech request. `PLIVO_PLAYBACK_CHECKPOINTS=off` turns off the Plivo playback checkpoints.
+- `TTS_TIMEOUT_MS` (default 8000) is how long a text-to-speech request may take to START speaking. Once audio is flowing a long sentence is never cut at that limit (only a cap of max(5x, 45s) applies). The "bot still speaking" watchdog waits while speech is still being made (`pendingSpeech`).
+- Tests that mock the voice service must also switch off Murf (`MurfService.isConfigured = () => false`); with `MURF_API_KEY` in `.env` a call picks the real, paid Murf service. `PLIVO_PLAYBACK_CHECKPOINTS=off` turns off the Plivo playback checkpoints.
 - Missing latency measurements are `null`, never `0` (`latency_tracker.js`).
 
 ## Recruitment opening and repeated questions
@@ -70,6 +72,10 @@ Key rules to keep in mind:
 - `services/question_tracker.js` is the source of truth for what was asked and answered. A question is "asked" when its audio starts, "answered" by a real answer (not "yeah", "what do you mean?" or "and then?"). Questions are compared by topic (`topicOf`), not wording, so a reworded question is the same question. Every recruitment reply goes through `guardReply` before it is spoken (repeated question → next planned question; repeated opener dropped; a bare "Sure." gets the next question). Other work types only log duplicates.
 - A speech-to-text language label is only a hint: the language changes through `LanguageStateMachine` (sustained sentences or an explicit request), never because of "ha", "hmm" or "okay".
 - Tests: `node tests/call_flow_regression.test.js` (mocked speech, AI, voice and phone; set `SKIP_TTS_PRECACHE=1` so loading the call code never calls the paid voice service).
+
+## Recordings zip and the campaign popup
+
+The campaign Conversations popup (dashboard) pages in the browser (10/25/50/100 per page) and keeps ticked calls by id across pages. "Download Audio" posts the ids to `POST /api/admin/conversations/audio-zip` (admin scope, max 200 calls), which streams a .zip built by `services/zip_writer.js` (stored, no package) through `RecordingService.streamZip`. Files are named `name_date_phone.mp3`; calls without usable audio are listed in `NOT_INCLUDED.txt` inside the zip. Test: `node tests/campaign_audio_zip.test.js`.
 
 ## Appointment calls: state lives in code
 

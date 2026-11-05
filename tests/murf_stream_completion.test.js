@@ -165,6 +165,36 @@ await test('A final message with far too little audio is played but never kept',
     assert.strictEqual(cached(text), null, 'a clip that is too short is not kept');
 });
 
+await test('A long sentence that streams for longer than the start-up limit is not cut off', async () => {
+    const text = `${TEXT_10_WORDS} long`;
+    behaviour = async (ws) => {                  // starts after 0.3 s, then 0.9 s of speech every 0.9 s: 4.8 s in all
+        await sleep(300);
+        ws.send(audioFrame(0.9, { header: true }));
+        for (let i = 1; i < 6; i++) {
+            await sleep(900);
+            ws.send(audioFrame(0.9));
+        }
+        ws.send(FINAL);
+    };
+    const started = Date.now();
+    const audio = await speak(text, { timeoutMs: 1500 });      // the start-up limit is 1.5 s, the sentence streams for 4.8 s
+    const took = Date.now() - started;
+    assert.strictEqual(audio.length, Math.round(5.4 * BYTES_PER_SECOND), 'the whole sentence arrived');
+    assert.ok(took > 4000, `it kept streaming well past the 1.5 s limit (${took} ms)`);
+    assert.ok(cached(text), 'and, being complete, it is kept');
+});
+
+await test('If Murf does not start speaking within the limit, the request ends without audio', async () => {
+    const text = `${TEXT_10_WORDS} silent`;
+    behaviour = () => {};                        // never answers
+    const started = Date.now();
+    const audio = await speak(text, { timeoutMs: 800 });
+    const took = Date.now() - started;
+    assert.strictEqual(audio, null);
+    assert.ok(took >= 700 && took < 1800, `gave up at the start-up limit (${took} ms)`);
+    assert.strictEqual(cached(text), null);
+});
+
 await test('The minimum-audio rule is one shared function', () => {
     assert.strictEqual(getMinExpectedAudioBytes(TEXT_10_WORDS), 14000);
     assert.strictEqual(getMinExpectedAudioBytes(''), 0);

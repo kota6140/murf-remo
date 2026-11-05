@@ -2,6 +2,7 @@ import 'dotenv/config';
 import crypto from 'crypto';
 import dns from 'dns';
 import { spawn } from 'child_process';
+import { expandTitles } from './speech_text.js';
 
 try {
     dns.setDefaultResultOrder('ipv4first');
@@ -404,6 +405,8 @@ export default class ElevenLabsService {
      */
     static async textToSpeech(text, options = {}) {
         if (!text || !text.trim()) return null;
+        // "Dr. Ravi" is spoken "Doctor Ravi"; the spoken form is also the cache key.
+        text = expandTitles(text);
 
         const rawLanguage = options.language || options.lang || 'en';
         const language = this.detectLanguageFromText(text, rawLanguage);
