@@ -41,7 +41,7 @@ mem.exec(`
     CREATE TABLE contacts (
         id TEXT PRIMARY KEY, batch_id TEXT, name TEXT, phone TEXT, provider_call_id TEXT,
         started_at TEXT, ended_at TEXT, duration_seconds INTEGER DEFAULT 0, updated_at TEXT,
-        recording_url TEXT, recording_id TEXT, recording_expires_at TEXT
+        recording_url TEXT, recording_id TEXT, recording_expires_at TEXT, extracted_data TEXT, notes TEXT
     );
     CREATE TABLE conversations (
         id TEXT PRIMARY KEY, contact_id TEXT, batch_id TEXT, phone TEXT, contact_name TEXT, status TEXT,
@@ -49,7 +49,7 @@ mem.exec(`
         provider_call_id TEXT, recording_url TEXT, recording_id TEXT, recording_expires_at TEXT, recording_deleted_at TEXT,
         summary TEXT, classification TEXT
     );
-    CREATE TABLE transcript_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id TEXT, speaker TEXT, text TEXT);
+    CREATE TABLE transcript_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id TEXT, speaker TEXT, text TEXT, time_str TEXT, language TEXT);
 `);
 
 const { default: db } = await import('../services/db.js');
@@ -155,7 +155,7 @@ class MockRes extends Writable {
     get bytes() { return Buffer.concat(this.chunks); }
 }
 
-const routeHandler = (router, path) => router.stack.find(l => l.route && l.route.path === path && l.route.methods.get).route.stack[0].handle;
+const routeHandler = (router, path, method = 'get') => router.stack.find(l => l.route && l.route.path === path && l.route.methods[method]).route.stack[0].handle;
 
 console.log('================================================================');
 console.log('CALL RECORDINGS: ACCESS, DOWNLOAD, 30-DAY EXPIRY, DELETION, RELIABILITY');
@@ -609,6 +609,94 @@ await test('"Already recording" counts as success; giving up is reported; no cre
             assert.strictEqual(requests.length, 0);
         } finally { process.env.PLIVO_AUTH_TOKEN = saved; }
     } finally { console.warn = quietWarn; console.error = quietError; }
+});
+
+// ── Incoming calls: direction, shared numbers, 30-day expiry ────────────────
+const { default: ConversationService } = await import('../services/conversation_service.js');
+const addAgent = (id, number, { creator = null, admins = [] } = {}) => {
+    mem.prepare(`INSERT INTO agents (id, name, phone_number, service, assigned_user_id, created_by_user_id, status, created_at, updated_at)
+                 VALUES (?, ?, ?, 'support', ?, ?, 'active', ?, ?)`).run(id, id, number, admins[0] || creator, creator, iso(-5), iso(-5));
+    for (const u of admins) mem.prepare('INSERT INTO agent_admins (agent_id, user_id, created_at) VALUES (?, ?, ?)').run(id, u, iso(-5));
+};
+const addCall = (id, o) => {
+    addConversation({ id, contact_id: 'direct', batch_id: 'direct_batch', ...o });
+    mem.prepare('UPDATE conversations SET direction = ?, agent_id = ? WHERE id = ?').run(o.direction || null, o.agent_id || null, id);
+};
+
+await test('Incoming calls: shown with their direction, and every admin with an agent on the number sees them', async () => {
+    reset();
+    mem.exec('DELETE FROM agents; DELETE FROM agent_admins;');
+    const N1 = '918064344083', N2 = '918011112222';
+    addAgent('a-n1-admin1', N1, { creator: 'admin1', admins: ['admin1'] });
+    addAgent('a-n1-admin2', N1, { creator: 'admin2', admins: ['admin2'] });
+    addAgent('a-n1-given', N1, { admins: ['admin3'] });        // the owner gave this one to admin3
+    addAgent('a-n2-admin4', N2, { creator: 'admin4', admins: ['admin4'] });
+
+    addCall('in-1', { direction: 'inbound', agent_id: 'a-n1-admin1', owner_user_id: 'admin1', provider_call_id: 'cu-in-1' });
+    addCall('in-2', { direction: 'inbound', agent_id: 'a-n2-admin4', owner_user_id: 'admin4', provider_call_id: 'cu-in-2' });
+    addCall('out-1', { direction: 'outbound', agent_id: 'a-n1-admin1', owner_user_id: 'admin1' });
+    addCall('old-1', { direction: null, owner_user_id: 'admin1' });                  // saved before the direction existed
+
+    const ids = async (admin, direction = '') =>
+        (await ConversationService.getConversations('', '', '', '', '', 1, 50, admin, direction)).data.map(c => c.id).sort();
+
+    // admin1 owns in-1 and out-1 and old-1; admin2 and admin3 have an agent on the same number: they see in-1 only
+    assert.deepStrictEqual(await ids('admin1'), ['in-1', 'old-1', 'out-1']);
+    assert.deepStrictEqual(await ids('admin2'), ['in-1']);
+    assert.deepStrictEqual(await ids('admin3'), ['in-1']);
+    assert.deepStrictEqual(await ids('admin4'), ['in-2']);                               // other number: only its own
+    assert.deepStrictEqual(await ids('admin5'), []);                                       // no agent on any number
+
+    // the direction column and filter; calls without a direction count as outgoing
+    const rows = (await ConversationService.getConversations('', '', '', '', '', 1, 50, 'admin1')).data;
+    const byId = Object.fromEntries(rows.map(r => [r.id, r]));
+    assert.strictEqual(byId['in-1'].direction, 'inbound');
+    assert.strictEqual(byId['out-1'].direction, 'outbound');
+    assert.strictEqual(byId['old-1'].direction, 'outbound');
+    assert.deepStrictEqual(await ids('admin1', 'inbound'), ['in-1']);
+    assert.deepStrictEqual(await ids('admin1', 'outbound'), ['old-1', 'out-1']);
+
+    // only the admin the call belongs to may delete it
+    assert.strictEqual(byId['in-1'].canDelete, true);
+    assert.strictEqual((await ConversationService.getConversations('', '', '', '', '', 1, 50, 'admin2')).data[0].canDelete, false);
+    assert.ok(await ConversationService.getConversationById('in-1', 'admin2'), 'details are visible on a shared number');
+    assert.strictEqual((await ConversationService.getConversationById('in-1', 'admin2')).canDelete, false);
+    assert.strictEqual(await ConversationService.getConversationById('in-1', 'admin4'), null);
+    assert.strictEqual(await ConversationService.getConversationById('out-1', 'admin2'), null, 'outgoing calls are never shared');
+    const res = new MockRes();
+    await routeHandler(adminRouter, '/conversations/:id', 'delete')({ params: { id: 'in-1' }, query: {}, headers: {}, user: { id: 'admin2', role: 'admin' } }, res);
+    assert.strictEqual(res.statusCode, 403);
+    assert.ok(conv('in-1'), 'the call is still there');
+
+    // recordings follow the same rule
+    assert.ok(await RecordingService.findConversation('in-1', { adminId: 'admin2' }));
+    assert.strictEqual(await RecordingService.findConversation('in-1', { adminId: 'admin4' }), null);
+    assert.strictEqual(await RecordingService.findConversation('out-1', { adminId: 'admin2' }), null);
+    mem.exec('DELETE FROM agents; DELETE FROM agent_admins;');
+});
+
+await test('An incoming call recording expires 30 days after the call, like an outgoing one', async () => {
+    reset();
+    // An incoming call has no contact row: the recording callback carries only the call id.
+    const endedAt = iso(-40);
+    addCall('in-old', { direction: 'inbound', ended_at: endedAt, started_at: endedAt, created_at: endedAt, provider_call_id: 'cu-in-old' });
+    addCall('in-new', { direction: 'inbound', provider_call_id: 'cu-in-new' });
+    await RecordingService.saveFromWebhook({ callUuid: 'cu-in-old', recordingUrl: url('rec-in-old'), recordingId: 'rec-in-old' });
+    await RecordingService.saveFromWebhook({ callUuid: 'cu-in-new', recordingUrl: url('rec-in-new'), recordingId: 'rec-in-new' });
+    assert.strictEqual(conv('in-old').recording_url, url('rec-in-old'));
+    assert.ok(conv('in-new').recording_expires_at, 'a fresh incoming call gets an expiry date');
+    const days = (Date.parse(conv('in-new').recording_expires_at) - Date.parse(conv('in-new').ended_at)) / DAY;
+    assert.ok(Math.abs(days - 30) < 0.01, `expires 30 days after the call end (got ${days})`);
+
+    setRules((r) => r.method === 'DELETE' ? new Response(null, { status: 204 }) : null);
+    const result = await RecordingService.purgeExpired();
+    assert.deepStrictEqual({ ...result }, { deleted: 1, failed: 0, skipped: false });
+    assert.strictEqual(conv('in-old').recording_url, null);
+    assert.ok(conv('in-old').recording_deleted_at);
+    assert.strictEqual(RecordingService.statusOf(conv('in-old')), 'expired');
+    assert.ok(conv('in-old'), 'the call and its transcript stay');
+    assert.strictEqual(conv('in-new').recording_url, url('rec-in-new'), 'the recent call keeps its recording');
+    assert.ok(sent('DELETE').every(r => !r.url.includes('rec-in-new')));
 });
 
 // ── Pages ───────────────────────────────────────────────────────────────────

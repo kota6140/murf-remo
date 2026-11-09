@@ -142,7 +142,7 @@ export class CallQueueWorker {
                 ? ` AND cq.batch_id NOT IN (SELECT id FROM batches WHERE owner_user_id IN (${pausedOwners.map(() => '?').join(',')}))`
                 : '';
             nextJob = await db.get(`
-                SELECT cq.id as queue_id, cq.contact_id, cq.batch_id, c.phone, c.name, c.service
+                SELECT cq.id as queue_id, cq.contact_id, cq.batch_id, cq.campaign_id, c.phone, c.name, c.service
                 FROM call_queue cq
                 JOIN contacts c ON cq.contact_id = c.id
                 WHERE cq.status = 'QUEUED'${skipPaused}
@@ -173,9 +173,38 @@ export class CallQueueWorker {
                 return;
             }
 
+            // Automatic dialling (upload auto-start, promised callbacks) never rings the same number twice in a short
+            // time, whichever sheet it came from (the same person sits on many test sheets). A campaign an admin
+            // starts on purpose has a campaign_id and is always dialled. SAME_NUMBER_COOLDOWN_MIN=0 turns this off.
+            const cooldownMin = Number(process.env.SAME_NUMBER_COOLDOWN_MIN ?? 30);
+            const tail = String(nextJob.phone || '').replace(/\D/g, '').slice(-10);
+            // A promised callback ("call me after 2 minutes") comes right after the call that asked for it, so it is
+            // exempt too; promise_service.js has its own limits for those (one per call, one waiting, daily cap).
+            const isPromisedCallback = /^cbk/.test(String(nextJob.batch_id || ''));
+            if (cooldownMin > 0 && tail.length === 10 && !nextJob.campaign_id && !isPromisedCallback) {
+                const cutoff = new Date(Date.now() - cooldownMin * 60000).toISOString();
+                const recentCall = await db.get(
+                    "SELECT id FROM contacts WHERE id != ? AND SUBSTR(phone, -10) = ? AND call_status IN ('CALLING', 'in-progress', 'COMPLETED') AND started_at >= ? LIMIT 1",
+                    [nextJob.contact_id, tail, cutoff]
+                );
+                if (recentCall) {
+                    const stamp = utcNow();
+                    await db.run("UPDATE call_queue SET status = 'CANCELLED', updated_at = ? WHERE id = ?", [stamp, nextJob.queue_id]);
+                    await db.run("UPDATE contacts SET call_status = 'CANCELLED', error_details = ?, updated_at = ? WHERE id = ?", [`Skipped: this number was called in the last ${cooldownMin} minutes`, stamp, nextJob.contact_id]);
+                    console.log(`[QUEUE] Skipped ${nextJob.phone}: called within the last ${cooldownMin} minutes`);
+                    setImmediate(() => this._processNext());
+                    return;
+                }
+            }
+
             // Mark as IN_PROGRESS
             const now = utcNow();
-            await db.run("UPDATE call_queue SET status = 'IN_PROGRESS', updated_at = ? WHERE id = ?", [now, nextJob.queue_id]);
+            // Take the job in one step: a second server on the same database must not dial the same row too.
+            const taken = await db.run("UPDATE call_queue SET status = 'IN_PROGRESS', updated_at = ? WHERE id = ? AND status = 'QUEUED'", [now, nextJob.queue_id]);
+            if (!taken || !taken.changes) {
+                setImmediate(() => this._processNext());
+                return;
+            }
             await db.run("UPDATE contacts SET call_status = 'CALLING', started_at = ?, updated_at = ? WHERE id = ?", [now, now, nextJob.contact_id]);
 
         } catch (e) {

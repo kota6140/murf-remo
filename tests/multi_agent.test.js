@@ -184,7 +184,8 @@ await test('an admin builds agents only on numbers the owner approved, and only 
         assert.strictEqual(mine.created_by_user_id, ADMIN_B);
         assert.deepStrictEqual(mine.admin_ids, [ADMIN_B]);
         assert.strictEqual(mine.voice_id, '');
-        assert.strictEqual(mine.inbound_default, 0);
+        assert.strictEqual(mine.inbound_default, 1); // nobody else answers this number, so the admin may take it
+        assert.strictEqual(mine.inbound_notice, '');
 
         // the creator sees it; other admins do not
         assert.ok((await AgentService.list({ userId: ADMIN_B })).some((x) => x.id === mine.id));
@@ -213,7 +214,8 @@ await test('an admin builds agents only on numbers the owner approved, and only 
         const [hiring] = created; // given to ADMIN_A
         const edited = await AgentService.updateForAdmin(ADMIN_A, hiring.id, { greeting: 'Hello from A', inboundDefault: true, voiceId: 'x' });
         assert.strictEqual(edited.greeting, 'Hello from A');
-        assert.strictEqual(edited.inbound_default, 0);
+        assert.strictEqual(edited.inbound_default, 1);
+        await AgentService.update(hiring.id, { inboundDefault: false });
         assert.strictEqual(edited.voice_id, '');
         await AgentService.update(hiring.id, { greeting: '' });
         await assert.rejects(() => AgentService.updateForAdmin(ADMIN_B, hiring.id, { name: 'nope' }), /only change your own agents/);
@@ -223,6 +225,86 @@ await test('an admin builds agents only on numbers the owner approved, and only 
         assert.strictEqual(await AgentService.get(mine.id, { fresh: true }), null);
     } finally {
         await AgentService.removeApprovedNumber(NUM);
+    }
+});
+
+await test('one incoming-call agent per number: switching, fallback, two numbers, and shared numbers between admins', async () => {
+    const N1 = '918077770011';
+    const N2 = '918077770012';
+    await AgentService.addApprovedNumber(N1, 'TEST line 1');
+    await AgentService.addApprovedNumber(N2, 'TEST line 2');
+    try {
+        let tick = 0;
+        const mk = async (admin, name, num, inbound) => {
+            const a = await AgentService.createForAdmin(admin, { name, phoneNumber: num, service: 'support', inboundDefault: inbound });
+            // distinct creation times, so "the first agent on the number" is well defined
+            await db.run('UPDATE agents SET created_at = ? WHERE id = ?', [`2020-01-01T00:00:0${++tick}.000Z`, a.id]);
+            created.push(a);
+            return a;
+        };
+        const flag = async (a) => (await AgentService.get(a.id, { fresh: true })).inbound_default;
+        const answers = async (num) => (await AgentService.findByNumber(num)).id;
+
+        // Number 1 has three agents (all ADMIN_B's); number 2 has two.
+        const a1 = await mk(ADMIN_B, 'TEST In A1', N1, false);
+        const a2 = await mk(ADMIN_B, 'TEST In A2', N1, false);
+        const a3 = await mk(ADMIN_B, 'TEST In A3', N1, false);
+        const b1 = await mk(ADMIN_B, 'TEST In B1', N2, false);
+        const b2 = await mk(ADMIN_B, 'TEST In B2', N2, false);
+
+        // nobody chosen: the first (oldest) agent on that number answers
+        assert.strictEqual(await answers(N1), a1.id);
+        assert.strictEqual(await answers(N2), b1.id);
+
+        // choosing one agent per number; the numbers do not affect each other
+        const r1 = await AgentService.updateForAdmin(ADMIN_B, a3.id, { inboundDefault: true });
+        assert.strictEqual(r1.inbound_notice, '');
+        const r2 = await AgentService.updateForAdmin(ADMIN_B, b2.id, { inboundDefault: true });
+        assert.strictEqual(r2.inbound_notice, '');
+        assert.strictEqual(await answers(N1), a3.id);
+        assert.strictEqual(await answers(N2), b2.id);
+
+        // switching on the same number moves it and says who lost it
+        const sw = await AgentService.updateForAdmin(ADMIN_B, a2.id, { inboundDefault: true });
+        assert.match(sw.inbound_notice, /TEST In A3 will no longer take incoming calls on \+918077770011/);
+        assert.strictEqual(await flag(a3), 0);
+        assert.strictEqual(await flag(a2), 1);
+        assert.strictEqual(await flag(b2), 1); // number 2 untouched
+        assert.strictEqual(await answers(N1), a2.id);
+
+        // turning it off: the first agent on the number answers again, with a message
+        const off = await AgentService.updateForAdmin(ADMIN_B, a2.id, { inboundDefault: false });
+        assert.match(off.inbound_notice, /TEST In A2 no longer takes incoming calls/);
+        assert.strictEqual(await answers(N1), a1.id);
+
+        // switching the answering agent off (or deleting it) also falls back to the first agent
+        await AgentService.updateForAdmin(ADMIN_B, a2.id, { inboundDefault: true });
+        await AgentService.updateForAdmin(ADMIN_B, a2.id, { status: 'disabled' });
+        assert.strictEqual(await answers(N1), a1.id);
+        await AgentService.updateForAdmin(ADMIN_B, a2.id, { status: 'active' });
+        assert.strictEqual(await answers(N1), a2.id);
+        await AgentService.removeForAdmin(ADMIN_B, a2.id);
+        assert.strictEqual(await answers(N1), a1.id);
+
+        // another admin sharing the number cannot take it over, and nothing is saved by the refused request
+        await AgentService.updateForAdmin(ADMIN_B, a3.id, { inboundDefault: true });
+        await AgentService.setAdmins(a1.id, [ADMIN_B, ADMIN_A]); // ADMIN_A is given a1 by the owner
+        assert.ok((await AgentService.inboundLockedNumbers(ADMIN_A)).has(N1.slice(-10)));
+        await assert.rejects(() => AgentService.updateForAdmin(ADMIN_A, a1.id, { name: 'TEST In A1 renamed', inboundDefault: true }), /Another admin/);
+        assert.strictEqual((await AgentService.get(a1.id, { fresh: true })).name, 'TEST In A1');
+        assert.strictEqual(await answers(N1), a3.id);
+        // ...but the owner (no admin check) can
+        await AgentService.update(a1.id, { inboundDefault: true });
+        assert.strictEqual(await answers(N1), a1.id);
+        // and once the answering agent is ADMIN_A's, ADMIN_A can switch it
+        const own = await AgentService.updateForAdmin(ADMIN_A, a1.id, { inboundDefault: false });
+        assert.match(own.inbound_notice, /no longer takes incoming calls/);
+        // creating an agent with inbound on a number held by someone else's agent is refused too
+        await AgentService.update(a3.id, { inboundDefault: true });
+        await assert.rejects(() => AgentService.createForAdmin(ADMIN_A, { name: 'TEST In A9', phoneNumber: N1, service: 'support', inboundDefault: true }), /Another admin/);
+    } finally {
+        await AgentService.removeApprovedNumber(N1);
+        await AgentService.removeApprovedNumber(N2);
     }
 });
 

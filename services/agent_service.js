@@ -139,6 +139,7 @@ async function presentAll(rows) {
 }
 
 const last10 = (n) => String(n || '').slice(-10);
+const truthy = (v) => v === true || v === 'on' || v === 'true';
 
 /** The admins named in a request body: assignedUserIds (list) and/or the older single assignedUserId. */
 function adminIdsFrom(body = {}) {
@@ -249,18 +250,76 @@ export default class AgentService {
         return this.get(id, { fresh: true });
     }
 
-    /** This agent answers incoming calls on its number; the other agents on that number stop being the default. */
+    /**
+     * This agent answers incoming calls on its number; the other agents on that number stop being the default.
+     * Returns the agents that lost it ([{ id, name }]), so the page can say who no longer answers.
+     */
     static async setInboundDefault(id) {
         const agent = await this.get(id, { fresh: true });
         if (!agent) throw new AgentError('Agent not found.', 404);
-        const rows = await db.all('SELECT id, phone_number FROM agents');
+        const rows = await db.all('SELECT id, name, phone_number, inbound_default FROM agents');
+        const replaced = [];
         for (const r of rows) {
             if (r.id !== id && last10(r.phone_number) === last10(agent.phone_number)) {
+                if (Number(r.inbound_default)) replaced.push({ id: r.id, name: r.name });
                 await db.run('UPDATE agents SET inbound_default = 0 WHERE id = ?', [r.id]);
                 forget(r.id);
             }
         }
         await db.run('UPDATE agents SET inbound_default = 1, updated_at = ? WHERE id = ?', [utcNow(), id]);
+        forget(id);
+        return replaced;
+    }
+
+    /**
+     * SQL condition (and its two parameters) for "an incoming call on a number this admin has an agent on".
+     * Admins who share a number all see the incoming calls on it, whichever agent answered. `alias` is the
+     * conversations table in the query. Outgoing calls are never matched. Last 10 digits are compared, as everywhere else.
+     */
+    static inboundVisibleSql(userId, alias = 'c') {
+        return {
+            sql: `(${alias}.direction = 'inbound' AND ${alias}.agent_id IN (
+                SELECT a.id FROM agents a WHERE SUBSTR(a.phone_number, -10) IN (
+                    SELECT SUBSTR(m.phone_number, -10) FROM agents m
+                    WHERE m.created_by_user_id = ? OR m.id IN (SELECT agent_id FROM agent_admins WHERE user_id = ?))))`,
+            params: [userId, userId]
+        };
+    }
+
+    /** True when this admin may change the agent: they created it or the owner gave it to them. */
+    static canManage(agent, userId) {
+        return Boolean(agent && userId && (agent.created_by_user_id === userId || (agent.admin_ids || []).includes(userId)));
+    }
+
+    /**
+     * An admin may take over incoming calls on a number only when the agent that answers them now is theirs
+     * (or nobody is marked). Another admin's agent is changed by that admin or by the owner.
+     */
+    static async assertCanTakeInbound(userId, agent) {
+        const all = await this.list();
+        const blocker = all.find((a) => a.id !== agent.id && Number(a.inbound_default)
+            && last10(a.phone_number) === last10(agent.phone_number) && !this.canManage(a, userId));
+        if (blocker) {
+            throw new AgentError('Another admin\'s agent already answers incoming calls on this number. Ask the owner to change it.', 409);
+        }
+    }
+
+    /** The numbers (last 10 digits) whose incoming-call agent belongs to someone else, so this admin cannot take them over. */
+    static async inboundLockedNumbers(userId) {
+        const all = await this.list();
+        return new Set(all.filter((a) => Number(a.inbound_default) && !this.canManage(a, userId)).map((a) => last10(a.phone_number)));
+    }
+
+    /** One line for the page after a change to who answers incoming calls. */
+    static inboundNotice({ replaced = [], phoneNumber = '', turnedOff = null } = {}) {
+        const num = `+${String(phoneNumber).replace(/^\+/, '')}`;
+        if (turnedOff) return `${turnedOff} no longer takes incoming calls on ${num}. The first agent on that number will answer instead.`;
+        if (!replaced.length) return '';
+        return `${replaced.map((r) => r.name).join(', ')} will no longer take incoming calls on ${num}.`;
+    }
+
+    static async _clearInbound(id) {
+        await db.run('UPDATE agents SET inbound_default = 0, updated_at = ? WHERE id = ?', [utcNow(), id]);
         forget(id);
     }
 
@@ -321,17 +380,26 @@ export default class AgentService {
 
     // ── an admin's own agents ──
 
-    /** Admin creates an agent: only on an approved number, and only for themselves. Never sets a voice, default or other admins. */
+    /**
+     * Admin creates an agent: only on an approved number, and only for themselves. Never sets a voice or other admins.
+     * body.inboundDefault makes it answer incoming calls on its number, unless another admin's agent already does.
+     */
     static async createForAdmin(userId, body = {}) {
         const f = cleanFields(body, { requireAll: true });
         if (!(await this.isApprovedNumber(f.phone_number))) {
             throw new AgentError('Pick one of the phone numbers approved for your account.', 403);
         }
-        return this.create({
+        const wantsInbound = truthy(body.inboundDefault);
+        if (wantsInbound) await this.assertCanTakeInbound(userId, { id: null, phone_number: f.phone_number });
+        const agent = await this.create({
             name: body.name, phoneNumber: body.phoneNumber, service: body.service,
             greeting: body.greeting, instructions: body.instructions, status: body.status,
             createdByUserId: userId
         });
+        if (!wantsInbound) return agent;
+        const replaced = await this.setInboundDefault(agent.id);
+        const fresh = await this.get(agent.id, { fresh: true });
+        return { ...fresh, inbound_notice: this.inboundNotice({ replaced, phoneNumber: fresh.phone_number }) };
     }
 
     /** Admin edits an agent they created or one the owner gave them (name, number, work type, greeting, instructions, on/off). */
@@ -349,7 +417,25 @@ export default class AgentService {
             && !(await this.isApprovedNumber(allowed.phoneNumber))) {
             throw new AgentError('Pick one of the phone numbers approved for your account.', 403);
         }
-        return this.update(id, allowed);
+        // Incoming-call default: checked before anything is saved, so a refusal changes nothing.
+        const asked = body.inboundDefault === undefined ? undefined : truthy(body.inboundDefault);
+        const newNumber = typeof allowed.phoneNumber === 'string' ? normalizeNumber(allowed.phoneNumber) : existing.phone_number;
+        const numberChanged = last10(newNumber) !== last10(existing.phone_number);
+        if (asked === true) await this.assertCanTakeInbound(userId, { id, phone_number: newNumber });
+
+        const updated = await this.update(id, allowed);
+        let notice = '';
+        if (asked === true) {
+            const replaced = await this.setInboundDefault(id);
+            notice = this.inboundNotice({ replaced, phoneNumber: newNumber });
+        } else if (existing.inbound_default && (asked === false || (asked === undefined && numberChanged))) {
+            // Switched off, or moved to another number (where it was never chosen): the first agent on the old number answers.
+            await this._clearInbound(id);
+            notice = this.inboundNotice({ turnedOff: existing.name, phoneNumber: existing.phone_number });
+        }
+        if (!notice && asked === undefined && !numberChanged) return updated;
+        const fresh = await this.get(id, { fresh: true });
+        return { ...fresh, inbound_notice: notice };
     }
 
     static async removeForAdmin(userId, id) {

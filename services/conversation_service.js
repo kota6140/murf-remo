@@ -1,4 +1,5 @@
 import db from './db.js';
+import AgentService, { ensureAgentSchema } from './agent_service.js';
 
 export default class ConversationService {
     static _SAMPLE_CONVERSATIONS = [
@@ -33,18 +34,26 @@ export default class ConversationService {
         }
     ];
 
-    static async getConversations(service = "", user = "", status = "", date = "", search = "", page = 1, limit = 10, ownerId = null) {
+    /** Whether this admin owns the call (directly or through their sheet). Others who only see it through a shared number cannot delete it. */
+    static ownsRow(r, ownerId) {
+        return Boolean(ownerId && (r.owner_user_id === ownerId || r.batch_owner_user_id === ownerId));
+    }
+
+    static async getConversations(service = "", user = "", status = "", date = "", search = "", page = 1, limit = 10, ownerId = null, direction = "") {
         let dbItems = [];
         try {
-            // ownerId: only conversations owned by this admin (directly or through their uploaded batch)
+            await ensureAgentSchema();
+            // ownerId: conversations owned by this admin (directly or through their uploaded batch), plus the
+            // incoming calls on any number this admin has an agent on (numbers can be shared between admins)
+            const inbound = ownerId ? AgentService.inboundVisibleSql(ownerId) : null;
             const rows = await db.all(`
-                SELECT c.*, ct.extracted_data, ct.notes
+                SELECT c.*, ct.extracted_data, ct.notes, b.owner_user_id AS batch_owner_user_id
                 FROM conversations c
                 LEFT JOIN contacts ct ON c.contact_id = ct.id
                 LEFT JOIN batches b ON b.id = ct.batch_id
-                ${ownerId ? 'WHERE (c.owner_user_id = ? OR b.owner_user_id = ?)' : ''}
+                ${ownerId ? `WHERE (c.owner_user_id = ? OR b.owner_user_id = ? OR ${inbound.sql})` : ''}
                 ORDER BY c.created_at DESC
-            `, ownerId ? [ownerId, ownerId] : []);
+            `, ownerId ? [ownerId, ownerId, ...inbound.params] : []);
 
             for (const r of rows) {
                 let extracted = {};
@@ -64,6 +73,9 @@ export default class ConversationService {
                     email: extracted.email || '',
                     company: extracted.company || 'Score Labs',
                     status: r.status,
+                    // Calls saved before the direction was recorded count as outgoing.
+                    direction: r.direction === 'inbound' ? 'inbound' : 'outbound',
+                    canDelete: !ownerId || this.ownsRow(r, ownerId),
                     duration: durStr,
                     durationSeconds: durSec,
                     timestamp: r.started_at || r.created_at,
@@ -93,6 +105,12 @@ export default class ConversationService {
         if (status) {
             const stFilter = status.trim().toLowerCase();
             filtered = filtered.filter(c => (c.status || '').toLowerCase() === stFilter);
+        }
+        if (direction) {
+            const dirFilter = direction.trim().toLowerCase();
+            if (dirFilter === 'inbound' || dirFilter === 'outbound') {
+                filtered = filtered.filter(c => (c.direction || 'outbound') === dirFilter);
+            }
         }
         if (user) {
             const uFilter = user.trim().toLowerCase();
@@ -139,13 +157,15 @@ export default class ConversationService {
         const normId = convId.trim();
 
         try {
+            await ensureAgentSchema();
+            const inbound = ownerId ? AgentService.inboundVisibleSql(ownerId) : null;
             const r = await db.get(`
-                SELECT c.*, ct.extracted_data, ct.notes
+                SELECT c.*, ct.extracted_data, ct.notes, b.owner_user_id AS batch_owner_user_id
                 FROM conversations c
                 LEFT JOIN contacts ct ON c.contact_id = ct.id
                 LEFT JOIN batches b ON b.id = ct.batch_id
-                WHERE c.id = ? ${ownerId ? 'AND (c.owner_user_id = ? OR b.owner_user_id = ?)' : ''}
-            `, ownerId ? [normId, ownerId, ownerId] : [normId]);
+                WHERE c.id = ? ${ownerId ? `AND (c.owner_user_id = ? OR b.owner_user_id = ? OR ${inbound.sql})` : ''}
+            `, ownerId ? [normId, ownerId, ownerId, ...inbound.params] : [normId]);
 
             if (r) {
                 const msgs = await db.all(`
@@ -177,6 +197,8 @@ export default class ConversationService {
                     contact: r.contact_name,
                     phone: r.phone,
                     status: r.status,
+                    direction: r.direction === 'inbound' ? 'inbound' : 'outbound',
+                    canDelete: !ownerId || this.ownsRow(r, ownerId),
                     duration: durStr,
                     timestamp: r.started_at,
                     sentiment: r.sentiment || "positive",

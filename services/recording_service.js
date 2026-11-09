@@ -13,6 +13,7 @@
 import { Readable } from 'stream';
 import db, { utcNow, ensureOwnerColumns, ensureRecordingSchema } from './db.js';
 import PlivoService from './plivo_service.js';
+import AgentService from './agent_service.js';
 import { ZipWriter } from './zip_writer.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -110,8 +111,10 @@ export default class RecordingService {
         if (isBlank(convId)) return null;
         await this.ensureSchema();
         const id = String(convId).trim();
+        // The call is the admin's own, or an incoming call on a number they have an agent on (shared numbers).
+        const inbound = adminId ? AgentService.inboundVisibleSql(adminId) : null;
         const scope = adminId
-            ? 'AND (c.owner_user_id = ? OR b.owner_user_id = ?)'
+            ? `AND (c.owner_user_id = ? OR b.owner_user_id = ? OR ${inbound.sql})`
             : '';
         const row = await db.get(`
             SELECT c.*, ct.provider_call_id AS contact_call_id, ct.recording_url AS contact_recording_url,
@@ -120,7 +123,7 @@ export default class RecordingService {
             LEFT JOIN contacts ct ON c.contact_id = ct.id
             LEFT JOIN batches b ON b.id = ct.batch_id
             WHERE c.id = ? ${scope}
-        `, adminId ? [id, adminId, adminId] : [id]);
+        `, adminId ? [id, adminId, adminId, ...inbound.params] : [id]);
         return row ? this.normalize(row) : null;
     }
 

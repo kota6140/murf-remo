@@ -197,6 +197,7 @@ app.use((err, req, res, next) => {
 
 import { handleVoicebotWebsocket } from './services/voicebot_stream_service.js';
 import RecordingService from './services/recording_service.js';
+import PromiseService from './services/promise_service.js';
 
 // Configure WebSockets
 const wss = new WebSocketServer({ noServer: true });
@@ -236,6 +237,8 @@ initCollections().then(() => {
         console.log("===============================================");
         // Daily deletion of recordings older than 30 days, and recovery of missed recording links.
         RecordingService.startMaintenance();
+        // Promised callbacks: every minute, dial the ones that are due (inside calling hours only).
+        PromiseService.start();
     });
 }).catch((e) => {
     console.error(`[STARTUP] Could not load accounts from the database: ${e.message}`);

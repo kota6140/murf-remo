@@ -994,6 +994,80 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ------------------------------------------------------------------------
+  // WELCOME VOICE: "Hey, welcome to Remo" in a female voice when someone opens the home page, and again whenever
+  // the page is refreshed (a hard refresh counts as a refresh: browsers cannot tell the two apart). Opening the page
+  // again by a link inside the same tab session stays quiet, and so does the Back button.
+  // Browsers refuse sound that nobody asked for, so it is tried at once and, if the browser says no, it plays on the
+  // visitor's first tap, click or key press. It is marked as played only when it really started, so a blocked
+  // attempt is not lost. Clip: /assets/voices/welcome.wav; without it the browser's own female voice says the words.
+  // Turned off with the same sound switch as the other page sounds.
+  (function welcomeVoiceOnce() {
+    if (!document.getElementById('btn-hero-voice-sample')) return; // home page only
+    const PLAYED_KEY = 'takeremo_welcome_played';
+    const WELCOME_TEXT = 'Hey, welcome to Remo.';
+    const storeIn = (kind) => ({
+      get: (k) => { try { return window[kind].getItem(k); } catch (e) { return null; } },
+      set: (k, v) => { try { window[kind].setItem(k, v); } catch (e) { /* storage unavailable */ } }
+    });
+    const store = storeIn('localStorage');   // the sound switch, shared with the other page sounds
+    const session = storeIn('sessionStorage'); // played in this tab already? (survives a refresh)
+    if (store.get('takeremo_sound_fx') === 'false') return;
+
+    // How this page was reached: 'navigate' (typed, link), 'reload' (refresh or hard refresh), 'back_forward'.
+    let navType = 'navigate';
+    try {
+      const entry = window.performance.getEntriesByType('navigation')[0];
+      if (entry && entry.type) navType = entry.type;
+      else if (window.performance.navigation && window.performance.navigation.type === 1) navType = 'reload';
+    } catch (e) { /* keep 'navigate' */ }
+    if (navType === 'back_forward') return;
+    if (navType === 'navigate' && session.get(PLAYED_KEY) === 'yes') return;
+
+    let done = false;
+    const markPlayed = () => { done = true; session.set(PLAYED_KEY, 'yes'); };
+
+    const speakWithBrowserVoice = () => {
+      if (!('speechSynthesis' in window)) return false;
+      const utter = new SpeechSynthesisUtterance(WELCOME_TEXT);
+      utter.rate = 0.96;
+      utter.pitch = 1.04;
+      const voices = window.speechSynthesis.getVoices().filter((v) => v.lang.startsWith('en'));
+      const female = voices.find((v) => /Samantha|Zira|Aria|Jenny|Karen|Moira|Tessa|Veena|Heera|Female/i.test(v.name)) || voices.find((v) => /Google|Natural/i.test(v.name));
+      if (female) utter.voice = female;
+      window.speechSynthesis.speak(utter);
+      markPlayed();
+      return true;
+    };
+
+    const clip = new Audio('/assets/voices/welcome.wav');
+    clip.preload = 'auto';
+    let clipMissing = false;
+    clip.addEventListener('error', () => { clipMissing = true; });
+
+    const detach = () => {
+      ['pointerdown', 'keydown', 'touchstart', 'click'].forEach((ev) => window.removeEventListener(ev, onGesture, true));
+    };
+    const attempt = (fromGesture) => {
+      if (done) return;
+      if (clipMissing) { if (fromGesture && speakWithBrowserVoice()) detach(); return; }
+      let started;
+      try { started = clip.play(); } catch (e) { started = null; }
+      if (started && started.then) {
+        started.then(() => { markPlayed(); detach(); }).catch(() => {
+          // Blocked until the visitor interacts (or the clip is missing): wait for the first gesture.
+          if (fromGesture) { if (speakWithBrowserVoice()) detach(); }
+        });
+      } else if (fromGesture) {
+        if (speakWithBrowserVoice()) detach();
+      }
+    };
+    function onGesture() { attempt(true); }
+
+    ['pointerdown', 'keydown', 'touchstart', 'click'].forEach((ev) => window.addEventListener(ev, onGesture, true));
+    attempt(false);
+  })();
+
+  // ------------------------------------------------------------------------
   // F. TakeRemo — INTERACTIVE WORKFLOW CARDS & LIVE ANALYTICS DASHBOARD
   // Cards: 01 Recruitment -> 02 Sales -> 03 Customer Support
   // Direct Tab Navigation + Smooth Fade/Slide + Animated Charts & Metrics

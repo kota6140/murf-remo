@@ -105,15 +105,15 @@
             </svg>
             <span class="nav-label">Call History</span>
           </button>
-          <button type="button" class="sidebar-nav-item feature-placeholder-trigger" data-feature="Scheduled Calls"
-            data-tooltip="Scheduled Calls">
+          <button type="button" class="sidebar-nav-item" data-nav="promises" data-tooltip="Promises & Callbacks">
             <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
               <line x1="16" y1="2" x2="16" y2="6" />
               <line x1="8" y1="2" x2="8" y2="6" />
               <line x1="3" y1="10" x2="21" y2="10" />
             </svg>
-            <span class="nav-label">Scheduled Calls</span>
+            <span class="nav-label">Promises</span>
+            <span class="nav-badge-pill" id="nav-promises-count" style="display:none;">0</span>
           </button>
         </div>
 
@@ -964,6 +964,12 @@
                   <option value="receptionist">Receptionist</option>
                 </select>
 
+                <select class="admin-select" id="convs-direction-select">
+                  <option value="">Inbound &amp; Outbound</option>
+                  <option value="inbound">Inbound</option>
+                  <option value="outbound">Outbound</option>
+                </select>
+
                 <select class="admin-select" id="convs-status-select">
                   <option value="">All Statuses</option>
                   <option value="completed">Completed</option>
@@ -977,20 +983,22 @@
               <table class="admin-table">
                 <thead>
                   <tr>
-                    <th>ID</th>
+                    <th>S.No</th>
                     <th>Service</th>
                     <th>Company / Account</th>
                     <th>Contact</th>
                     <th>Phone</th>
+                    <th>Direction</th>
                     <th>Date & Time</th>
                     <th>Duration</th>
                     <th>Status</th>
                     <th>Action</th>
+                    <th>ID</th>
                   </tr>
                 </thead>
                 <tbody id="conversations-table-body">
                   <tr>
-                    <td colspan="9" style="text-align: center; padding: 28px; color: #94A3B8;">
+                    <td colspan="11" style="text-align: center; padding: 28px; color: #94A3B8;">
                       Loading conversations...
                     </td>
                   </tr>
@@ -1088,6 +1096,60 @@
               <div class="pagination-btns">
                 <button type="button" class="btn-page" id="calls-prev-btn" disabled>Previous</button>
                 <button type="button" class="btn-page" id="calls-next-btn">Next</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================================================================
+             VIEW 6: PROMISES & CALLBACKS (/api/admin/promises)
+             ================================================================== -->
+        <div class="admin-view-panel" id="view-promises">
+          <div class="admin-card">
+            <div class="admin-card-header">
+              <div class="admin-card-title-group">
+                <h3>Promises &amp; Callbacks</h3>
+                <p>What was promised on your calls. Callbacks with a time are dialled again automatically, between 9 am and 8 pm, up to 2 tries.</p>
+              </div>
+              <div class="admin-toolbar">
+                <select class="admin-select" id="promises-status-select">
+                  <option value="open">Open</option>
+                  <option value="done">Done</option>
+                  <option value="missed">Not reached</option>
+                  <option value="cancelled">Cancelled</option>
+                  <option value="">All</option>
+                </select>
+                <select class="admin-select" id="promises-kind-select">
+                  <option value="">All kinds</option>
+                  <option value="callback">Callbacks</option>
+                  <option value="caller_action">Caller will do</option>
+                  <option value="agent_action">We will do</option>
+                </select>
+              </div>
+            </div>
+            <div id="promises-summary" style="padding: 0 20px 12px; color: #64748B; font-size: 0.85rem;"></div>
+            <div class="table-responsive">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>Promise</th>
+                    <th>Contact</th>
+                    <th>Phone</th>
+                    <th>Due</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="promises-table-body">
+                  <tr><td colspan="6" style="text-align: center; padding: 28px; color: #94A3B8;">Loading promises...</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="admin-pagination">
+              <span id="promises-page-info">Showing page 1</span>
+              <div class="pagination-btns">
+                <button type="button" class="btn-page" id="promises-prev-btn" disabled>Previous</button>
+                <button type="button" class="btn-page" id="promises-next-btn">Next</button>
               </div>
             </div>
           </div>
@@ -1310,6 +1372,13 @@
             <option value="active">On</option>
             <option value="disabled">Switched off</option>
           </select>
+        </div>
+        <div class="form-group-wrap">
+          <label style="display: flex; gap: 8px; align-items: flex-start; cursor: pointer;">
+            <input type="checkbox" id="agent-input-inbound" style="margin-top: 3px;">
+            <span><strong>Answers incoming calls on this number</strong></span>
+          </label>
+          <span id="agent-inbound-hint" style="font-size: 0.7rem; color: #64748B; margin-top: 4px; display: block;">Only one agent answers incoming calls on each number. Turning this on moves it from the agent that has it now.</span>
         </div>
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px;">
           <button type="button" class="btn-card-secondary" id="btn-agent-cancel" style="padding: 8px 20px;"><span>Cancel</span></button>
@@ -2188,8 +2257,122 @@
           loadConversations(1);
         } else if (viewName === 'calls') {
           loadCalls(1);
+        } else if (viewName === 'promises') {
+          loadPromises(1);
         }
       }
+
+      // ======================================================================
+      // PROMISES & CALLBACKS
+      // ======================================================================
+      let currentPromisesPage = 1;
+      const promisesLimit = 25;
+      const PROMISE_KIND_LABEL = { callback: 'Callback', caller_action: 'Caller will do', agent_action: 'We will do' };
+      const PROMISE_STATUS_LABEL = { pending: 'Waiting', queued: 'Calling soon', calling: 'Calling', done: 'Done', missed: 'Not reached', cancelled: 'Cancelled', blocked: 'Blocked' };
+
+      function promiseDueLabel(p) {
+        if (!p.dueAt) return 'No date';
+        const d = new Date(p.dueAt);
+        if (isNaN(d.getTime())) return p.dueText || 'No date';
+        return d.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true });
+      }
+
+      function promiseButton(label, onClick, danger) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn-page';
+        b.textContent = label;
+        if (danger) b.style.color = '#DC2626';
+        b.addEventListener('click', onClick);
+        return b;
+      }
+
+      async function promiseAction(run, successText) {
+        try {
+          await run();
+          if (successText) showAdminAlert(successText, 'success');
+        } catch (e) {
+          showAdminAlert(e && e.message ? e.message : 'That did not work. Please try again.', 'error');
+        }
+        loadPromises(currentPromisesPage);
+      }
+
+      async function loadPromises(page = 1) {
+        const tbody = document.getElementById('promises-table-body');
+        if (!tbody) return;
+        const status = document.getElementById('promises-status-select')?.value ?? 'open';
+        const kind = document.getElementById('promises-kind-select')?.value || '';
+        currentPromisesPage = Number.isInteger(page) && page > 0 ? page : 1;
+        const emptyRow = (text) => {
+          tbody.textContent = '';
+          const tr = document.createElement('tr');
+          const td = document.createElement('td');
+          td.colSpan = 6;
+          td.style.cssText = 'text-align:center;padding:28px;color:#94A3B8;';
+          td.textContent = text;
+          tr.appendChild(td);
+          tbody.appendChild(tr);
+        };
+        try {
+          const res = await AdminClient.getPromises({ status, kind, page: currentPromisesPage, limit: promisesLimit });
+          const items = res.items || [];
+          const pages = Math.max(1, Math.ceil((res.total || 0) / promisesLimit));
+          const c = res.counts || {};
+          const summary = document.getElementById('promises-summary');
+          if (summary) summary.textContent = `${c.open || 0} open · ${c.overdue || 0} overdue · ${c.done || 0} done · ${c.missed || 0} not reached`;
+          const badge = document.getElementById('nav-promises-count');
+          if (badge) { badge.textContent = c.open || 0; badge.style.display = c.open ? '' : 'none'; }
+          const info = document.getElementById('promises-page-info');
+          if (info) info.textContent = `Page ${currentPromisesPage} of ${pages} · ${res.total || 0} promises`;
+          const prev = document.getElementById('promises-prev-btn');
+          const next = document.getElementById('promises-next-btn');
+          if (prev) prev.disabled = currentPromisesPage <= 1;
+          if (next) next.disabled = currentPromisesPage >= pages;
+          if (!items.length) return emptyRow('No promises here yet. They appear after calls where something was promised.');
+
+          tbody.textContent = '';
+          for (const p of items) {
+            const tr = document.createElement('tr');
+            const cell = (text, style) => { const td = document.createElement('td'); td.textContent = text; if (style) td.style.cssText = style; tr.appendChild(td); return td; };
+            const first = cell(p.text || '');
+            const sub = document.createElement('div');
+            sub.style.cssText = 'font-size:0.75rem;color:#64748B;margin-top:2px;';
+            sub.textContent = (PROMISE_KIND_LABEL[p.kind] || p.kind) + (p.autoCall ? ' · automatic call on' : '') + (p.note ? ` · ${p.note}` : '');
+            first.appendChild(sub);
+            cell(p.name || '—');
+            cell(p.phone || '');
+            const due = cell(promiseDueLabel(p) + (p.overdue ? '  (overdue)' : ''));
+            if (p.overdue) due.style.color = '#DC2626';
+            cell((PROMISE_STATUS_LABEL[p.status] || p.status) + (p.attempts ? ` (${p.attempts} ${p.attempts === 1 ? 'try' : 'tries'})` : ''));
+            const actions = document.createElement('td');
+            actions.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;';
+            const open = ['pending', 'queued', 'calling'].includes(p.status);
+            if (open && p.kind === 'callback' && p.status === 'pending') {
+              actions.appendChild(promiseButton('Call now', () => {
+                if (confirm(`Call ${p.name || p.phone} now?`)) promiseAction(() => AdminClient.callPromiseNow(p.id), 'The call is queued.');
+              }));
+              actions.appendChild(promiseButton(p.autoCall ? 'Stop auto-call' : 'Auto-call', () => promiseAction(() => AdminClient.updatePromise(p.id, { action: 'auto', autoCall: !p.autoCall }))));
+            }
+            if (open) {
+              actions.appendChild(promiseButton('Mark done', () => promiseAction(() => AdminClient.updatePromise(p.id, { action: 'done' }))));
+              actions.appendChild(promiseButton('Cancel', () => {
+                if (confirm('Cancel this promise? No automatic call will be made.')) promiseAction(() => AdminClient.updatePromise(p.id, { action: 'cancel' }));
+              }, true));
+            } else {
+              actions.appendChild(promiseButton('Reopen', () => promiseAction(() => AdminClient.updatePromise(p.id, { action: 'reopen' }))));
+            }
+            tr.appendChild(actions);
+            tbody.appendChild(tr);
+          }
+        } catch (e) {
+          emptyRow(e && e.message ? e.message : 'Could not load promises.');
+        }
+      }
+
+      document.getElementById('promises-status-select')?.addEventListener('change', () => loadPromises(1));
+      document.getElementById('promises-kind-select')?.addEventListener('change', () => loadPromises(1));
+      document.getElementById('promises-prev-btn')?.addEventListener('click', () => loadPromises(currentPromisesPage - 1));
+      document.getElementById('promises-next-btn')?.addEventListener('click', () => loadPromises(currentPromisesPage + 1));
 
       // Sidebar nav buttons
       document.querySelectorAll('.sidebar-nav-item[data-nav]').forEach(btn => {
@@ -2261,12 +2444,12 @@
                 <td style="font-family: monospace;">+${agentEsc(String(a.phoneNumber).replace(/^\+/, ''))}</td>
                 <td>${agentEsc(AGENT_SERVICE_NAME[a.service] || a.service)}</td>
                 <td style="max-width: 320px;">${a.greeting ? agentEsc(a.greeting) : '<span style="color:#94A3B8;">Standard greeting</span>'}</td>
-                <td>${a.status === 'disabled' ? 'Switched off' : 'On'}</td>
+                <td>${a.status === 'disabled' ? 'Switched off' : 'On'}${a.inboundDefault ? '<div style="color:#16A34A; font-size: 0.7rem; margin-top: 2px;">Answers incoming calls</div>' : ''}</td>
                 <td style="white-space: nowrap;">
                   <button type="button" class="btn-card-secondary" data-agent-edit="${agentEsc(a.id)}" style="padding: 4px 12px;"><span>Edit</span></button>
                   ${a.mine
                     ? `<button type="button" class="btn-card-secondary" data-agent-del="${agentEsc(a.id)}" style="padding: 4px 12px; color: #DC2626;"><span>Delete</span></button>`
-                    : '<div style="color:#94A3B8; font-size: 0.7rem; margin-top: 2px;">Given by owner</div>'}
+                    : '<div style="color:#94A3B8; font-size: 0.7rem; margin-top: 2px;">Given by admin</div>'}
                 </td></tr>`).join('')
             : `<tr><td colspan="6" style="text-align: center; padding: 28px; color: #94A3B8;">You have no agents yet. Click "Add Agent" to create one, or ask the owner to give you one. Until then calls use the shared company number.</td></tr>`;
         }
@@ -2355,6 +2538,14 @@
         document.getElementById('agent-input-greeting').value = a ? (a.greeting || '') : '';
         document.getElementById('agent-input-instructions').value = a ? (a.instructions || '') : '';
         document.getElementById('agent-input-status').value = a ? (a.status || 'active') : 'active';
+        // Incoming calls: locked when another admin's agent already answers this number (only the owner can change that).
+        const inboundBox = document.getElementById('agent-input-inbound');
+        inboundBox.checked = Boolean(a && a.inboundDefault);
+        inboundBox.disabled = Boolean(a && a.inboundLocked);
+        inboundBox.dataset.wasOn = inboundBox.checked ? '1' : '';
+        document.getElementById('agent-inbound-hint').textContent = a && a.inboundLocked
+          ? 'Another admin\'s agent answers incoming calls on this number. Ask the owner to change it.'
+          : 'Only one agent answers incoming calls on each number. Turning this on moves it from the agent that has it now. With none chosen, the first agent on the number answers.';
         updateAgentInstructionsCount();
         agentModalEl().classList.add('open');
         document.getElementById('agent-input-name').focus();
@@ -2378,13 +2569,19 @@
             instructions: document.getElementById('agent-input-instructions').value,
             status: document.getElementById('agent-input-status').value
           };
+          const inboundBox = document.getElementById('agent-input-inbound');
+          if (!inboundBox.disabled) body.inboundDefault = inboundBox.checked;
+          // Taking incoming calls away from this agent (switching it off, or switching the agent itself off)
+          const wasInbound = inboundBox.dataset.wasOn === '1';
+          const losesInbound = editingAgentId && wasInbound && (!inboundBox.checked || body.status === 'disabled');
+          if (losesInbound && !window.confirm('This agent will stop answering incoming calls on its number. The first agent on that number will answer instead. Continue?')) return;
           showAgentError('');
           btn.disabled = true;
           try {
-            if (editingAgentId) await AdminClient.updateAgent(editingAgentId, body);
-            else await AdminClient.createAgent(body);
+            const saved = editingAgentId ? await AdminClient.updateAgent(editingAgentId, body) : await AdminClient.createAgent(body);
             closeAgentModal();
             await loadMyAgents();
+            if (saved && saved.notice) window.alert(saved.notice);
           } catch (err) {
             showAgentError(err.message || 'Could not save the agent.');
           } finally {
@@ -2399,7 +2596,8 @@
           if (btn.dataset.agentDel) {
             const a = myAgents.find((x) => x.id === btn.dataset.agentDel);
             if (!a) return;
-            if (!window.confirm(`Delete ${a.name}? Its number will stop being answered by this agent. Past calls are kept.`)) return;
+            const inboundNote = a.inboundDefault ? ' It answers incoming calls now, so the first agent on that number will answer instead.' : '';
+            if (!window.confirm(`Delete ${a.name}? Its number will stop being answered by this agent. Past calls are kept.${inboundNote}`)) return;
             try {
               await AdminClient.deleteAgent(a.id);
               await loadMyAgents();
@@ -5394,14 +5592,15 @@
 
         const service = document.getElementById('convs-service-select')?.value || '';
         const status = document.getElementById('convs-status-select')?.value || '';
+        const direction = document.getElementById('convs-direction-select')?.value || '';
         const search = document.getElementById('convs-search-input')?.value.trim() || '';
         // Filter and search handlers pass an Event; anything that is not a page number means page 1.
         currentConvsPage = Number.isInteger(page) && page > 0 ? page : 1;
 
-        tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 28px; color: #94A3B8;"><span class="auth-spinner" style="margin-right: 8px;"></span> Loading conversations...</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="11" style="text-align: center; padding: 28px; color: #94A3B8;"><span class="auth-spinner" style="margin-right: 8px;"></span> Loading conversations...</td></tr>`;
 
         try {
-          const res = await AdminClient.getConversations({ service, status, search, page: currentConvsPage, limit: convsLimit });
+          const res = await AdminClient.getConversations({ service, status, direction, search, page: currentConvsPage, limit: convsLimit });
           const convs = res.data || [];
 
           // The last page can disappear (e.g. after the filter changed); step back to the new last page.
@@ -5413,11 +5612,13 @@
           updateConvsPager(res.pagination, convs.length);
 
           if (convs.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 28px; color: #94A3B8;">No conversations found matching criteria.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="11" style="text-align: center; padding: 28px; color: #94A3B8;">No conversations found matching criteria.</td></tr>`;
             return;
           }
 
-          tbody.innerHTML = convs.map(c => {
+          tbody.innerHTML = convs.map((c, i) => {
+            // The serial number keeps counting across pages (page 2 of 10 rows starts at 11).
+            const serialNo = (currentConvsPage - 1) * convsLimit + i + 1;
             const sBadgeClass = serviceBadgeClass(c.service);
             const statusClass = c.status === 'completed' ? 'badge-status-completed' : c.status === 'in-progress' ? 'badge-status-calling' : 'badge-status-callback';
 
@@ -5441,11 +5642,12 @@
 
             return `
               <tr>
-                <td style="font-family: monospace; font-weight: 600; color: #FC2415;">${c.id}</td>
+                <td style="font-weight: 600; color: #475569;">${serialNo}</td>
                 <td><span class="badge-pill ${sBadgeClass}">${c.service}</span></td>
                 <td style="font-weight: 600;">${c.user}</td>
                 <td style="font-weight: 700; color: #0F172A;">${c.contact}</td>
                 <td style="font-family: monospace; color: #475569;">${c.phone}</td>
+                <td><span class="badge-pill ${c.direction === 'inbound' ? 'badge-status-completed' : 'badge-status-callback'}">${c.direction === 'inbound' ? 'Inbound' : 'Outbound'}</span></td>
                 <td style="font-size: 0.775rem; color: #64748B; white-space: nowrap;">${dateDisplay}</td>
                 <td style="font-family: monospace; font-weight: 700; color: #0F172A;">
                   <span style="display: inline-flex; align-items: center; gap: 4px;">
@@ -5459,8 +5661,11 @@
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
                     <span>Transcript</span>
                   </button>
-                  <button type="button" class="btn-secondary" style="color: #EF4444; border-color: #FECACA; padding: 4px 8px; font-size: 0.75rem;" onclick="deleteConversationRecord('${c.id}')">Delete</button>
+                  ${c.canDelete === false
+                    ? '<span style="color:#94A3B8; font-size: 0.7rem;">Shared number</span>'
+                    : `<button type="button" class="btn-secondary" style="color: #EF4444; border-color: #FECACA; padding: 4px 8px; font-size: 0.75rem;" onclick="deleteConversationRecord('${c.id}')">Delete</button>`}
                 </td>
+                <td style="font-family: monospace; font-weight: 600; color: #FC2415;">${c.id}</td>
               </tr>
             `;
           }).join('');
@@ -5474,7 +5679,7 @@
             });
           });
         } catch (err) {
-          tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 28px; color: #EF4444;">Error loading conversations: ${err.message}</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="11" style="text-align: center; padding: 28px; color: #EF4444;">Error loading conversations: ${err.message}</td></tr>`;
         }
       }
 
@@ -5492,6 +5697,9 @@
 
       const convsStatusSelect = document.getElementById('convs-status-select');
       if (convsStatusSelect) convsStatusSelect.addEventListener('change', () => loadConversations(1));
+
+      const convsDirectionSelect = document.getElementById('convs-direction-select');
+      if (convsDirectionSelect) convsDirectionSelect.addEventListener('change', () => loadConversations(1));
 
       if (convsLimitSelect) {
         convsLimitSelect.addEventListener('change', () => {

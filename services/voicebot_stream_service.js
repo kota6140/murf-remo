@@ -11,6 +11,7 @@ import ScreeningEvaluator from './screening_evaluator.js';
 import AgentService, { ensureAgentSchema } from './agent_service.js';
 import PlivoService from './plivo_service.js';
 import RecordingService from './recording_service.js';
+import PromiseService from './promise_service.js';
 import CampaignService from './campaign_service.js';
 import LanguageStateMachine from './language_state_machine.js';
 import QuestionTracker, { stripAlreadySpoken, isAffirmativeMurmur, isAcknowledgement, splitSentences, topicOf, questionPart } from './question_tracker.js';
@@ -2754,6 +2755,21 @@ export class CallSession {
                     this.detectedLanguage || 'en'
                 ]);
             }
+
+            // Keep the promises made on this call (callbacks, "will send" ...). After the call, off the call path.
+            PromiseService.captureForCall({
+                conversationId: convId,
+                contactId: this.contactId || null,
+                ownerId,
+                agentId: this.agent ? this.agent.id : null,
+                service: this.service,
+                phone,
+                contactName,
+                collectedData: this.collectedData,
+                classification: this.classification,
+                history: this.conversationHistory,
+                summary: this.summary
+            }).catch(() => {});
 
             // Real-time Campaign counters update
             if (this.campaignId) {

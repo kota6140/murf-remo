@@ -175,11 +175,26 @@ const AdminClient = {
    * 3. GET /api/admin/conversations
    * Returns list of conversations with filters
    */
-  async getConversations({ service = '', user = '', status = '', date = '', search = '', page = 1, limit = 10 } = {}) {
+  async getPromises({ status = 'open', kind = '', page = 1, limit = 25 } = {}) {
+    const params = new URLSearchParams({ status, page, limit });
+    if (kind) params.append('kind', kind);
+    return this.request(`/api/admin/promises?${params.toString()}`);
+  },
+
+  async updatePromise(id, body) {
+    return this.request(`/api/admin/promises/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) });
+  },
+
+  async callPromiseNow(id) {
+    return this.request(`/api/admin/promises/${encodeURIComponent(id)}/call-now`, { method: 'POST' });
+  },
+
+  async getConversations({ service = '', user = '', status = '', direction = '', date = '', search = '', page = 1, limit = 10 } = {}) {
     const params = new URLSearchParams();
     if (service) params.append('service', service);
     if (user) params.append('user', user);
     if (status) params.append('status', status);
+    if (direction) params.append('direction', direction);
     if (date) params.append('date', date);
     if (search) params.append('search', search);
     if (page) params.append('page', page);

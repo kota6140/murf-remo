@@ -28,6 +28,7 @@ import { QuestionPlanner } from '../services/question_planner.js';
 import { CallQueueWorker } from '../services/call_queue_worker.js';
 import PlivoService from '../services/plivo_service.js';
 import RecordingService from '../services/recording_service.js';
+import PromiseService from '../services/promise_service.js';
 import ElevenLabsService from '../services/elevenlabs_service.js';
 import MurfService from '../services/murf_service.js';
 import AgentService from '../services/agent_service.js';
@@ -146,18 +147,30 @@ router.get('/users', (req, res) => {
 // GET /api/admin/agents  -  only the agents the owner assigned to this admin
 // ============================================================================
 // What an admin sees of an agent: no other admin's ids, and whether they made it (and so may change it).
-function adminAgentView(a, userId) {
+// inboundDefault: this agent answers incoming calls on its number. inboundLocked: another admin's agent does, so
+// this admin cannot take the number over (the owner can).
+function adminAgentView(a, userId, locked = new Set()) {
     const v = AgentService.publicView(a);
     delete v.assignedUserId;
     delete v.assignedUserIds;
     delete v.createdByUserId;
-    delete v.inboundDefault;
-    return { ...v, mine: a.created_by_user_id === userId };
+    return {
+        ...v,
+        mine: a.created_by_user_id === userId,
+        inboundLocked: !v.inboundDefault && locked.has(String(a.phone_number || '').slice(-10))
+    };
+}
+
+// The page shows the change message (who stopped answering incoming calls) next to the saved agent.
+async function adminAgentReply(a, userId) {
+    const locked = await AgentService.inboundLockedNumbers(userId);
+    return { agent: adminAgentView(a, userId, locked), notice: a.inbound_notice || '' };
 }
 
 router.get('/agents', wrap(async (req, res) => {
     const agents = await AgentService.list({ userId: req.user.id });
-    res.json({ success: true, agents: agents.map((a) => adminAgentView(a, req.user.id)) });
+    const locked = await AgentService.inboundLockedNumbers(req.user.id);
+    res.json({ success: true, agents: agents.map((a) => adminAgentView(a, req.user.id, locked)) });
 }));
 
 // The phone numbers the owner approved: an admin builds agents only on these.
@@ -169,12 +182,12 @@ router.get('/agents/numbers', wrap(async (req, res) => {
 // An admin creates / changes / deletes their own agents (agents the owner gave them are view and use only).
 router.post('/agents', wrap(async (req, res) => {
     const agent = await AgentService.createForAdmin(req.user.id, req.body || {});
-    res.status(201).json({ success: true, agent: adminAgentView(agent, req.user.id) });
+    res.status(201).json({ success: true, ...(await adminAgentReply(agent, req.user.id)) });
 }));
 
 router.put('/agents/:id', wrap(async (req, res) => {
     const agent = await AgentService.updateForAdmin(req.user.id, req.params.id, req.body || {});
-    res.json({ success: true, agent: adminAgentView(agent, req.user.id) });
+    res.json({ success: true, ...(await adminAgentReply(agent, req.user.id)) });
 }));
 
 router.delete('/agents/:id', wrap(async (req, res) => {
@@ -279,8 +292,8 @@ router.get('/:service/download', serviceFor, wrap(async (req, res) => {
 // Conversations
 // ============================================================================
 router.get('/conversations', wrap(async (req, res) => {
-    const { service, user, status, date, search, page, limit } = req.query;
-    const result = await ConversationService.getConversations(service, user, status, date, search, page, limit, req.user.id);
+    const { service, user, status, date, search, page, limit, direction } = req.query;
+    const result = await ConversationService.getConversations(service, user, status, date, search, page, limit, req.user.id, direction || '');
     res.json({ success: true, ...result });
 }));
 
@@ -288,6 +301,43 @@ router.get('/conversations/:id', wrap(async (req, res) => {
     const conversation = await ConversationService.getConversationById(req.params.id, req.user.id);
     if (!conversation) return fail(res, 404, 'Conversation not found.');
     res.json({ success: true, conversation, ...conversation });
+}));
+
+// ============================================================================
+// Promises: what was promised on calls (callbacks, "will send ...") and the automatic callbacks
+// ============================================================================
+router.get('/promises', wrap(async (req, res) => {
+    const { status, kind, page, limit } = req.query;
+    const [list, counts] = await Promise.all([
+        PromiseService.list(req.user.id, { status: status || '', kind: kind || '', page, limit }),
+        PromiseService.counts(req.user.id)
+    ]);
+    res.json({ success: true, ...list, counts });
+}));
+
+// action: done | cancel | reopen | reschedule (+ dueAt) | auto (+ autoCall true/false)
+router.patch('/promises/:id', wrap(async (req, res) => {
+    try {
+        const item = await PromiseService.update(req.user.id, req.params.id, req.body || {});
+        if (!item) return fail(res, 404, 'Promise not found.');
+        res.json({ success: true, item });
+    } catch (e) {
+        if (e.status) return fail(res, e.status, e.message);
+        throw e;
+    }
+}));
+
+// Call this person now instead of waiting for the due time.
+router.post('/promises/:id/call-now', requireMinutes, wrap(async (req, res) => {
+    const row = await PromiseService.getOwned(req.user.id, req.params.id);
+    if (!row) return fail(res, 404, 'Promise not found.');
+    if (row.kind !== 'callback') return fail(res, 400, 'Only callbacks can be dialled.');
+    if (['queued', 'calling'].includes(row.status)) return fail(res, 409, 'This call is already on its way.');
+    if (await PromiseService.isDoNotCall(row.phone, row.created_at)) return fail(res, 409, 'This person asked not to be called.');
+    const contactId = await PromiseService.queueCallback(row);
+    const now = new Date().toISOString();
+    await db.run("UPDATE call_promises SET status = 'queued', attempts = attempts + 1, callback_contact_id = ?, note = NULL, updated_at = ? WHERE id = ?", [contactId, now, row.id]);
+    res.json({ success: true, item: PromiseService.view(await PromiseService.getOwned(req.user.id, row.id)) });
 }));
 
 // Call recordings: an admin only reaches their own calls (and unassigned ones), see RecordingService.
@@ -357,6 +407,8 @@ router.post('/conversations/audio-zip', wrap(async (req, res) => {
 router.delete('/conversations/:id', wrap(async (req, res) => {
     const conv = await ConversationService.getConversationById(req.params.id, req.user.id);
     if (!conv) return fail(res, 404, 'Conversation not found.');
+    // An incoming call seen through a shared number can be viewed but only deleted by the admin it belongs to.
+    if (conv.canDelete === false) return fail(res, 403, 'This call belongs to another admin on a shared number. Only they can delete it.');
     await db.run('DELETE FROM transcript_messages WHERE conversation_id = ?', [req.params.id]);
     await db.run('DELETE FROM conversations WHERE id = ?', [req.params.id]);
     res.json({ success: true, message: 'Conversation deleted.' });
